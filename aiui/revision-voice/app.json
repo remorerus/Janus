@@ -2,6 +2,7 @@
   "agentName": "RE:Vision",
   "agentDesc": "Русскоязычный агент управления компьютерами и устройствами, уже сохранёнными в установленном приложении RE:Vision на очках Rokid. Используется для команд включения, выключения и проверки состояния конкретных устройств, а также показа списка устройств. Не использует Siri, iOS Shortcuts, Pushcut или внешние облачные серверы для локального управления.",
   "pages": ["pages/device-action/index", "pages/settings/index"],
+  "permissions": ["INTERNET"],
   "window": {
     "navigationBarTitleText": "RE:Vision",
     "viewport": { "width": "device-width" }
