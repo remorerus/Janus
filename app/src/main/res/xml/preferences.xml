@@ -30,6 +30,12 @@
         android:title="@string/voice_bridge_enable_title"
         android:summary="@string/voice_bridge_enable_summary" />
 
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="pref_voice_bridge_token"
+        android:title="@string/voice_bridge_token_title"
+        android:summary="@string/voice_bridge_token_summary" />
+
     <PreferenceCategory
         app:iconSpaceReserved="false"
         android:title="@string/pref_monitoring_category">
