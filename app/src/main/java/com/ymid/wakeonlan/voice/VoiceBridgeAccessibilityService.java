@@ -1,6 +1,8 @@
 package com.ymid.wakeonlan.voice;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -23,6 +25,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -31,6 +35,31 @@ import java.util.concurrent.TimeUnit;
 public final class VoiceBridgeAccessibilityService extends AccessibilityService {
     private static final String TAG = "RevisionVoiceBridge";
     private static final int PORT = 38761;
+    private static final String BRIDGE_PREFS = "revision_voice_bridge";
+    private static final String TOKEN_KEY = "access_token";
+
+    /** Returns a stable per-installation secret stored in the app-private preferences. */
+    public static String getOrCreateAccessToken(Context context) {
+        SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE);
+        String token = prefs.getString(TOKEN_KEY, null);
+        if (token != null && token.length() == 64) return token;
+
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        StringBuilder hex = new StringBuilder(64);
+        for (byte value : bytes) hex.append(String.format(java.util.Locale.US, "%02x", value & 0xff));
+        token = hex.toString();
+        prefs.edit().putString(TOKEN_KEY, token).apply();
+        return token;
+    }
+
+    private boolean isAuthorized(String suppliedToken) {
+        if (suppliedToken == null) return false;
+        byte[] expected = getOrCreateAccessToken(this).getBytes(StandardCharsets.UTF_8);
+        byte[] supplied = suppliedToken.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(expected, supplied);
+    }
     private volatile boolean running;
     private ServerSocket serverSocket;
     private Thread serverThread;
@@ -126,9 +155,16 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             return;
         }
         int contentLength = 0;
+        String suppliedToken = null;
         for (String line : lines) {
-            if (line.toLowerCase().startsWith("content-length:")) {
-                contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+            int separator = line.indexOf(':');
+            if (separator <= 0) continue;
+            String headerName = line.substring(0, separator).trim();
+            String headerValue = line.substring(separator + 1).trim();
+            if ("content-length".equalsIgnoreCase(headerName)) {
+                contentLength = Integer.parseInt(headerValue);
+            } else if ("x-revision-token".equalsIgnoreCase(headerName)) {
+                suppliedToken = headerValue;
             }
         }
         if (contentLength < 0 || contentLength > 8192) {
@@ -150,6 +186,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         String method = request[0];
         String target = request[1];
         String path = target.split("\\?", 2)[0];
+        boolean protectedEndpoint =
+                ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
+                ("POST".equals(method) && "/command".equals(path));
+        if (protectedEndpoint && !isAuthorized(suppliedToken)) {
+            writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
+            return;
+        }
         if ("GET".equals(method) && "/health".equals(path)) {
             JsonObject response = new JsonObject();
             response.addProperty("ok", true);
@@ -260,8 +303,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     private static void writeResponse(OutputStream output, int status, JsonObject body) throws Exception {
         byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-        String reason = status == 200 ? "OK" : status == 403 ? "Forbidden" :
-                status == 404 ? "Not Found" : status == 413 ? "Payload Too Large" : "Bad Request";
+        String reason = status == 200 ? "OK" : status == 401 ? "Unauthorized" :
+                status == 403 ? "Forbidden" : status == 404 ? "Not Found" :
+                status == 413 ? "Payload Too Large" : "Bad Request";
         String headers = "HTTP/1.1 " + status + " " + reason + "\r\n" +
                 "Content-Type: application/json; charset=utf-8\r\n" +
                 "Content-Length: " + bytes.length + "\r\n" +
