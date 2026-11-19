@@ -1,15 +1,15 @@
 <script def>
 {
   "navigationBarTitleText": "RE:Vision",
-  "description": "Выполняет команды управления компьютерами, которые уже сохранены в установленном приложении RE:Vision: показывает список устройств, проверяет доступность, отправляет включение через RE:Vision и выключение через настроенный SSH. Используй при прямых просьбах пользователя включить, выключить, проверить или показать сохранённое устройство. Не используй для общих вопросов о компьютерах.",
+  "description": "Голосовое управление устройствами RE:Vision и открытие системных настроек Wi-Fi на очках Rokid. Показывает сохранённые устройства, проверяет доступность, включает и выключает настроенные устройства, а по команде открыть Wi-Fi вызывает системную панель выбора сети.",
   "schema": {
     "data": {
       "type": "object",
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить."
+          "enum": ["list", "status", "wake", "shutdown", "wifi"],
+          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть системные настройки Wi-Fi для ручного выбора сети."
         },
         "deviceName": {
           "type": "string",
@@ -133,6 +133,17 @@ export default {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
         speak('Связь с RE:Vision есть. Нужно настроить ключ доступа.');
+        return;
+      }
+
+      if (action === 'wifi') {
+        const result = await request('/wifi', 'POST', token, {});
+        if (!result || result.ok !== true || result.opened !== true) {
+          throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
+        }
+        const message = 'Открыл настройки Wi-Fi. Выбери нужную сеть на очках.';
+        this.setData({ statusText: message, detailText: result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.', resultText: message, busy: false });
+        speak(message);
         return;
       }
 
