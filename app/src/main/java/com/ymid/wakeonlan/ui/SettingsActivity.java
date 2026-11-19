@@ -1,7 +1,10 @@
 package com.ymid.wakeonlan.ui;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -39,6 +42,7 @@ import java.util.Set;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.monitoring.MonitoringScheduler;
+import com.ymid.wakeonlan.voice.VoiceBridgeAccessibilityService;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -66,6 +70,7 @@ public class SettingsActivity extends AppCompatActivity {
         private static final String PREF_TRUSTED_SSIDS = "pref_trusted_ssids";
         private static final String PREF_SCAN_WIFI = "pref_scan_wifi";
         private static final String PREF_VOICE_BRIDGE = "pref_voice_bridge_accessibility";
+        private static final String PREF_VOICE_TOKEN = "pref_voice_bridge_token";
 
         private ActivityResultLauncher<String[]> wifiPermissionLauncher;
         private WifiManager wifiManager;
@@ -119,6 +124,27 @@ public class SettingsActivity extends AppCompatActivity {
             if (voiceBridgePreference != null) {
                 voiceBridgePreference.setOnPreferenceClickListener(preference -> {
                     startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    return true;
+                });
+            }
+
+            Preference voiceTokenPreference = findPreference(PREF_VOICE_TOKEN);
+            if (voiceTokenPreference != null) {
+                voiceTokenPreference.setOnPreferenceClickListener(preference -> {
+                    String token = VoiceBridgeAccessibilityService.getOrCreateAccessToken(requireContext());
+                    new AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.voice_bridge_token_dialog_title)
+                            .setMessage(getString(R.string.voice_bridge_token_dialog_message, token))
+                            .setPositiveButton(R.string.voice_bridge_token_copy, (dialog, which) -> {
+                                ClipboardManager clipboard = (ClipboardManager) requireContext()
+                                        .getSystemService(Context.CLIPBOARD_SERVICE);
+                                if (clipboard != null) {
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("RE:Vision bridge token", token));
+                                    Toast.makeText(requireContext(), R.string.voice_bridge_token_copied, Toast.LENGTH_SHORT).show();
+                                }
+                            })
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show();
                     return true;
                 });
             }
