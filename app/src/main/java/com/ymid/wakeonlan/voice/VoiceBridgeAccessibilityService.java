@@ -202,6 +202,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             response.addProperty("ok", true);
             response.addProperty("service", "RE:Vision");
             response.addProperty("port", PORT);
+            response.addProperty("wifiRoute", true);
             writeResponse(socket.getOutputStream(), 200, response);
         } else if ("GET".equals(method) && "/devices".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, listDevices());
