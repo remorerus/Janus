@@ -39,7 +39,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private static final String TOKEN_KEY = "access_token";
 
     /** Returns a stable per-installation secret stored in the app-private preferences. */
-    public static String getOrCreateAccessToken(Context context) {
+    public static synchronized String getOrCreateAccessToken(Context context) {
         SharedPreferences prefs = context.getApplicationContext()
                 .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE);
         String token = prefs.getString(TOKEN_KEY, null);
