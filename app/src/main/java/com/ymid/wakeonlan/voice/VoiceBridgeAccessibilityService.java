@@ -1,0 +1,273 @@
+package com.ymid.wakeonlan.voice;
+
+import android.accessibilityservice.AccessibilityService;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.accessibility.AccessibilityEvent;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.ymid.wakeonlan.monitoring.HostReachability;
+import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.persistence.repository.DeviceRepository;
+import com.ymid.wakeonlan.security.AuthenticatedDeviceActionActivity;
+import com.ymid.wakeonlan.security.DeviceActionExecutor;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+/** Loopback-only bridge used by the Rokid AIUI voice agent. No screen reading or simulated taps. */
+public final class VoiceBridgeAccessibilityService extends AccessibilityService {
+    private static final String TAG = "RevisionVoiceBridge";
+    private static final int PORT = 38761;
+    private volatile boolean running;
+    private ServerSocket serverSocket;
+    private Thread serverThread;
+
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        startServer();
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Intentionally empty. The service only provides a local command endpoint.
+    }
+
+    @Override
+    public void onInterrupt() {
+        stopServer();
+    }
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        stopServer();
+        return super.onUnbind(intent);
+    }
+
+    @Override
+    public void onDestroy() {
+        stopServer();
+        super.onDestroy();
+    }
+
+    private synchronized void startServer() {
+        if (serverThread != null && serverThread.isAlive()) return;
+        running = true;
+        serverThread = new Thread(this::serve, "revision-voice-http");
+        serverThread.start();
+    }
+
+    private synchronized void stopServer() {
+        running = false;
+        if (serverSocket != null) {
+            try { serverSocket.close(); } catch (Exception ignored) { }
+            serverSocket = null;
+        }
+        serverThread = null;
+    }
+
+    private void serve() {
+        try (ServerSocket listener = new ServerSocket(PORT, 8, InetAddress.getByName("127.0.0.1"))) {
+            serverSocket = listener;
+            while (running) {
+                try (Socket client = listener.accept()) {
+                    client.setSoTimeout(10000);
+                    handle(client);
+                } catch (Exception e) {
+                    if (running) Log.w(TAG, "Voice bridge request failed", e);
+                }
+            }
+        } catch (Exception e) {
+            if (running) Log.e(TAG, "Could not bind loopback port " + PORT, e);
+        } finally {
+            serverSocket = null;
+        }
+    }
+
+    private void handle(Socket socket) throws Exception {
+        if (socket.getInetAddress() == null || !socket.getInetAddress().isLoopbackAddress()) {
+            writeResponse(socket.getOutputStream(), 403, error("loopback_only"));
+            return;
+        }
+        BufferedInputStream input = new BufferedInputStream(socket.getInputStream());
+        ByteArrayOutputStream headerBytes = new ByteArrayOutputStream();
+        int matched = 0;
+        int value;
+        while ((value = input.read()) != -1 && headerBytes.size() < 8192) {
+            headerBytes.write(value);
+            if (matched == 0 && value == 13) matched = 1;
+            else if (matched == 1 && value == 10) matched = 2;
+            else if (matched == 2 && value == 13) matched = 3;
+            else if (matched == 3 && value == 10) { matched = 4; break; }
+            else matched = value == 13 ? 1 : 0;
+        }
+        if (matched != 4) {
+            writeResponse(socket.getOutputStream(), 400, error("invalid_http_headers"));
+            return;
+        }
+        String headers = new String(headerBytes.toByteArray(), StandardCharsets.US_ASCII);
+        String[] lines = headers.split("\\r\\n");
+        String[] request = lines[0].split(" ");
+        if (request.length < 2) {
+            writeResponse(socket.getOutputStream(), 400, error("invalid_request"));
+            return;
+        }
+        int contentLength = 0;
+        for (String line : lines) {
+            if (line.toLowerCase().startsWith("content-length:")) {
+                contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+            }
+        }
+        if (contentLength < 0 || contentLength > 8192) {
+            writeResponse(socket.getOutputStream(), 413, error("body_too_large"));
+            return;
+        }
+        byte[] body = new byte[contentLength];
+        int offset = 0;
+        while (offset < contentLength) {
+            int count = input.read(body, offset, contentLength - offset);
+            if (count < 0) break;
+            offset += count;
+        }
+        if (offset != contentLength) {
+            writeResponse(socket.getOutputStream(), 400, error("incomplete_body"));
+            return;
+        }
+
+        String method = request[0];
+        String target = request[1];
+        String path = target.split("\\?", 2)[0];
+        if ("GET".equals(method) && "/health".equals(path)) {
+            JsonObject response = new JsonObject();
+            response.addProperty("ok", true);
+            response.addProperty("service", "RE:Vision");
+            response.addProperty("port", PORT);
+            writeResponse(socket.getOutputStream(), 200, response);
+        } else if ("GET".equals(method) && "/devices".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, listDevices());
+        } else if ("GET".equals(method) && "/status".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, checkStatus(target));
+        } else if ("POST".equals(method) && "/command".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, executeCommand(new String(body, StandardCharsets.UTF_8)));
+        } else {
+            writeResponse(socket.getOutputStream(), 404, error("not_found"));
+        }
+    }
+
+    private JsonObject listDevices() {
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        JsonArray result = new JsonArray();
+        for (Device device : DeviceRepository.getInstance(this).getAll()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("id", device.id);
+            item.addProperty("name", device.name);
+            item.addProperty("canWake", device.macAddress != null && !device.macAddress.trim().isEmpty());
+            item.addProperty("canShutdown", device.remoteShutdownEnabled);
+            result.add(item);
+        }
+        response.add("devices", result);
+        return response;
+    }
+
+    private JsonObject checkStatus(String target) throws Exception {
+        String idValue = queryParameter(target, "deviceId");
+        if (idValue == null) return error("deviceId_required");
+        Device device = DeviceRepository.getInstance(this).getById(Integer.parseInt(idValue));
+        if (device == null) return error("device_not_found");
+        String host = HostReachability.INSTANCE.statusHost(device);
+        if (host == null || host.trim().isEmpty()) return error("status_address_missing");
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("deviceId", device.id);
+        response.addProperty("name", device.name);
+        response.addProperty("online", HostReachability.INSTANCE.isReachable(host));
+        response.addProperty("checkedHost", host);
+        return response;
+    }
+
+    private JsonObject executeCommand(String body) throws Exception {
+        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
+        String action = request.has("action") ? request.get("action").getAsString() : "";
+        if (!"wake".equalsIgnoreCase(action) && !"shutdown".equalsIgnoreCase(action)) {
+            return error("unsupported_action");
+        }
+        List<Device> devices = DeviceRepository.getInstance(this).getAll();
+        Device selected = null;
+        if (request.has("deviceId")) {
+            int id = request.get("deviceId").getAsInt();
+            for (Device device : devices) if (device.id == id) selected = device;
+        } else if (request.has("device")) {
+            String name = request.get("device").getAsString();
+            for (Device device : devices) {
+                if (device.name != null && device.name.equalsIgnoreCase(name.trim())) selected = device;
+            }
+        }
+        if (selected == null) return error("device_not_found");
+
+        final Device device = selected;
+        final boolean[] accepted = new boolean[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            accepted[0] = DeviceActionExecutor.execute(getApplicationContext(), device,
+                    "wake".equalsIgnoreCase(action)
+                            ? AuthenticatedDeviceActionActivity.ACTION_WAKE
+                            : AuthenticatedDeviceActionActivity.ACTION_SHUTDOWN);
+            latch.countDown();
+        });
+        if (!latch.await(4, TimeUnit.SECONDS)) return error("execution_timeout");
+        if (!accepted[0]) return error("action_not_configured");
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("accepted", true);
+        response.addProperty("action", action.toLowerCase());
+        response.addProperty("deviceId", device.id);
+        response.addProperty("device", device.name);
+        response.addProperty("stateConfirmed", false);
+        response.addProperty("message", "Command accepted; device power state is not yet confirmed.");
+        return response;
+    }
+
+    private static String queryParameter(String target, String name) throws Exception {
+        int start = target.indexOf('?');
+        if (start < 0) return null;
+        for (String part : target.substring(start + 1).split("&")) {
+            String[] pair = part.split("=", 2);
+            if (pair.length == 2 && name.equals(pair[0])) return URLDecoder.decode(pair[1], "UTF-8");
+        }
+        return null;
+    }
+
+    private static JsonObject error(String code) {
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", false);
+        response.addProperty("error", code);
+        return response;
+    }
+
+    private static void writeResponse(OutputStream output, int status, JsonObject body) throws Exception {
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        String reason = status == 200 ? "OK" : status == 403 ? "Forbidden" :
+                status == 404 ? "Not Found" : status == 413 ? "Payload Too Large" : "Bad Request";
+        String headers = "HTTP/1.1 " + status + " " + reason + "\r\n" +
+                "Content-Type: application/json; charset=utf-8\r\n" +
+                "Content-Length: " + bytes.length + "\r\n" +
+                "Connection: close\r\n\r\n";
+        output.write(headers.getBytes(StandardCharsets.US_ASCII));
+        output.write(bytes);
+        output.flush();
+    }
+}

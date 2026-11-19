@@ -65,6 +65,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         private static final String PREF_TRUSTED_SSIDS = "pref_trusted_ssids";
         private static final String PREF_SCAN_WIFI = "pref_scan_wifi";
+        private static final String PREF_VOICE_BRIDGE = "pref_voice_bridge_accessibility";
 
         private ActivityResultLauncher<String[]> wifiPermissionLauncher;
         private WifiManager wifiManager;
@@ -114,6 +115,13 @@ public class SettingsActivity extends AppCompatActivity {
             wifiManager = (WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             trustedSsidsPreference = findPreference(PREF_TRUSTED_SSIDS);
             scanWifiPreference = findPreference(PREF_SCAN_WIFI);
+            Preference voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
+            if (voiceBridgePreference != null) {
+                voiceBridgePreference.setOnPreferenceClickListener(preference -> {
+                    startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    return true;
+                });
+            }
             monitoringPreference = findPreference(MonitoringScheduler.PREF_MONITORING_ENABLED);
 
             if (trustedSsidsPreference != null) {

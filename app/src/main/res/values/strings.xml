@@ -1,7 +1,12 @@
 <resources>
+    <string name="voice_bridge_service_name">RE:Vision Voice Bridge</string>
+    <string name="voice_bridge_accessibility_description">Allows the RE:Vision voice agent to send local device commands without opening the app. Does not read screen content or simulate taps.</string>
+    <string name="voice_bridge_enable_title">Enable voice command bridge</string>
+    <string name="voice_bridge_enable_summary">Open Android Accessibility settings and enable RE:Vision Voice Bridge once.</string>
+
     <!-- Titles -->
-    <string name="app_name">Janus</string>
-    <string name="title_activity_main">Janus</string>
+    <string name="app_name">RE:Vision</string>
+    <string name="title_activity_main">RE:Vision</string>
     <string name="title_activity_add_device">Add Device</string>
     <string name="title_activity_edit_device">Edit Device</string>
     <string name="title_fragment_device_list">Devices</string>

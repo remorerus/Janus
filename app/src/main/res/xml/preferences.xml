@@ -24,6 +24,12 @@
             android:summary="@string/pref_trusted_ssids_summary" />
     </PreferenceCategory>
 
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="pref_voice_bridge_accessibility"
+        android:title="@string/voice_bridge_enable_title"
+        android:summary="@string/voice_bridge_enable_summary" />
+
     <PreferenceCategory
         app:iconSpaceReserved="false"
         android:title="@string/pref_monitoring_category">
@@ -32,6 +38,6 @@
             android:key="pref_monitoring_enabled"
             android:title="@string/pref_monitoring_enabled_title"
             android:summary="@string/pref_monitoring_enabled_summary"
-            android:defaultValue="true" />
+            android:defaultValue="false" />
     </PreferenceCategory>
 </PreferenceScreen>

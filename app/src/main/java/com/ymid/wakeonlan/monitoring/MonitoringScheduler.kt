@@ -27,7 +27,7 @@ object MonitoringScheduler {
     @JvmStatic
     fun isEnabled(context: Context): Boolean {
         val localPref = PreferenceManager.getDefaultSharedPreferences(context)
-            .getBoolean(PREF_MONITORING_ENABLED, true)
+            .getBoolean(PREF_MONITORING_ENABLED, false)
         return localPref && RemoteConfigManager.isMonitoringEnabled()
     }
 

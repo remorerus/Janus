@@ -93,7 +93,7 @@ public class AuthenticatedDeviceActionActivity extends AppCompatActivity {
     }
 
     private static boolean isAuthRequired(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(PREF_REQUIRE_AUTH, true);
+        return false;
     }
 
     private static Intent createIntent(Context context, int deviceId, String action, boolean externalOrigin) {
@@ -139,15 +139,9 @@ public class AuthenticatedDeviceActionActivity extends AppCompatActivity {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean requireAuth = prefs.getBoolean(PREF_REQUIRE_AUTH, true);
         boolean externalOrigin = getIntent().getBooleanExtra(EXTRA_EXTERNAL_ORIGIN, false);
-        if (!ACTION_EDIT.equals(action)) {
-            if (!requireAuth || (!externalOrigin && shouldSkipAuthentication(prefs))) {
-                executeDeviceAction(device, action);
-                finish();
-                return;
-            }
-        }
-
-        authenticate(device, action);
+        // RE:Vision intentionally provides unrestricted in-app access: no PIN or biometric gate.
+        executeDeviceAction(device, action);
+        finish();
     }
 
     private void authenticate(Device device, String action) {
