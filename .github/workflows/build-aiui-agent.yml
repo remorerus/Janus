@@ -1,0 +1,41 @@
+name: Build RE:Vision AIUI Agent
+
+on:
+  push:
+    branches:
+      - revision-aiui-agent
+    paths:
+      - "aiui/revision-voice/**"
+      - ".github/workflows/build-aiui-agent.yml"
+  workflow_dispatch:
+
+jobs:
+  build-aix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AIX CLI
+        run: npm install --global @yodaos-pkg/aix-cli
+
+      - name: Validate AIUI project
+        run: aix check ./aiui/revision-voice
+
+      - name: Package AIX
+        run: |
+          mkdir -p dist
+          aix pack ./aiui/revision-voice -o ./dist/RE-Vision.aix
+
+      - name: Upload AIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-AIUI-AIX
+          path: dist/RE-Vision.aix
+          if-no-files-found: error
+          retention-days: 14
