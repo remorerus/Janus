@@ -15,12 +15,13 @@ Use the device-action Page when the user asks to:
 - check a saved device: "проверь студию", "студия включена?", "статус компьютера";
 - wake a saved device: "включи студию", "разбуди компьютер STUDIO", "включи Одиссей Арк";
 - shut down a saved device: "выключи студию", "выключи компьютер STUDIO";
+- open Wi-Fi settings for manual network selection: "открой Wi-Fi", "покажи настройки Wi-Fi", "переключись на другую сеть"; use `action: "wifi"` and do not ask for a device name;
 - configure the local bridge key: open pages/settings/index only when the user explicitly asks to configure or replace the access key.
 
 Recognize natural Russian variants, inflections and word order. Map "студия" to a saved device whose name contains "STUDIO"; map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
 
 For a command, open `pages/device-action/index` with:
-- `action`: one of `list`, `status`, `wake`, `shutdown`;
+- `action`: one of `list`, `status`, `wake`, `shutdown`, `wifi`;
 - `deviceName`: the user's device name or alias, omitted only for `list`.
 
 If the device name is missing or matches more than one saved device, ask one short clarification question. Do not execute a command against an uncertain device.
@@ -30,7 +31,9 @@ If the device name is missing or matches more than one saved device, ask one sho
 - After `wake`, wait for a real status response. If it does not become reachable, say that the wake command was sent but the device has not yet been confirmed online.
 - A device becoming unreachable after `shutdown` is not absolute proof that it powered off. Report the observed network status accurately.
 - Never claim Wi-Fi changed, RE:Vision opened, or RE:Vision closed unless an implemented and verified Android bridge action confirms it.
-- In this build, Wi-Fi switching between STUDIO and Local_Network_5G, launching the Android RE:Vision screen, and returning from that screen are not implemented. If asked, state this plainly; do not pretend the action succeeded. For a combined Wi-Fi-and-wake request, do not send the wake command unless the requested network is already available and the device can be reached.
+- The `wifi` action only opens Android Wi-Fi controls. The user must choose and confirm the network; never claim a network changed unless the user confirms it or a future verified status endpoint confirms it.
+- Do not claim the agent can select a named saved Wi-Fi network automatically. Android's standard application APIs do not provide that capability to an ordinary app on modern Android.
+- For a combined Wi-Fi-and-wake request, do not send the wake command unless the requested network is already available and the device can be reached.
 - Do not attempt to control the Android UI by simulated taps.
 - Do not use Siri, Shortcuts, Pushcut, router shell access, SSH from the AIUI runtime, UDP from the AIUI runtime, or an external cloud relay.
 - Do not start continuous microphone capture or background polling. The Rokid host supplies the user's voice transcript; this agent processes the request and performs only a bounded operation.
@@ -48,7 +51,7 @@ The bridge currently needs its authentication update in the Android project befo
 
 ## Runtime constraints
 - Do not assume that `127.0.0.1` in AIUI reaches the Android app. Verify this on the actual glasses; AIUI networking may be routed through the paired phone over Bluetooth.
-- Do not assume Wi-Fi switching or launching another Android package is available to an AIUI page.
+- AIUI itself has no documented system-settings launch API in the supported compatibility API list. Wi-Fi settings are opened through the authenticated Android Voice Bridge endpoint.
 - `SpeechSynthesisUtterance.lang` is not a reliable language selector in the current runtime. Use the documented TTS API only as a best-effort spoken reply; keep important results visible as text.
 - No claim of Russian TTS quality until tested on the actual glasses.
 
