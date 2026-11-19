@@ -9,6 +9,10 @@ on:
       - ".github/workflows/build-aiui-agent.yml"
   workflow_dispatch:
 
+concurrency:
+  group: revision-aiui-aix-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-aix:
     runs-on: ubuntu-latest
