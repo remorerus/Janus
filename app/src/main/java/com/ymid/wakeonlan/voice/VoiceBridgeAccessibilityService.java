@@ -36,7 +36,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private Thread serverThread;
 
     @Override
-    protected void onServiceConnected() {
+    public void onServiceConnected() {
         super.onServiceConnected();
         startServer();
     }
