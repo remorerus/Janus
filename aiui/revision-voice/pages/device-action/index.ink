@@ -106,7 +106,12 @@ export default {
     statusText: 'Подключение к RE:Vision…',
     detailText: '',
     resultText: '',
+    showSettingsButton: false,
     busy: true
+  },
+
+  openSettings() {
+    wx.navigateTo({ url: '/pages/settings/index' });
   },
 
   async onLoad(query) {
@@ -126,7 +131,7 @@ export default {
       const token = wx.getStorageSync('revision_bridge_token');
       if (!token) {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
-        this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', busy: false });
+        this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
         speak('Связь с RE:Vision есть. Нужно настроить ключ доступа.');
         return;
       }
@@ -247,6 +252,7 @@ export default {
     <text class="heading">{{title}}</text>
     <text class="status">{{statusText}}</text>
     <text class="detail">{{detailText}}</text>
+    <button ink:if="{{showSettingsButton}}" bindtap="openSettings">Настроить ключ доступа</button>
     <text class="footer" ink:if="{{busy}}">Выполняется проверка…</text>
   </view>
 </page>
