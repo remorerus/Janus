@@ -6,7 +6,7 @@
         android:key="pref_require_auth"
         android:title="@string/pref_require_auth_title"
         android:summary="@string/pref_require_auth_summary"
-        android:defaultValue="true" />
+        android:defaultValue="false" />
 
     <PreferenceCategory
         app:iconSpaceReserved="false"

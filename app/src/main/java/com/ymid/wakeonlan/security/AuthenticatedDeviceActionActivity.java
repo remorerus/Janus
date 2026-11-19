@@ -136,10 +136,7 @@ public class AuthenticatedDeviceActionActivity extends AppCompatActivity {
     }
 
     private void handleDeviceAction(Device device, String action) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean requireAuth = prefs.getBoolean(PREF_REQUIRE_AUTH, true);
-        boolean externalOrigin = getIntent().getBooleanExtra(EXTRA_EXTERNAL_ORIGIN, false);
-        // RE:Vision intentionally provides unrestricted in-app access: no PIN or biometric gate.
+        // RE:Vision: editing and device actions are available without an additional PIN/biometric prompt.
         executeDeviceAction(device, action);
         finish();
     }
