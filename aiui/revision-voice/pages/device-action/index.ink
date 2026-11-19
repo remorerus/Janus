@@ -127,6 +127,12 @@ export default {
     try {
       const health = await request('/health', 'GET', '');
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
+      if (action === 'wifi' && health.wifiRoute !== true) {
+        const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
+        this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
+        speak(message);
+        return;
+      }
 
       const token = wx.getStorageSync('revision_bridge_token');
       if (!token) {
@@ -247,9 +253,11 @@ export default {
       speak(message);
     } catch (error) {
       const raw = error && error.message ? error.message : String(error);
-      const message = raw.includes('Failed to fetch') || raw.includes('Network') || raw.includes('refused') || raw.includes('timeout')
-        ? 'AIUI не смог связаться с локальным мостом RE:Vision. Нужно проверить доступ к localhost на самих очках.'
-        : 'Ошибка RE:Vision: ' + raw;
+      const message = raw === 'HTTP 404'
+        ? 'Установленная версия RE:Vision не знает команду Wi-Fi. Нужно обновить Android-приложение RE:Vision; AIUI уже обращается к правильному адресу.'
+        : raw.includes('Failed to fetch') || raw.includes('Network') || raw.includes('refused') || raw.includes('timeout')
+          ? 'AIUI не смог связаться с локальным мостом RE:Vision. Нужно проверить доступ к localhost на самих очках.'
+          : 'Ошибка RE:Vision: ' + raw;
       this.setData({ statusText: message, detailText: 'Никакая команда не считается выполненной без подтверждения.', busy: false });
       speak(message);
       console.error('RE:Vision action failed', error);
