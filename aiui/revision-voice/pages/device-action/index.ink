@@ -170,6 +170,7 @@ export default {
 
       if (action === 'status') {
         const state = await request('/status?deviceId=' + encodeURIComponent(device.id), 'GET', token);
+        if (!state || state.ok !== true) throw new Error(state && state.error ? state.error : 'Не удалось проверить состояние устройства');
         const message = state.online
           ? device.name + ' доступен в сети.'
           : device.name + ' сейчас не отвечает по сети.';
@@ -180,6 +181,18 @@ export default {
 
       if (action !== 'wake' && action !== 'shutdown') {
         throw new Error('Операция не поддерживается: ' + action);
+      }
+      if (action === 'wake' && device.canWake !== true) {
+        const message = 'Для ' + device.name + ' в RE:Vision не настроено включение Wake-on-LAN.';
+        this.setData({ statusText: message, busy: false });
+        speak(message);
+        return;
+      }
+      if (action === 'shutdown' && device.canShutdown !== true) {
+        const message = 'Для ' + device.name + ' в RE:Vision не настроено удалённое выключение SSH.';
+        this.setData({ statusText: message, busy: false });
+        speak(message);
+        return;
       }
 
       const command = await request('/command', 'POST', token, {
@@ -195,7 +208,7 @@ export default {
         for (let attempt = 0; attempt < 6; attempt += 1) {
           await delay(2000);
           const state = await request('/status?deviceId=' + encodeURIComponent(device.id), 'GET', token);
-          if (state.online === true) {
+          if (state && state.ok === true && state.online === true) {
             const message = device.name + ' отвечает в сети. Компьютер доступен.';
             this.setData({ statusText: message, detailText: 'Доступность подтверждена проверкой сети.', resultText: message, busy: false });
             speak(message);
@@ -210,6 +223,7 @@ export default {
 
       await delay(3000);
       const state = await request('/status?deviceId=' + encodeURIComponent(device.id), 'GET', token);
+      if (!state || state.ok !== true) throw new Error(state && state.error ? state.error : 'Не удалось проверить состояние после команды');
       const message = state.online
         ? 'Команда выключения отправлена, но ' + device.name + ' всё ещё отвечает в сети. Выключение не подтверждено.'
         : 'После команды ' + device.name + ' перестал отвечать по сети. Это не является абсолютным подтверждением выключения.';
