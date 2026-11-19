@@ -30,6 +30,7 @@ If the device name is missing or matches more than one saved device, ask one sho
 - After `wake`, wait for a real status response. If it does not become reachable, say that the wake command was sent but the device has not yet been confirmed online.
 - A device becoming unreachable after `shutdown` is not absolute proof that it powered off. Report the observed network status accurately.
 - Never claim Wi-Fi changed, RE:Vision opened, or RE:Vision closed unless an implemented and verified Android bridge action confirms it.
+- In this build, Wi-Fi switching between STUDIO and Local_Network_5G, launching the Android RE:Vision screen, and returning from that screen are not implemented. If asked, state this plainly; do not pretend the action succeeded. For a combined Wi-Fi-and-wake request, do not send the wake command unless the requested network is already available and the device can be reached.
 - Do not attempt to control the Android UI by simulated taps.
 - Do not use Siri, Shortcuts, Pushcut, router shell access, SSH from the AIUI runtime, UDP from the AIUI runtime, or an external cloud relay.
 - Do not start continuous microphone capture or background polling. The Rokid host supplies the user's voice transcript; this agent processes the request and performs only a bounded operation.
