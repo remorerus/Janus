@@ -14,7 +14,8 @@ Use the device-action Page when the user asks to:
 - list saved devices: "покажи устройства", "какие устройства есть";
 - check a saved device: "проверь студию", "студия включена?", "статус компьютера";
 - wake a saved device: "включи студию", "разбуди компьютер STUDIO", "включи Одиссей Арк";
-- shut down a saved device: "выключи студию", "выключи компьютер STUDIO".
+- shut down a saved device: "выключи студию", "выключи компьютер STUDIO";
+- configure the local bridge key: open pages/settings/index only when the user explicitly asks to configure or replace the access key.
 
 Recognize natural Russian variants, inflections and word order. Map "студия" to a saved device whose name contains "STUDIO"; map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
 
