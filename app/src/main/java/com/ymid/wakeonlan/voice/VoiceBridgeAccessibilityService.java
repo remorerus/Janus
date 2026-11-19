@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.ComponentName;
 import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.os.Handler;
@@ -248,7 +249,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     }
 
 
-    /** Opens Android's Wi-Fi controls; the user chooses the network manually. */
+    /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
     private JsonObject openWifiSettings() throws Exception {
         final boolean[] opened = new boolean[1];
         final String[] mode = new String[1];
@@ -256,18 +257,33 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         CountDownLatch latch = new CountDownLatch(1);
         new Handler(Looper.getMainLooper()).post(() -> {
             try {
-                Intent panel = new Intent(Settings.Panel.ACTION_WIFI);
-                panel.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                try {
-                    startActivity(panel);
-                    opened[0] = true;
-                    mode[0] = "panel";
-                } catch (ActivityNotFoundException | SecurityException panelError) {
-                    Intent settings = new Intent(Settings.ACTION_WIFI_SETTINGS);
-                    settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(settings);
-                    opened[0] = true;
-                    mode[0] = "settings";
+                Intent[] candidates = new Intent[] {
+                    new Intent(Settings.Panel.ACTION_WIFI).setPackage("com.android.settings"),
+                    new Intent(Settings.Panel.ACTION_WIFI).setComponent(new ComponentName(
+                            "com.android.settings",
+                            "com.android.settings.panel.SettingsPanelActivity")),
+                    new Intent(Settings.ACTION_WIFI_SETTINGS).setPackage("com.android.settings"),
+                    new Intent().setComponent(new ComponentName(
+                            "com.android.settings",
+                            "com.android.settings.Settings$WifiSettingsActivity")),
+                    new Intent(Settings.ACTION_WIFI_SETTINGS),
+                    new Intent(Settings.ACTION_WIRELESS_SETTINGS)
+                };
+                String[] modes = new String[] {
+                    "panel", "panel", "settings", "settings", "settings", "network_settings"
+                };
+                for (int i = 0; i < candidates.length; i++) {
+                    Intent candidate = candidates[i].addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        startActivity(candidate);
+                        opened[0] = true;
+                        mode[0] = modes[i];
+                        break;
+                    } catch (ActivityNotFoundException | SecurityException e) {
+                        failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+                    } catch (RuntimeException e) {
+                        failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+                    }
                 }
             } catch (Exception e) {
                 failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
@@ -285,7 +301,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("ok", true);
         response.addProperty("opened", true);
         response.addProperty("mode", mode[0]);
-        response.addProperty("message", "Wi-Fi settings opened; user must select a network.");
+        response.addProperty("message", "Wi-Fi controls opened; user must select a network.");
         return response;
     }
 
