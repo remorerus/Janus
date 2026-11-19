@@ -1,3 +1,4 @@
+run-name: RE:Vision APK build (${{ github.ref_name }})
 name: Build RE:Vision APK
 
 on:
