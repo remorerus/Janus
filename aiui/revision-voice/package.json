@@ -1,0 +1,8 @@
+{
+  "name": "revision-voice-agent",
+  "version": "0.1.0",
+  "description": "Russian voice control for devices configured in RE:Vision on Rokid glasses",
+  "main": "app.js",
+  "type": "module",
+  "dependencies": {}
+}
