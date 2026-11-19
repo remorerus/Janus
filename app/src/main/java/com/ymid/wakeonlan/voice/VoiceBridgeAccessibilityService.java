@@ -2,6 +2,9 @@ package com.ymid.wakeonlan.voice;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
@@ -188,7 +191,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         String path = target.split("\\?", 2)[0];
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
-                ("POST".equals(method) && "/command".equals(path));
+                ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
@@ -205,6 +208,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, checkStatus(target));
         } else if ("POST".equals(method) && "/command".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, executeCommand(new String(body, StandardCharsets.UTF_8)));
+        } else if ("POST".equals(method) && "/wifi".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, openWifiSettings());
         } else {
             writeResponse(socket.getOutputStream(), 404, error("not_found"));
         }
@@ -239,6 +244,48 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("name", device.name);
         response.addProperty("online", HostReachability.INSTANCE.isReachable(host));
         response.addProperty("checkedHost", host);
+        return response;
+    }
+
+
+    /** Opens Android's Wi-Fi controls; the user chooses the network manually. */
+    private JsonObject openWifiSettings() throws Exception {
+        final boolean[] opened = new boolean[1];
+        final String[] mode = new String[1];
+        final String[] failure = new String[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Intent panel = new Intent(Settings.Panel.ACTION_WIFI);
+                panel.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(panel);
+                    opened[0] = true;
+                    mode[0] = "panel";
+                } catch (ActivityNotFoundException | SecurityException panelError) {
+                    Intent settings = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                    settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(settings);
+                    opened[0] = true;
+                    mode[0] = "settings";
+                }
+            } catch (Exception e) {
+                failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+            } finally {
+                latch.countDown();
+            }
+        });
+        if (!latch.await(4, TimeUnit.SECONDS)) return error("wifi_settings_timeout");
+        if (!opened[0]) {
+            JsonObject response = error("wifi_settings_unavailable");
+            if (failure[0] != null) response.addProperty("detail", failure[0]);
+            return response;
+        }
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("opened", true);
+        response.addProperty("mode", mode[0]);
+        response.addProperty("message", "Wi-Fi settings opened; user must select a network.");
         return response;
     }
 
