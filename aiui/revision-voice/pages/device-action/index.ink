@@ -8,8 +8,12 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть на очках список/панель Wi-Fi, чтобы пользователь выбрал другую сеть или точку доступа. Используй wifi для фраз «открой Wi-Fi», «покажи сети», «переключи Wi-Fi», «поменяй точку доступа», «подключиться к другой сети»."
+          "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
+          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_connect — запросить сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+        },
+        "networkName": {
+          "type": "string",
+          "description": "Целевая сеть Wi-Fi: Студио / Studio или Локал нетворк / Local_Network_5G."
         },
         "deviceName": {
           "type": "string",
@@ -127,7 +131,7 @@ export default {
     try {
       const health = await request('/health', 'GET', '');
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
-      if (action === 'wifi' && health.wifiRoute !== true) {
+      if (['wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
         this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
         speak(message);
@@ -142,13 +146,45 @@ export default {
         return;
       }
 
-      if (action === 'wifi') {
-        const result = await request('/wifi', 'POST', token, {});
+      if (action === 'wifi' || action === 'wifi_connect') {
+        const targetNetwork = String(query.networkName || query.ssid || '');
+        const result = action === 'wifi_connect'
+          ? await request('/wifi/connect', 'POST', token, { networkName: targetNetwork })
+          : await request('/wifi', 'POST', token, {});
         if (!result || result.ok !== true || result.opened !== true) {
           throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
         }
-        const message = 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
-        this.setData({ statusText: message, detailText: result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.', resultText: message, busy: false });
+        const message = action === 'wifi_connect'
+          ? 'Открыл системный выбор Wi-Fi. Выбери сеть ' + result.targetSsid + ' и подтверди подключение, если Android попросит. Затем скажи: Ревижн, проверь Wi-Fi.'
+          : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
+        this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + result.targetSsid + '. Подключение ещё не подтверждено.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
+        speak(message);
+        return;
+      }
+
+      if (action === 'wifi_status') {
+        const state = await request('/wifi/status', 'GET', token);
+        const message = state && state.connected
+          ? 'Сейчас подключено к сети ' + state.ssid + '.'
+          : (state && state.enabled ? 'Wi-Fi включён, но имя текущей сети недоступно.' : 'Wi-Fi выключен или соединение отсутствует.');
+        this.setData({ statusText: message, detailText: state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : '', resultText: message, busy: false });
+        speak(message);
+        return;
+      }
+
+      if (action === 'wifi_list') {
+        const scan = await request('/wifi/networks', 'GET', token);
+        if (!scan || scan.ok !== true) {
+          const why = scan && scan.error === 'wifi_scan_permission_required'
+            ? 'Android не выдал RE:Vision разрешение на сканирование Wi-Fi. Разреши доступ к местоположению в настройках приложения.'
+            : (scan && scan.error ? scan.error : 'Не удалось получить список сетей.');
+          this.setData({ statusText: why, busy: false });
+          speak(why);
+          return;
+        }
+        const names = (scan.networks || []).map(item => item.ssid);
+        const message = names.length ? 'Вижу сети: ' + names.join(', ') : 'Список сетей пока пуст. Повтори запрос через несколько секунд.';
+        this.setData({ statusText: message, detailText: 'Сканирование запрошено: ' + (scan.scanStarted ? 'да' : 'нет'), resultText: message, busy: false });
         speak(message);
         return;
       }
