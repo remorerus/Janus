@@ -12,7 +12,7 @@ if (firebaseConfigured) {
 
 android {
     defaultConfig {
-        versionCode 113
+        versionCode 114
         buildConfigField 'boolean', 'FIREBASE_CONFIGURED', firebaseConfigured.toString()
     }
     buildFeatures {
