@@ -18,7 +18,7 @@ public interface DeviceDao {
     @Query("SELECT * FROM Devices ORDER BY id ASC")
     List<DeviceEntity> getAll();
 
-    @Query("SELECT * FROM Devices")
+    @Query("SELECT * FROM Devices ORDER BY id ASC")
     LiveData<List<DeviceEntity>> getAllAsObservable();
 
     @Query("SELECT * FROM Devices WHERE id = :id")
