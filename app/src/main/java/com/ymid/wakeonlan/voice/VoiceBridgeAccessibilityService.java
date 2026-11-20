@@ -119,7 +119,12 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
         CharSequence packageName = root.getPackageName();
-        if (packageName == null || !packageName.toString().contains("settings")) return;
+        String activePackage = packageName == null ? "" : packageName.toString();
+        // Android 10+ may render the compact Internet/Wi-Fi panel in System UI,
+        // while the full Wi-Fi settings screen is owned by com.android.settings.
+        // Restrict interaction to these two trusted system surfaces only.
+        if (!"com.android.settings".equals(activePackage)
+                && !"com.android.systemui".equals(activePackage)) return;
         List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(target);
         if (matches == null) return;
         for (AccessibilityNodeInfo match : matches) {
@@ -438,20 +443,21 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         CountDownLatch latch = new CountDownLatch(1);
         new Handler(Looper.getMainLooper()).post(() -> {
             try {
+                // Prefer the full Settings activity: its accessibility tree exposes
+                // saved networks more consistently than the compact System UI panel.
+                // Keep the panel as a fallback for Rokid firmware variants.
                 Intent[] candidates = new Intent[] {
-                    new Intent(Settings.Panel.ACTION_WIFI).setPackage("com.android.settings"),
-                    new Intent(Settings.Panel.ACTION_WIFI).setComponent(new ComponentName(
-                            "com.android.settings",
-                            "com.android.settings.panel.SettingsPanelActivity")),
                     new Intent(Settings.ACTION_WIFI_SETTINGS).setPackage("com.android.settings"),
                     new Intent().setComponent(new ComponentName(
                             "com.android.settings",
                             "com.android.settings.Settings$WifiSettingsActivity")),
                     new Intent(Settings.ACTION_WIFI_SETTINGS),
+                    new Intent(Settings.Panel.ACTION_WIFI).setPackage("com.android.systemui"),
+                    new Intent(Settings.Panel.ACTION_WIFI),
                     new Intent(Settings.ACTION_WIRELESS_SETTINGS)
                 };
                 String[] modes = new String[] {
-                    "panel", "panel", "settings", "settings", "settings", "network_settings"
+                    "settings", "settings", "settings", "panel", "panel", "network_settings"
                 };
                 for (int i = 0; i < candidates.length; i++) {
                     Intent candidate = candidates[i].addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
