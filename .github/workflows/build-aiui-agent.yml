@@ -1,4 +1,5 @@
 name: Build RE:Vision AIUI Agent
+# Agent bridge diagnostics rebuild
 
 on:
   push:
