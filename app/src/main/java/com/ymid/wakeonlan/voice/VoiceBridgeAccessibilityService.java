@@ -42,7 +42,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/** Loopback-only bridge used by the Rokid AIUI voice agent. No screen reading or simulated taps. */
+/** Loopback-only bridge used by the Rokid AIUI voice agent. */
 public final class VoiceBridgeAccessibilityService extends AccessibilityService {
     private static final String TAG = "RevisionVoiceBridge";
     private static final int PORT = 38761;
@@ -99,6 +99,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private Thread serverThread;
     private volatile String pendingWifiTarget;
     private volatile long pendingWifiSelectionUntilMs;
+    private volatile boolean pendingWifiSelectionClicked;
 
     @Override
     public void onServiceConnected() {
@@ -137,6 +138,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
             if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                 pendingWifiTarget = null;
+                pendingWifiSelectionClicked = true;
                 Log.i(TAG, "Selected requested Wi-Fi network: " + target);
                 return;
             }
@@ -422,6 +424,17 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             invalid.addProperty("message", "Назови сеть: Студио или Локал нетворк.");
             return invalid;
         }
+        // Do not reopen Settings when the requested saved network is already active.
+        JsonObject current = wifiStatus();
+        if (current.has("connected") && current.get("connected").getAsBoolean()
+                && current.has("ssid") && target.equalsIgnoreCase(current.get("ssid").getAsString())) {
+            current.addProperty("targetSsid", target);
+            current.addProperty("alreadyConnected", true);
+            current.addProperty("message", "Уже подключено к " + target + ".");
+            return current;
+        }
+
+        pendingWifiSelectionClicked = false;
         pendingWifiTarget = target;
         pendingWifiSelectionUntilMs = System.currentTimeMillis() + 15_000L;
         JsonObject opened = openWifiSettings();
@@ -429,12 +442,39 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             pendingWifiTarget = null;
             return opened;
         }
-        opened.addProperty("targetSsid", target);
-        opened.addProperty("automaticSelectionAttempted", true);
-        opened.addProperty("selectionRequired", true);
-        opened.addProperty("message", "Открыл Wi-Fi и пытаюсь выбрать сеть " + target +
-                ". Если Android покажет запрос подтверждения или пароль, подтверди его вручную.");
-        return opened;
+
+        // Accessibility selects the exact saved SSID in Android Settings/System UI.
+        // Verify the actual active SSID before reporting success; selecting a row is
+        // not proof that Android completed the connection.
+        long deadline = System.currentTimeMillis() + 8_000L;
+        JsonObject status = wifiStatus();
+        while (System.currentTimeMillis() < deadline) {
+            if (status.has("connected") && status.get("connected").getAsBoolean()
+                    && status.has("ssid") && target.equalsIgnoreCase(status.get("ssid").getAsString())) {
+                status.addProperty("targetSsid", target);
+                status.addProperty("connected", true);
+                status.addProperty("selectionClicked", pendingWifiSelectionClicked);
+                status.addProperty("message", "Подключено к " + target + ".");
+                return status;
+            }
+            try { Thread.sleep(400L); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            status = wifiStatus();
+        }
+
+        JsonObject result = new JsonObject();
+        result.addProperty("ok", true);
+        result.addProperty("targetSsid", target);
+        result.addProperty("connected", false);
+        result.addProperty("selectionClicked", pendingWifiSelectionClicked);
+        result.addProperty("selectionRequired", !pendingWifiSelectionClicked);
+        result.addProperty("message", pendingWifiSelectionClicked
+                ? "Сеть " + target + " выбрана, но Android ещё не подтвердил подключение. Проверь запрос системы."
+                : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
+                    + ". Выбери её вручную на экране очков.");
+        return result;
     }
 
     /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
