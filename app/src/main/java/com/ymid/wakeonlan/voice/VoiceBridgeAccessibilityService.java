@@ -145,7 +145,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     @Override
     public void onInterrupt() {
-        stopServer();
+        // Android may interrupt accessibility event delivery without unbinding the
+        // service. Keep the loopback HTTP bridge alive; stop it only on unbind/destroy.
+        Log.w(TAG, "Accessibility events interrupted; keeping voice HTTP bridge running");
     }
 
     @Override
