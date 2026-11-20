@@ -199,7 +199,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
-                ("GET".equals(method) && "/wifi/status".equals(path));
+                ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
+                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
@@ -221,6 +222,10 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
         } else if ("GET".equals(method) && "/wifi/status".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, wifiStatus());
+        } else if ("GET".equals(method) && "/wifi/networks".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, wifiNetworks());
+        } else if ("POST".equals(method) && "/wifi/connect".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, connectWifi(new String(body, StandardCharsets.UTF_8)));
         } else {
             writeResponse(socket.getOutputStream(), 404, error("not_found"));
         }
@@ -302,6 +307,68 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ? "Wi-Fi is enabled but the current SSID is unavailable."
                 : "Connected to " + ssid);
         return response;
+    }
+
+    /** Returns the latest Wi-Fi scan results when Android permissions allow it. */
+    private JsonObject wifiNetworks() {
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) return error("wifi_unavailable");
+        try {
+            if (Build.VERSION.SDK_INT >= 23 &&
+                    checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                JsonObject denied = error("wifi_scan_permission_required");
+                denied.addProperty("permission", "ACCESS_FINE_LOCATION");
+                denied.addProperty("message", "Разреши RE:Vision доступ к местоположению для сканирования Wi-Fi.");
+                return denied;
+            }
+            boolean scanStarted = wifi.startScan();
+            JsonArray networks = new JsonArray();
+            for (android.net.wifi.ScanResult result : wifi.getScanResults()) {
+                if (result == null || result.SSID == null || result.SSID.trim().isEmpty()) continue;
+                JsonObject item = new JsonObject();
+                item.addProperty("ssid", result.SSID);
+                item.addProperty("signalLevel", result.level);
+                item.addProperty("frequency", result.frequency);
+                networks.add(item);
+            }
+            JsonObject response = new JsonObject();
+            response.addProperty("ok", true);
+            response.addProperty("scanStarted", scanStarted);
+            response.add("networks", networks);
+            response.addProperty("message", "Android may throttle scans; results can be from the latest completed scan.");
+            return response;
+        } catch (SecurityException e) {
+            JsonObject denied = error("wifi_scan_permission_required");
+            denied.addProperty("permission", "ACCESS_FINE_LOCATION");
+            return denied;
+        } catch (Exception e) {
+            return error("wifi_scan_failed");
+        }
+    }
+
+    /** Resolves voice aliases and opens Android's Wi-Fi picker; final selection remains user-approved. */
+    private JsonObject connectWifi(String body) throws Exception {
+        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
+        String requested = request.has("networkName") ? request.get("networkName").getAsString() : "";
+        String normalized = requested.trim().toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        String target = null;
+        if (normalized.contains("студи") || normalized.contains("studio")) target = "Studio";
+        else if (normalized.contains("локал") || normalized.contains("local") ||
+                normalized.contains("нетворк") || normalized.contains("network")) target = "Local_Network_5G";
+        else if (request.has("ssid")) target = request.get("ssid").getAsString().trim();
+        if (target == null || target.isEmpty()) {
+            JsonObject invalid = error("wifi_network_required");
+            invalid.addProperty("message", "Назови сеть: Студио или Локал нетворк.");
+            return invalid;
+        }
+        JsonObject opened = openWifiSettings();
+        if (!opened.has("ok") || !opened.get("ok").getAsBoolean()) return opened;
+        opened.addProperty("targetSsid", target);
+        opened.addProperty("selectionRequired", true);
+        opened.addProperty("message", "Открыл системный выбор Wi-Fi. Выбери сеть " + target +
+                " и подтверди подключение, если Android запросит подтверждение. Затем проверь подключение командой «Ревижн, проверь Wi-Fi».");
+        return opened;
     }
 
     /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
