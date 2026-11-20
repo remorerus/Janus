@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -17,14 +18,22 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        deviceNameInput.setText(nextDeviceName());
+        // Never query Room on the UI thread. Populate a safe initial value, then
+        // calculate the next number from the repository's background executor.
+        deviceNameInput.setText("Устройство 1");
+        deviceRepository.getAllAsync(existingDevices -> {
+            if (isFinishing() || isDestroyed()) return;
+            if ("Устройство 1".contentEquals(deviceNameInput.getText())) {
+                deviceNameInput.setText(nextDeviceName(existingDevices));
+            }
+        });
         triggerRemoteShutdownLayoutVisibility(false);
     }
 
-    private String nextDeviceName() {
+    private String nextDeviceName(List<Device> devices) {
         int next = 1;
         Pattern pattern = Pattern.compile("^Устройство\\s+(\\d+)$", Pattern.CASE_INSENSITIVE);
-        for (Device existing : deviceRepository.getAll()) {
+        for (Device existing : devices) {
             if (existing.name == null) continue;
             Matcher matcher = pattern.matcher(existing.name.trim());
             if (matcher.matches()) {
