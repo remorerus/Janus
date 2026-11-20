@@ -47,29 +47,52 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private static final int PORT = 38761;
     private static final String BRIDGE_PREFS = "revision_voice_bridge";
     private static final String TOKEN_KEY = "access_token";
+    private static final int MAX_AUTH_FAILURES = 5;
+    private static final long AUTH_LOCKOUT_MS = 30_000L;
+    private int authFailureCount;
+    private long authBlockedUntilMs;
 
-    /** Returns a stable per-installation secret stored in the app-private preferences. */
+    /** Returns a stable four-digit pairing PIN stored in app-private preferences. */
     public static synchronized String getOrCreateAccessToken(Context context) {
         SharedPreferences prefs = context.getApplicationContext()
                 .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE);
         String token = prefs.getString(TOKEN_KEY, null);
-        if (token != null && token.length() == 64) return token;
+        if (token != null && token.matches("\\d{4}")) return token;
 
-        byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
-        StringBuilder hex = new StringBuilder(64);
-        for (byte value : bytes) hex.append(String.format(java.util.Locale.US, "%02x", value & 0xff));
-        token = hex.toString();
+        int pin = new SecureRandom().nextInt(10000);
+        token = String.format(java.util.Locale.US, "%04d", pin);
         prefs.edit().putString(TOKEN_KEY, token).apply();
         return token;
     }
 
-    private boolean isAuthorized(String suppliedToken) {
-        if (suppliedToken == null) return false;
+    /** Loopback bridge only; throttle failed PIN guesses to reduce the risk of a short PIN. */
+    private synchronized boolean isAuthorized(String suppliedToken) {
+        long now = System.currentTimeMillis();
+        if (now < authBlockedUntilMs) return false;
+        if (suppliedToken == null) {
+            registerAuthFailure(now);
+            return false;
+        }
         byte[] expected = getOrCreateAccessToken(this).getBytes(StandardCharsets.UTF_8);
         byte[] supplied = suppliedToken.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(expected, supplied);
+        boolean valid = MessageDigest.isEqual(expected, supplied);
+        if (valid) {
+            authFailureCount = 0;
+            authBlockedUntilMs = 0L;
+        } else {
+            registerAuthFailure(now);
+        }
+        return valid;
     }
+
+    private void registerAuthFailure(long now) {
+        authFailureCount++;
+        if (authFailureCount >= MAX_AUTH_FAILURES) {
+            authFailureCount = 0;
+            authBlockedUntilMs = now + AUTH_LOCKOUT_MS;
+        }
+    }
+
     private volatile boolean running;
     private ServerSocket serverSocket;
     private Thread serverThread;
