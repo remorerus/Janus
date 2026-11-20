@@ -39,7 +39,9 @@ function normalize(value) {
 function request(path, method, token, data) {
   return new Promise((resolve, reject) => {
     if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
-      reject(new Error('wx.request недоступен в этом AIUI runtime'));
+      const error = new Error('wx.request недоступен в AIUI runtime');
+      error.stage = path;
+      reject(error);
       return;
     }
     const header = { 'content-type': 'application/json' };
@@ -49,19 +51,47 @@ function request(path, method, token, data) {
       method: method || 'GET',
       header,
       data,
-      timeout: 6000,
+      dataType: 'json',
+      timeout: 12000,
       success(res) {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data);
+        const status = Number(res && res.statusCode || 0);
+        if (status >= 200 && status < 300) {
+          let body = res.data;
+          if (typeof body === 'string') {
+            try { body = JSON.parse(body); } catch (e) {}
+          }
+          resolve(body);
         } else {
-          reject(new Error('HTTP ' + res.statusCode));
+          const error = new Error('HTTP ' + status);
+          error.statusCode = status;
+          error.stage = path;
+          reject(error);
         }
       },
       fail(err) {
-        reject(new Error(err && err.errMsg ? err.errMsg : 'Сетевая ошибка'));
+        const detail = err && err.errMsg ? String(err.errMsg) : 'Неизвестная сетевая ошибка';
+        const error = new Error(detail);
+        error.stage = path;
+        error.networkFailure = true;
+        reject(error);
       }
     });
   });
+}
+
+async function requestWithRetry(path, method, token, data, attempts) {
+  let lastError;
+  const total = attempts || 3;
+  for (let attempt = 0; attempt < total; attempt += 1) {
+    try {
+      return await request(path, method, token, data);
+    } catch (error) {
+      lastError = error;
+      if (error && error.statusCode) throw error;
+      if (attempt + 1 < total) await delay(700 * (attempt + 1));
+    }
+  }
+  throw lastError || new Error('Сетевая ошибка');
 }
 
 function speak(text) {
@@ -129,7 +159,7 @@ export default {
     });
 
     try {
-      const health = await request('/health', 'GET', '');
+      const health = await requestWithRetry('/health', 'GET', '', null, 4);
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
       if (['wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
@@ -173,7 +203,7 @@ export default {
       }
 
       if (action === 'wifi_list') {
-        const scan = await request('/wifi/networks', 'GET', token);
+        const scan = await requestWithRetry('/wifi/networks', 'GET', token, null, 2);
         if (!scan || scan.ok !== true) {
           const why = scan && scan.error === 'wifi_scan_permission_required'
             ? 'Android не выдал RE:Vision разрешение на сканирование Wi-Fi. Разреши доступ к местоположению в настройках приложения.'
@@ -288,15 +318,23 @@ export default {
       this.setData({ statusText: message, detailText: 'Состояние питания не подтверждено напрямую.', resultText: message, busy: false });
       speak(message);
     } catch (error) {
-      const raw = error && error.message ? error.message : String(error);
-      const message = raw === 'HTTP 404'
-        ? 'Установленная версия RE:Vision не знает команду Wi-Fi. Нужно обновить Android-приложение RE:Vision; AIUI уже обращается к правильному адресу.'
-        : raw.includes('Failed to fetch') || raw.includes('Network') || raw.includes('refused') || raw.includes('timeout')
-          ? 'AIUI не смог связаться с локальным мостом RE:Vision. Нужно проверить доступ к localhost на самих очках.'
-          : 'Ошибка RE:Vision: ' + raw;
-      this.setData({ statusText: message, detailText: 'Никакая команда не считается выполненной без подтверждения.', busy: false });
+      const raw = error && error.message ? String(error.message) : String(error);
+      const lower = raw.toLowerCase();
+      let message = 'Ошибка RE:Vision: ' + raw;
+      let detail = 'Этап: ' + (error && error.stage ? error.stage : 'не определён') + '.';
+      if (error && error.statusCode === 401) {
+        message = 'RE:Vision отклонил PIN доступа. Проверь PIN в настройках агента и введи тот же PIN, который показан в приложении RE:Vision.';
+        detail += ' Ответ моста: HTTP 401 — сервер доступен, но PIN не совпадает.';
+      } else if (error && error.statusCode === 404) {
+        message = 'RE:Vision получил запрос, но такой адрес не найден. Обнови приложение RE:Vision.';
+        detail += ' Ответ моста: HTTP 404.';
+      } else if (error && error.networkFailure) {
+        message = 'Не удалось достучаться до RE:Vision на очках. Сам запрос не получил HTTP-ответ.';
+        detail += ' Точная ошибка AIUI: ' + raw;
+      }
+      this.setData({ statusText: message, detailText: detail, busy: false });
       speak(message);
-      console.error('RE:Vision action failed', error);
+      console.error('RE:Vision action failed', { message: raw, stage: error && error.stage, statusCode: error && error.statusCode });
     }
   }
 };
