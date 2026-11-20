@@ -6,6 +6,12 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.ComponentName;
 import android.provider.Settings;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
@@ -192,7 +198,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         String path = target.split("\\?", 2)[0];
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
-                ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path)));
+                ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
+                ("GET".equals(method) && "/wifi/status".equals(path));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
@@ -212,6 +219,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, executeCommand(new String(body, StandardCharsets.UTF_8)));
         } else if ("POST".equals(method) && "/wifi".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
+        } else if ("GET".equals(method) && "/wifi/status".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, wifiStatus());
         } else {
             writeResponse(socket.getOutputStream(), 404, error("not_found"));
         }
@@ -249,6 +258,51 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         return response;
     }
 
+
+
+    /** Returns the current Wi-Fi connection without attempting to change networks. */
+    private JsonObject wifiStatus() {
+        JsonObject response = new JsonObject();
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        boolean enabled = false;
+        String ssid = null;
+        try {
+            enabled = wifi != null && wifi.isWifiEnabled();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ConnectivityManager connectivity = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                Network active = connectivity == null ? null : connectivity.getActiveNetwork();
+                NetworkCapabilities caps = active == null || connectivity == null
+                        ? null : connectivity.getNetworkCapabilities(active);
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                        && caps.getTransportInfo() instanceof WifiInfo) {
+                    ssid = ((WifiInfo) caps.getTransportInfo()).getSSID();
+                }
+            }
+            if ((ssid == null || ssid.trim().isEmpty()) && wifi != null) {
+                WifiInfo info = wifi.getConnectionInfo();
+                if (info != null) ssid = info.getSSID();
+            }
+        } catch (SecurityException e) {
+            response.addProperty("permissionRequired", true);
+        } catch (Exception ignored) {
+        }
+        if (ssid != null) {
+            ssid = ssid.trim();
+            if (ssid.length() >= 2 && ssid.startsWith("\\\"") && ssid.endsWith("\\\"")) {
+                ssid = ssid.substring(1, ssid.length() - 1);
+            }
+            if ("<unknown ssid>".equalsIgnoreCase(ssid) || "unknown ssid".equalsIgnoreCase(ssid)
+                    || "0x".equalsIgnoreCase(ssid)) ssid = null;
+        }
+        response.addProperty("ok", true);
+        response.addProperty("enabled", enabled);
+        response.addProperty("connected", ssid != null && !ssid.isEmpty());
+        if (ssid != null && !ssid.isEmpty()) response.addProperty("ssid", ssid);
+        response.addProperty("message", ssid == null || ssid.isEmpty()
+                ? "Wi-Fi is enabled but the current SSID is unavailable."
+                : "Connected to " + ssid);
+        return response;
+    }
 
     /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
     private JsonObject openWifiSettings() throws Exception {
