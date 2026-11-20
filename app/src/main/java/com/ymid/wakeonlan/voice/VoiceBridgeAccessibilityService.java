@@ -288,7 +288,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         }
         if (ssid != null) {
             ssid = ssid.trim();
-            if (ssid.length() >= 2 && ssid.startsWith("\\\"") && ssid.endsWith("\\\"")) {
+            if (ssid.length() >= 2 && ssid.charAt(0) == '"' && ssid.charAt(ssid.length() - 1) == '"') {
                 ssid = ssid.substring(1, ssid.length() - 1);
             }
             if ("<unknown ssid>".equalsIgnoreCase(ssid) || "unknown ssid".equalsIgnoreCase(ssid)
