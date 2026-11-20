@@ -9,12 +9,30 @@ import androidx.annotation.NonNull;
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public class AddDeviceActivity extends ModifyDeviceActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        deviceNameInput.setText(nextDeviceName());
         triggerRemoteShutdownLayoutVisibility(false);
+    }
+
+    private String nextDeviceName() {
+        int next = 1;
+        Pattern pattern = Pattern.compile("^Устройство\\s+(\\d+)$", Pattern.CASE_INSENSITIVE);
+        for (Device existing : deviceRepository.getAll()) {
+            if (existing.name == null) continue;
+            Matcher matcher = pattern.matcher(existing.name.trim());
+            if (matcher.matches()) {
+                try { next = Math.max(next, Integer.parseInt(matcher.group(1)) + 1); }
+                catch (NumberFormatException ignored) { }
+            }
+        }
+        return "Устройство " + next;
     }
 
     @Override
