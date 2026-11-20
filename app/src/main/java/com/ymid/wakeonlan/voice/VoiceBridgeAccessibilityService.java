@@ -17,6 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -96,6 +97,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile boolean running;
     private ServerSocket serverSocket;
     private Thread serverThread;
+    private volatile String pendingWifiTarget;
+    private volatile long pendingWifiSelectionUntilMs;
 
     @Override
     public void onServiceConnected() {
@@ -105,7 +108,34 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // Intentionally empty. The service only provides a local command endpoint.
+        // Select only the exact SSID requested by the user's voice command, and only
+        // inside Android Settings. Never click unrelated controls or confirm dialogs.
+        String target = pendingWifiTarget;
+        if (target == null) return;
+        if (System.currentTimeMillis() > pendingWifiSelectionUntilMs) {
+            pendingWifiTarget = null;
+            return;
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+        CharSequence packageName = root.getPackageName();
+        if (packageName == null || !packageName.toString().contains("settings")) return;
+        List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(target);
+        if (matches == null) return;
+        for (AccessibilityNodeInfo match : matches) {
+            CharSequence label = match.getText();
+            CharSequence description = match.getContentDescription();
+            boolean exact = (label != null && target.equalsIgnoreCase(label.toString().trim()))
+                    || (description != null && target.equalsIgnoreCase(description.toString().trim()));
+            if (!exact) continue;
+            AccessibilityNodeInfo clickable = match;
+            while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
+            if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                pendingWifiTarget = null;
+                Log.i(TAG, "Selected requested Wi-Fi network: " + target);
+                return;
+            }
+        }
     }
 
     @Override
@@ -385,12 +415,18 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             invalid.addProperty("message", "Назови сеть: Студио или Локал нетворк.");
             return invalid;
         }
+        pendingWifiTarget = target;
+        pendingWifiSelectionUntilMs = System.currentTimeMillis() + 15_000L;
         JsonObject opened = openWifiSettings();
-        if (!opened.has("ok") || !opened.get("ok").getAsBoolean()) return opened;
+        if (!opened.has("ok") || !opened.get("ok").getAsBoolean()) {
+            pendingWifiTarget = null;
+            return opened;
+        }
         opened.addProperty("targetSsid", target);
+        opened.addProperty("automaticSelectionAttempted", true);
         opened.addProperty("selectionRequired", true);
-        opened.addProperty("message", "Открыл системный выбор Wi-Fi. Выбери сеть " + target +
-                " и подтверди подключение, если Android запросит подтверждение. Затем проверь подключение командой «Ревижн, проверь Wi-Fi».");
+        opened.addProperty("message", "Открыл Wi-Fi и пытаюсь выбрать сеть " + target +
+                ". Если Android покажет запрос подтверждения или пароль, подтверди его вручную.");
         return opened;
     }
 
