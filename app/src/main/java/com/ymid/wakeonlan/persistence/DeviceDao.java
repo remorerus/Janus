@@ -15,7 +15,7 @@ import com.ymid.wakeonlan.persistence.entities.DeviceEntity;
 @Dao
 public interface DeviceDao {
 
-    @Query("SELECT * FROM Devices")
+    @Query("SELECT * FROM Devices ORDER BY id ASC")
     List<DeviceEntity> getAll();
 
     @Query("SELECT * FROM Devices")
