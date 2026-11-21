@@ -3,12 +3,12 @@
     <string name="voice_bridge_accessibility_description">Allows the RE:Vision voice agent to send local device commands without opening the app. Does not read screen content or simulate taps.</string>
     <string name="voice_bridge_enable_title">Enable voice command bridge</string>
     <string name="voice_bridge_enable_summary">Open Android Accessibility settings and enable RE:Vision Voice Bridge once.</string>
-    <string name="voice_bridge_token_title">AIUI voice bridge access key</string>
-    <string name="voice_bridge_token_summary">Copy the private key and paste it into RE:Vision Voice Agent settings.</string>
-    <string name="voice_bridge_token_dialog_title">RE:Vision local access key</string>
+    <string name="voice_bridge_token_title">AIUI Voice Bridge PIN (4 digits)</string>
+    <string name="voice_bridge_token_summary">Copy the four-digit PIN and enter it in the latest RE:Vision AIUI agent settings.</string>
+    <string name="voice_bridge_token_dialog_title">RE:Vision local PIN</string>
     <string name="voice_bridge_token_dialog_message">Copy this key into the RE:Vision Voice Agent settings. Do not share or publish it.\n\n%1$s</string>
-    <string name="voice_bridge_token_copy">Copy key</string>
-    <string name="voice_bridge_token_copied">Access key copied</string>
+    <string name="voice_bridge_token_copy">Copy PIN</string>
+    <string name="voice_bridge_token_copied">PIN copied</string>
 
     <!-- Titles -->
     <string name="app_name">RE:Vision</string>

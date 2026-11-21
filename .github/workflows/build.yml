@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - revision-aiui-agent
+      - revision-1.9.9-pin
     paths:
       - "app/**"
       - "*.gradle"
