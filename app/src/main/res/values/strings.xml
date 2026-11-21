@@ -6,7 +6,7 @@
     <string name="voice_bridge_token_title">AIUI Voice Bridge PIN (4 digits)</string>
     <string name="voice_bridge_token_summary">Copy the four-digit PIN and enter it in the latest RE:Vision AIUI agent settings.</string>
     <string name="voice_bridge_token_dialog_title">RE:Vision local PIN</string>
-    <string name="voice_bridge_token_dialog_message">Copy this key into the RE:Vision Voice Agent settings. Do not share or publish it.\n\n%1$s</string>
+    <string name="voice_bridge_token_dialog_message">Enter this four-digit PIN in the latest RE:Vision AIUI agent settings. Do not share it.\n\n%1$s</string>
     <string name="voice_bridge_token_copy">Copy PIN</string>
     <string name="voice_bridge_token_copied">PIN copied</string>
 
