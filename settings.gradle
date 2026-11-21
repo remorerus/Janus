@@ -1,2 +1,2 @@
 rootProject.name = "WakeOnLan"
-include ':app', 'ping'
+include ':app', 'ping', ':rokid-standalone-test'
