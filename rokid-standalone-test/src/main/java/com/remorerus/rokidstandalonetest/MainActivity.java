@@ -61,8 +61,7 @@ public final class MainActivity extends Activity {
         scroll.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("RE:Vision
-Автономная проверка Rokid");
+        title.setText("RE:Vision\nАвтономная проверка Rokid");
         title.setTextSize(24);
         title.setPadding(0, 0, 0, dp(14));
         root.addView(title);
