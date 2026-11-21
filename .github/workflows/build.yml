@@ -28,16 +28,19 @@ jobs:
         with:
           java-version: "17"
           distribution: temurin
-      - name: Configure persistent RE:Vision signing (when secrets are configured)
-        if: ${{ secrets.REVISION_KEYSTORE_BASE64 != '' && secrets.REVISION_KEYSTORE_PASSWORD != '' }}
+      - name: Configure persistent RE:Vision signing
         env:
-          REVISION_KEYSTORE_BASE64: ${{ secrets.REVISION_KEYSTORE_BASE64 }}
-          REVISION_KEYSTORE_PASSWORD: ${{ secrets.REVISION_KEYSTORE_PASSWORD }}
+          REVISION_SIGNING_BUNDLE: ${{ secrets.REVISION_SIGNING_BUNDLE }}
         run: |
+          test -n "$REVISION_SIGNING_BUNDLE" || { echo "Missing GitHub Actions secret REVISION_SIGNING_BUNDLE"; exit 1; }
+          KEYSTORE_PASSWORD="$(printf '%s' "$REVISION_SIGNING_BUNDLE" | sed -n '1p')"
+          KEYSTORE_BASE64="$(printf '%s' "$REVISION_SIGNING_BUNDLE" | sed '1d' | tr -d '\r\n')"
+          test -n "$KEYSTORE_PASSWORD" && test -n "$KEYSTORE_BASE64"
           mkdir -p "$HOME/.android"
-          printf '%s' "$REVISION_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/revision-signing.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/revision-signing.jks"
+          echo "::add-mask::$KEYSTORE_PASSWORD"
           echo "REVISION_KEYSTORE_PATH=$HOME/.android/revision-signing.jks" >> "$GITHUB_ENV"
-          echo "REVISION_KEYSTORE_PASSWORD=$REVISION_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "REVISION_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
       - name: Build APK
         run: |
           chmod +x ./gradlew
