@@ -11,6 +11,9 @@ on:
       - "gradle/**"
       - "gradle.properties"
       - ".github/workflows/build-rokid-standalone-test.yml"
+  pull_request:
+    branches:
+      - revision-aiui-agent
   workflow_dispatch:
 
 permissions:
