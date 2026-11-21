@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - revision-aiui-agent
+      - revision-r08-stability
     paths:
       - "app/**"
       - "*.gradle"
