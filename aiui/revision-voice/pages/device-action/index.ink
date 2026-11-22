@@ -145,7 +145,7 @@ const TOKEN_KEY = 'revision_bridge_token';
 
 function validBridgeToken(value) {
   const token = String(value == null ? '' : value).trim();
-  return /^\\d{4}$/.test(token) ? token : '';
+  return /^\d{4}$/.test(token) ? token : '';
 }
 
 function readBridgeToken() {
