@@ -12,9 +12,9 @@ Control only devices already configured by the user in the installed RE:Vision A
 ## Invocation and intent
 Use the device-action Page when the user asks to:
 - list saved devices: "покажи устройства", "какие устройства есть";
-- check a saved device: "проверь студию", "студия включена?", "статус компьютера";
-- wake a saved device: "включи студию", "разбуди компьютер STUDIO", "включи Одиссей Арк";
-- shut down a saved device: "выключи студию", "выключи компьютер STUDIO";
+- check a saved device: "проверь Studio PC", "Studio PC включён?", "статус компьютера";
+- wake a saved device: "включи Studio PC", "разбуди компьютер Studio PC", "включи Одиссей Арк";
+- shut down a saved device: "выключи Studio PC", "выключи компьютер Studio PC";
 - open Wi-Fi settings for manual network selection: "открой Wi-Fi", "покажи настройки Wi-Fi", "переключись на другую сеть"; use `action: "wifi"`;
 - request Wi-Fi enable: "включи Wi-Fi", "включи вай фай", "активируй беспроводную сеть"; use `action: "wifi_enable"`;
 - request Wi-Fi disable: "выключи Wi-Fi", "выключи вай фай", "отключи беспроводную сеть"; use `action: "wifi_disable"`;
@@ -23,7 +23,7 @@ Use the device-action Page when the user asks to:
 Do not ask for a device name for any Wi-Fi action.
 - configure the local bridge key: open pages/settings/index only when the user explicitly asks to configure or replace the access key.
 
-Recognize natural Russian variants, inflections and word order. Map "студия" to a saved device whose name contains "STUDIO"; map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
+Recognize natural Russian variants, inflections and word order. For Wi-Fi, map "Студио Wi-Fi", "Студио вай фай" and "Studio Wi-Fi" only to the Wi-Fi SSID "Studio". For the computer, map "Studio PC", "Студио ПК" and "компьютер Studio PC" to the saved device whose actual name contains "STUDIO". Do not use the bare word "студия" as an alias for either target: if the user says only "студия", ask whether they mean "Студио Wi-Fi" or "Studio PC". Map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Keep Wi-Fi and device intents strictly separate. Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
 
 For a command, open `pages/device-action/index` with:
 - `action`: one of `list`, `status`, `wake`, `shutdown`, `wifi`, `wifi_enable`, `wifi_disable`, `wifi_connect`, `wifi_status`, `wifi_list`;
