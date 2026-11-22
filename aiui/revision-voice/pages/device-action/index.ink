@@ -8,8 +8,8 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_connect — запросить сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_enable", "wifi_disable", "wifi_connect", "wifi_status", "wifi_list"],
+          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — открыть системную панель для включения Wi-Fi; wifi_disable — открыть системную панель для выключения Wi-Fi; wifi_connect — запросить сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -161,7 +161,7 @@ export default {
     try {
       const health = await requestWithRetry('/health', 'GET', '', null, 4);
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
-      if (['wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
+      if (['wifi', 'wifi_enable', 'wifi_disable', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
         this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
         speak(message);
@@ -173,6 +173,20 @@ export default {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
         speak('Связь с RE:Vision есть. Нужно настроить ключ доступа.');
+        return;
+      }
+
+      if (action === 'wifi_enable' || action === 'wifi_disable') {
+        const enabled = action === 'wifi_enable';
+        const result = await request('/wifi/toggle', 'POST', token, { enabled });
+        if (!result || result.ok !== true || result.opened !== true) {
+          throw new Error(result && result.error ? result.error : 'Не удалось открыть системную панель Wi-Fi');
+        }
+        const message = enabled
+          ? 'Открыл системную панель. Нажми Wi-Fi, чтобы включить его. После этого скажи: Ревижн, проверь Wi-Fi.'
+          : 'Открыл системную панель. Нажми Wi-Fi, чтобы выключить его. После этого скажи: Ревижн, проверь Wi-Fi.';
+        this.setData({ statusText: message, detailText: 'Android требует ручного подтверждения переключения.', resultText: message, busy: false });
+        speak(message);
         return;
       }
 
