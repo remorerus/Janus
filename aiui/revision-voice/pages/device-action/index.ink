@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "RE:Vision",
-  "description": "Единый голосовой агент RE:Vision для Rokid. Вызывается только через Hi Rokid. Обрабатывает распознанную Hi Rokid команду: показывает сохранённые устройства, проверяет доступность, включает и выключает настроенные устройства, открывает Wi-Fi. Не запускает собственный микрофон и не использует автономное распознавание речи.",
+  "description": "Единый голосовой агент RE:Vision для Rokid. Вызывается только через Hi Rokid. Обрабатывает распознанную Hi Rokid команду: показывает сохранённые устройства, проверяет доступность, управляет Wi-Fi через RE:Vision и сообщает фактическое состояние подключения. Не запускает собственный микрофон и не использует автономное распознавание речи.",
   "schema": {
     "data": {
       "type": "object",
@@ -9,7 +9,7 @@
         "action": {
           "type": "string",
           "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_enable", "wifi_disable", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — открыть системную панель для включения Wi-Fi; wifi_disable — открыть системную панель для выключения Wi-Fi; wifi_connect — запросить сеть по имени (Студио Wi-Fi = SSID Studio, Локал нетворк = Local_Network_5G; Studio PC — отдельное имя компьютера, не Wi-Fi); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — включить Wi-Fi через RE:Vision и проверить фактическое состояние; wifi_disable — выключить Wi-Fi через RE:Vision и проверить фактическое состояние; wifi_connect — запросить сеть по имени (Студио Wi-Fi = SSID Studio, Локал нетворк = Local_Network_5G; Studio PC — отдельное имя компьютера, не Wi-Fi); wifi_status — сообщить включён ли Wi-Fi, есть ли активное подключение и точное имя текущей сети (SSID), если Android его предоставляет; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -179,13 +179,26 @@ export default {
       if (action === 'wifi_enable' || action === 'wifi_disable') {
         const enabled = action === 'wifi_enable';
         const result = await request('/wifi/toggle', 'POST', token, { enabled });
-        if (!result || result.ok !== true || result.opened !== true) {
-          throw new Error(result && result.error ? result.error : 'Не удалось открыть системную панель Wi-Fi');
+        if (!result || result.ok !== true) {
+          throw new Error(result && result.error ? result.error : 'RE:Vision не смог изменить состояние Wi-Fi');
         }
-        const message = enabled
-          ? 'Открыл системную панель. Нажми Wi-Fi, чтобы включить его. После этого скажи: Ревижн, проверь Wi-Fi.'
-          : 'Открыл системную панель. Нажми Wi-Fi, чтобы выключить его. После этого скажи: Ревижн, проверь Wi-Fi.';
-        this.setData({ statusText: message, detailText: 'Android требует ручного подтверждения переключения.', resultText: message, busy: false });
+        let message;
+        let detail;
+        if (result.verified === true && result.enabled === enabled) {
+          message = enabled ? 'Wi-Fi включён. Проверка подтвердила состояние.' : 'Wi-Fi выключен. Проверка подтвердила состояние.';
+          detail = result.ssid ? 'Текущая сеть: ' + result.ssid : 'Фактическое состояние радиомодуля проверено.';
+        } else if (result.requiresUserAction === true && result.opened === true) {
+          message = enabled
+            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системную панель: включи Wi-Fi вручную.'
+            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системную панель: выключи Wi-Fi вручную.';
+          detail = 'Само переключение пока не подтверждено.';
+        } else {
+          message = enabled
+            ? 'Запрос на включение Wi-Fi отправлен, но включение пока не подтверждено.'
+            : 'Запрос на выключение Wi-Fi отправлен, но выключение пока не подтверждено.';
+          detail = 'Скажи: Ревижн, проверь Wi-Fi.';
+        }
+        this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
         speak(message);
         return;
       }
@@ -215,14 +228,16 @@ export default {
 
       if (action === 'wifi_status') {
         const state = await request('/wifi/status', 'GET', token);
-        const message = state && state.connected
-          ? 'Сейчас подключено к сети ' + state.ssid + '.'
-          : (state && state.locationPermission === false
-              ? 'Дай RE:Vision разрешение на местоположение, чтобы Android разрешил читать имя Wi-Fi сети.'
-              : state && state.locationEnabled === false
-                  ? 'Включи геолокацию на очках: Android скрывает имя Wi-Fi сети, пока она выключена.'
-                  : (state && state.enabled ? 'Wi-Fi включён, но имя текущей сети недоступно.' : 'Wi-Fi выключен или соединение отсутствует.'));
-        this.setData({ statusText: message, detailText: state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : '', resultText: message, busy: false });
+        const message = state && state.connected && state.ssid
+          ? 'Сейчас ты подключён к сети ' + state.ssid + '.'
+          : (state && state.connected
+              ? 'Wi-Fi подключён, но Android или прошивка Rokid скрывает имя текущей сети.'
+              : (state && state.locationPermission === false
+                  ? 'RE:Vision не получил разрешение на местоположение, необходимое Android для чтения имени Wi-Fi сети.'
+                  : state && state.locationEnabled === false
+                      ? 'Геолокация выключена. Android может скрывать имя Wi-Fi сети.'
+                      : (state && state.enabled ? 'Wi-Fi включён, но активное подключение к сети не обнаружено.' : 'Wi-Fi выключен.')));
+        this.setData({ statusText: message, detailText: state && state.ssidUnreadable ? 'Подключение обнаружено, но SSID не предоставлен Android/прошивкой.' : (state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : ''), resultText: message, busy: false });
         speak(message);
         return;
       }
