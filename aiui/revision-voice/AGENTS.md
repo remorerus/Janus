@@ -51,7 +51,7 @@ The Android application exposes a loopback-only HTTP bridge at `http://127.0.0.1
 - authenticated `POST /command` with `{ "action": "wake" | "shutdown", "deviceId": number }`
 The shared secret is stored only in AIUI local storage and in RE:Vision's local settings. Never place a real token in source control, logs, prompts or screenshots.
 
-The bridge currently needs its authentication update in the Android project before device actions can be enabled. Until a valid token is configured and the Android side enforces it, do not send device commands.
+The Android bridge enforces the shared token. Before any protected action, read the token from AIUI local storage and send it in the `X-Revision-Token` header. If the token is missing or rejected, explain the authentication problem and ask the user to configure the matching key; do not claim that the agent is disconnected.
 
 ## Runtime constraints
 - Do not assume that `127.0.0.1` in AIUI reaches the Android app. Verify this on the actual glasses; AIUI networking may be routed through the paired phone over Bluetooth.
