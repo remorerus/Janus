@@ -547,6 +547,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             try { Thread.sleep(2500L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             JsonObject r = new JsonObject();
             r.addProperty("ok", true);
+            r.addProperty("opened", true);
             r.addProperty("targetSsid", target);
             r.addProperty("connected", false);
             r.addProperty("verified", false);
@@ -577,6 +578,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
         JsonObject result = new JsonObject();
         result.addProperty("ok", true);
+        result.addProperty("opened", true);
         result.addProperty("targetSsid", target);
         result.addProperty("connected", false);
         result.addProperty("verified", false);
