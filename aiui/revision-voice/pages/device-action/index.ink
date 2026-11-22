@@ -187,7 +187,9 @@ export default {
         const message = action === 'wifi_connect'
           ? (result.connected === true
               ? 'Уже подключено к сети ' + result.targetSsid + '.'
-              : 'Открыл системный выбор Wi-Fi для сети ' + result.targetSsid + '. Если Android попросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.')
+              : (result.verified === false && result.message
+                  ? result.message
+                  : 'Открыл системный выбор Wi-Fi для сети ' + result.targetSsid + '. Если Android попросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'))
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
         this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + result.targetSsid + '. Подключение ещё не подтверждено.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
         speak(message);
@@ -198,7 +200,11 @@ export default {
         const state = await request('/wifi/status', 'GET', token);
         const message = state && state.connected
           ? 'Сейчас подключено к сети ' + state.ssid + '.'
-          : (state && state.enabled ? 'Wi-Fi включён, но имя текущей сети недоступно.' : 'Wi-Fi выключен или соединение отсутствует.');
+          : (state && state.locationPermission === false
+              ? 'Дай RE:Vision разрешение на местоположение, чтобы Android разрешил читать имя Wi-Fi сети.'
+              : state && state.locationEnabled === false
+                  ? 'Включи геолокацию на очках: Android скрывает имя Wi-Fi сети, пока она выключена.'
+                  : (state && state.enabled ? 'Wi-Fi включён, но имя текущей сети недоступно.' : 'Wi-Fi выключен или соединение отсутствует.'));
         this.setData({ statusText: message, detailText: state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : '', resultText: message, busy: false });
         speak(message);
         return;
