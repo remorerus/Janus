@@ -198,14 +198,17 @@ export default {
         if (!result || result.ok !== true || result.opened !== true) {
           throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
         }
+        const resolvedTarget = result && typeof result.targetSsid === 'string' && result.targetSsid.trim()
+          ? result.targetSsid.trim()
+          : (targetNetwork || 'запрошенная сеть');
         const message = action === 'wifi_connect'
           ? (result.connected === true
-              ? 'Уже подключено к сети ' + result.targetSsid + '.'
-              : (result.verified === false && result.message
-                  ? result.message
-                  : 'Открыл системный выбор Wi-Fi для сети ' + result.targetSsid + '. Если Android попросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'))
+              ? 'Уже подключено к сети ' + resolvedTarget + '.'
+              : (result.selectionClicked === true
+                  ? 'Сеть ' + resolvedTarget + ' выбрана. Проверить подключение можно командой: Ревижн, проверь Wi-Fi.'
+                  : 'Открыл список Wi-Fi и запустил автоматический выбор сети ' + resolvedTarget + '. Закрой карточку голосового сообщения, чтобы настройки стали активны. Затем скажи: Ревижн, проверь Wi-Fi.'))
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
-        this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + result.targetSsid + '. Подключение ещё не подтверждено.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
+        this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + resolvedTarget + '. Автоматический выбор ожидает активности системных настроек.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
         speak(message);
         return;
       }
