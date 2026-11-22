@@ -149,8 +149,15 @@ export default {
   },
 
   async onLoad(query) {
-    const action = String(query.action || '').toLowerCase();
-    const rawRequestedName = query.deviceName ?? query.device ?? '';
+    const action = String((query && query.action) || '').toLowerCase().trim();
+    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'];
+    if (!allowedActions.includes(action)) {
+      const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
+      this.setData({ statusText: message, detailText: 'Не получено корректное значение action. Команды микрофона выполняются средствами Rokid и не относятся к RE:Vision.', busy: false });
+      speak(message);
+      return;
+    }
+    const rawRequestedName = query && (query.deviceName ?? query.device) || '';
     const requestedText = String(rawRequestedName).trim();
     const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
