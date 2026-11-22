@@ -1,5 +1,10 @@
 <resources>
     <string name="voice_bridge_service_name">RE:Vision Voice Bridge</string>
+    <string name="voice_bridge_local_category">Локальный доступ (Voice Bridge)</string>
+    <string name="voice_bridge_local_enabled_title">Включить локальный доступ</string>
+    <string name="voice_bridge_local_enabled_summary">Разрешает AIUI-агенту обращаться к RE:Vision через локальный мост.</string>
+    <string name="voice_bridge_local_status_title">Состояние локального доступа</string>
+    <string name="voice_bridge_local_status_waiting">Проверка состояния службы…</string>
     <string name="voice_bridge_accessibility_description">Allows the RE:Vision voice agent to send local device commands without opening the app. Does not read screen content or simulate taps.</string>
     <string name="voice_bridge_enable_title">Enable voice command bridge</string>
     <string name="voice_bridge_enable_summary">Open Android Accessibility settings and enable RE:Vision Voice Bridge once.</string>
