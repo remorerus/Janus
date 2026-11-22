@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "RE:Vision",
-  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Вызывай этот агент, когда пользователь просит открыть Wi-Fi, показать доступные сети, переключиться на другую точку доступа или поменять сеть. Показывает сохранённые устройства, проверяет доступность, включает и выключает настроенные устройства; для Wi-Fi открывает системную панель выбора сети на самих очках.",
+  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства.",
   "schema": {
     "data": {
       "type": "object",
@@ -9,7 +9,7 @@
         "action": {
           "type": "string",
           "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_connect — запросить сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -185,7 +185,37 @@ export default {
         this.setData({ voiceStatus: 'Распознано: «' + transcript + '». Выполняю команду…' });
         const phrase = normalize(transcript);
         let action = '';
-        if (phrase.includes('покажиустройства') || phrase.includes('списокустройств') || phrase.includes('какиеустройства')) {
+        let deviceName = '';
+        let networkName = '';
+
+        const mentionsWifi = phrase.includes('wifi') || phrase.includes('вайфай') ||
+          phrase.includes('вайф') || phrase.includes('беспровод');
+        const asksCurrentNetwork = phrase.includes('какаясеть') ||
+          phrase.includes('назовисеть') || phrase.includes('имясети') ||
+          phrase.includes('текущаясеть') || phrase.includes('подключенаксети') ||
+          phrase.includes('подключенксети') || phrase.includes('сейчасподключено') ||
+          phrase.includes('проверисеть');
+        const asksNetworkList = phrase.includes('доступныесети') ||
+          phrase.includes('списоксетей') || phrase.includes('какиесетивижу') ||
+          phrase.includes('покажисети') || phrase.includes('найтисети');
+        const asksOpenWifi = phrase.includes('открой') || phrase.includes('открыть') ||
+          phrase.includes('настройки') || phrase.includes('параметры');
+        const asksConnect = phrase.includes('подключись') || phrase.includes('подключи') ||
+          phrase.includes('переключись') || phrase.includes('переключи');
+
+        if (mentionsWifi || asksCurrentNetwork || asksNetworkList) {
+          if (asksNetworkList) {
+            action = 'wifi_list';
+          } else if (asksCurrentNetwork || (!asksOpenWifi && !asksConnect)) {
+            action = 'wifi_status';
+          } else if (asksConnect) {
+            if (phrase.includes('студи') || phrase.includes('studio')) networkName = 'Studio';
+            else if (phrase.includes('локалнетворк') || phrase.includes('локал') || phrase.includes('localnetwork')) networkName = 'Local_Network_5G';
+            action = networkName ? 'wifi_connect' : 'wifi';
+          } else if (asksOpenWifi) {
+            action = 'wifi';
+          }
+        } else if (phrase.includes('покажиустройства') || phrase.includes('списокустройств') || phrase.includes('какиеустройства')) {
           action = 'list';
         } else if (phrase.includes('включи') || phrase.includes('разбуди')) {
           action = 'wake';
@@ -194,14 +224,15 @@ export default {
         } else if (phrase.includes('проверь') || phrase.includes('статус') || phrase.includes('доступен') || phrase.includes('всети')) {
           action = 'status';
         }
-        let deviceName = '';
+
         if (phrase.includes('студи') || phrase.includes('studio')) deviceName = 'STUDIO';
         else if (phrase.includes('одиссей') || phrase.includes('odyssey') || phrase.includes('арк')) deviceName = 'Odyssey Ark';
+
         if (!action) {
-          this.setData({ voiceStatus: 'Услышал: «' + transcript + '», но не понял команду. Скажи: покажи устройства, проверь студию, включи студию или выключи студию.' });
+          this.setData({ voiceStatus: 'Услышал: «' + transcript + '», но не понял команду. Для Wi-Fi скажи: проверь Wi-Fi, назови текущую сеть, покажи доступные сети или открой настройки Wi-Fi.' });
           return;
         }
-        this.onLoad({ action, deviceName });
+        this.onLoad({ action, deviceName, networkName });
       };
       recognition.start();
     } catch (error) {
