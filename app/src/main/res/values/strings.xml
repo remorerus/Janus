@@ -311,4 +311,20 @@
         <item>scan network</item>
         <item>find devices</item>
     </string-array>
+
+    <string name="wifi_access_category">Доступы и разрешения RE:Vision</string>
+    <string name="wifi_location_permission_status_title">Состояние доступа к Wi-Fi</string>
+    <string name="wifi_location_permission_status_checking">Проверка разрешения…</string>
+    <string name="wifi_location_permission_ready">Разрешение местоположения выдано, службы местоположения включены.</string>
+    <string name="wifi_location_permission_location_off">Разрешение выдано, но службы местоположения выключены.</string>
+    <string name="wifi_location_permission_missing">Разрешение местоположения не выдано. Фоновое переключение сохранённых сетей может быть недоступно.</string>
+    <string name="wifi_location_permission_request_title">Запросить разрешение местоположения</string>
+    <string name="wifi_location_permission_request_summary">Показать системный запрос Android для RE:Vision.</string>
+    <string name="wifi_location_permission_already_granted">Разрешение уже выдано.</string>
+    <string name="app_permissions_title">Открыть разрешения RE:Vision</string>
+    <string name="app_permissions_summary">Перейти на системную страницу приложения, где можно проверить разрешения.</string>
+    <string name="location_settings_title">Настройки служб местоположения</string>
+    <string name="location_settings_summary">Открыть системный переключатель местоположения.</string>
+    <string name="app_permissions_settings_unavailable">Не удалось открыть системные настройки на этом устройстве.</string>
+
 </resources>
