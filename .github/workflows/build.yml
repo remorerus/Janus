@@ -1,4 +1,4 @@
-run-name: RE:Vision signed APK build (${{ github.ref_name }})
+run-name: RE:Vision signed APK build (${{ github.ref_name }}) # Wi-Fi diagnostics rebuild
 name: Build RE:Vision APK
 
 on:
