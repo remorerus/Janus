@@ -389,9 +389,14 @@ public class SettingsActivity extends AppCompatActivity {
             if (status == null) return;
             boolean permissionGranted = ContextCompat.checkSelfPermission(requireContext(),
                     Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean nearbyGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                    || ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.NEARBY_WIFI_DEVICES)
+                    == PackageManager.PERMISSION_GRANTED;
             boolean locationEnabled = isLocationEnabled();
-            if (permissionGranted && locationEnabled) {
+            if (permissionGranted && nearbyGranted && locationEnabled) {
                 status.setSummary(R.string.wifi_location_permission_ready);
+            } else if (permissionGranted && !nearbyGranted) {
+                status.setSummary(R.string.wifi_nearby_permission_missing);
             } else if (permissionGranted) {
                 status.setSummary(R.string.wifi_location_permission_location_off);
             } else {
