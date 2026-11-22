@@ -143,12 +143,50 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 .toLowerCase(java.util.Locale.ROOT);
     }
 
+    private static boolean matchesSsidLabel(CharSequence value, String targetNorm) {
+        String label = norm(value);
+        if (label.equals(targetNorm)) return true;
+        if (!label.startsWith(targetNorm) || label.length() <= targetNorm.length()) return false;
+
+        char separator = label.charAt(targetNorm.length());
+        // Settings variants append status details to the SSID. Do not match a
+        // different SSID that merely begins with the requested name.
+        if (separator == ',' || separator == ':' || separator == '(' || separator == '['
+                || separator == '-' || separator == '–' || separator == '—'
+                || separator == '·' || separator == '•' || separator == '\\n') {
+            return true;
+        }
+        if (Character.isWhitespace(separator)) {
+            String suffix = label.substring(targetNorm.length()).trim();
+            String[] knownStatus = {
+                    "connected", "saved", "secured", "wifi", "wi-fi", "signal",
+                    "подключено", "сохранено", "защищено", "сигнал", "уровень"
+            };
+            for (String status : knownStatus) {
+                if (suffix.startsWith(status)) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean labelMatches(AccessibilityNodeInfo n, String targetNorm) {
-        String t = norm(n.getText());
-        String d = norm(n.getContentDescription());
-        if (t.equals(targetNorm) || d.equals(targetNorm)) return true;
-        // Some Settings builds describe a row as "<SSID>, Wi-Fi signal full, Secured".
-        return d.startsWith(targetNorm + ",");
+        return n != null && (matchesSsidLabel(n.getText(), targetNorm)
+                || matchesSsidLabel(n.getContentDescription(), targetNorm));
+    }
+
+    private static boolean clickMatchingWifiNode(AccessibilityNodeInfo node, String targetNorm) {
+        if (node == null) return false;
+        if (labelMatches(node, targetNorm)) {
+            AccessibilityNodeInfo clickable = node;
+            while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
+            if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (clickMatchingWifiNode(node.getChild(i), targetNorm)) return true;
+        }
+        return false;
     }
 
     private static boolean scrollForward(AccessibilityNodeInfo node) {
@@ -193,10 +231,19 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     pendingWifiTarget = null;
                     pendingWifiSelectionClicked = true;
-                    Log.i(TAG, "Wi-Fi select: clicked row for " + target + " in " + pkg);
+                    Log.i(TAG, "Wi-Fi select: clicked matching row for " + target + " in " + pkg);
                     return;
                 }
             }
+        }
+        // Some firmware exposes the SSID only in a nested content description,
+        // or combines it with a status label. Walk the full accessibility tree
+        // as a fallback instead of relying only on findAccessibilityNodeInfosByText.
+        if (clickMatchingWifiNode(root, targetNorm)) {
+            pendingWifiTarget = null;
+            pendingWifiSelectionClicked = true;
+            Log.i(TAG, "Wi-Fi select: clicked row via accessibility tree for " + target + " in " + pkg);
+            return;
         }
         // The SSID may be below the fold on the small glasses display.
         if (pendingWifiScrollSteps < 12 && scrollForward(root)) {
