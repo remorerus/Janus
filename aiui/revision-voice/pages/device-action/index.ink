@@ -8,12 +8,16 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "enum": ["list", "status", "wake", "shutdown", "wifi_toggle", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_toggle — непосредственно включить или выключить Wi-Fi через Android Voice Bridge; для него обязательно передай enabled=true при «включи Wi-Fi» и enabled=false при «выключи Wi-Fi». Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
           "description": "Целевая сеть Wi-Fi: Студио / Studio или Локал нетворк / Local_Network_5G."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Требуется только для wifi_toggle: true — включить Wi-Fi, false — выключить Wi-Fi."
         },
         "deviceName": {
           "type": "string",
@@ -150,7 +154,7 @@ export default {
 
   async onLoad(query) {
     const action = String((query && query.action) || '').toLowerCase().trim();
-    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'];
+    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'];
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
       this.setData({ statusText: message, detailText: 'Не получено корректное значение action. Команды микрофона выполняются средствами Rokid и не относятся к RE:Vision.', busy: false });
@@ -170,7 +174,7 @@ export default {
     try {
       const health = await requestWithRetry('/health', 'GET', '', null, 4);
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
-      if (['wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
+      if (['wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
         this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
         speak(message);
@@ -182,6 +186,38 @@ export default {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
         speak('Связь с RE:Vision есть. Нужно настроить ключ доступа.');
+        return;
+      }
+
+      if (action === 'wifi_toggle') {
+        if (typeof query.enabled !== 'boolean') {
+          const message = 'Уточни действие: включить или выключить Wi-Fi?';
+          this.setData({ statusText: message, detailText: 'Не получил параметр enabled=true или enabled=false. Настройки не открывал.', busy: false });
+          speak(message);
+          return;
+        }
+        const requestedEnabled = query.enabled;
+        const result = await request('/wifi/toggle', 'POST', token, { enabled: requestedEnabled });
+        if (!result || result.ok !== true) {
+          throw new Error(result && result.error ? result.error : 'Android не выполнил переключение Wi-Fi');
+        }
+        if (result.verified === true && result.enabled === requestedEnabled) {
+          const message = requestedEnabled ? 'Wi-Fi включён. Состояние проверено.' : 'Wi-Fi выключен. Состояние проверено.';
+          this.setData({ statusText: message, detailText: result.ssid ? 'Сеть: ' + result.ssid : '', resultText: message, busy: false });
+          speak(message);
+          return;
+        }
+        if (result.requiresUserAction === true) {
+          const message = requestedEnabled
+            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системную панель для подтверждения.'
+            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системную панель для подтверждения.';
+          this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системной панели.', resultText: message, busy: false });
+          speak(message);
+          return;
+        }
+        const message = 'Запрос на изменение Wi-Fi отправлен, но новое состояние не подтверждено.';
+        this.setData({ statusText: message, detailText: JSON.stringify(result), resultText: message, busy: false });
+        speak(message);
         return;
       }
 
