@@ -327,4 +327,26 @@
     <string name="location_settings_summary">Открыть системный переключатель местоположения.</string>
     <string name="app_permissions_settings_unavailable">Не удалось открыть системные настройки на этом устройстве.</string>
 
+
+    <string name="wifi_scan_permissions_title">Разрешения для поиска Wi-Fi</string>
+    <string name="wifi_scan_permissions_summary">Запросить доступ к ближайшим Wi-Fi устройствам и местоположению, если он требуется этой версией Android.</string>
+    <string name="wifi_scan_permissions_already_granted">Разрешения для поиска Wi-Fi уже выданы.</string>
+    <string name="notification_access_category">Уведомления</string>
+    <string name="notification_permission_status_title">Состояние уведомлений</string>
+    <string name="notification_permission_status_checking">Проверка разрешения…</string>
+    <string name="notification_permission_ready">Уведомления RE:Vision разрешены.</string>
+    <string name="notification_permission_missing">Уведомления запрещены. Открой настройки и разреши их.</string>
+    <string name="notification_permission_request_title">Разрешить уведомления</string>
+    <string name="notification_permission_request_summary">Запросить разрешение Android или открыть системные настройки уведомлений.</string>
+    <string name="notification_settings_title">Настройки уведомлений RE:Vision</string>
+    <string name="notification_settings_summary">Управление уведомлениями и их каналами.</string>
+    <string name="background_access_category">Работа в фоне</string>
+    <string name="battery_optimization_status_title">Оптимизация батареи</string>
+    <string name="battery_optimization_status_checking">Проверка состояния…</string>
+    <string name="battery_optimization_exempt">RE:Vision исключён из оптимизации батареи.</string>
+    <string name="battery_optimization_active">Системная оптимизация батареи активна. При ограничениях фоновые задачи могут запускаться реже.</string>
+    <string name="battery_optimization_not_applicable">Для этой версии Android настройка не требуется.</string>
+    <string name="battery_optimization_settings_title">Настройки фоновой работы</string>
+    <string name="battery_optimization_settings_summary">Открыть системный список исключений оптимизации батареи. Это необязательная настройка.</string>
+
 </resources>
