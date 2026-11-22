@@ -2,6 +2,7 @@ package com.ymid.wakeonlan.ui;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -46,6 +47,7 @@ import java.util.Set;
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.monitoring.MonitoringScheduler;
 import com.ymid.wakeonlan.voice.VoiceBridgeAccessibilityService;
+import com.ymid.wakeonlan.ui.notifications.NotificationHelper;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -311,6 +313,24 @@ public class SettingsActivity extends AppCompatActivity {
             Preference status = findPreference(PREF_NOTIFICATION_STATUS);
             if (status == null) return;
             boolean enabled = NotificationManagerCompat.from(requireContext()).areNotificationsEnabled();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationManager manager = (NotificationManager) requireContext()
+                        .getSystemService(Context.NOTIFICATION_SERVICE);
+                if (manager != null) {
+                    String[] channelIds = {
+                            NotificationHelper.CHANNEL_DEVICE_STATUS,
+                            NotificationHelper.CHANNEL_ACTIONS,
+                            NotificationHelper.CHANNEL_ACTION_REQUESTS
+                    };
+                    for (String channelId : channelIds) {
+                        android.app.NotificationChannel channel = manager.getNotificationChannel(channelId);
+                        if (channel != null && channel.getImportance() == NotificationManager.IMPORTANCE_NONE) {
+                            enabled = false;
+                            break;
+                        }
+                    }
+                }
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 enabled = enabled && ContextCompat.checkSelfPermission(requireContext(),
                         Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
@@ -343,9 +363,13 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void openNotificationSettings() {
             try {
-                Intent intent = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, requireContext().getPackageName());
-                startActivity(intent);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Intent intent = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                    intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, requireContext().getPackageName());
+                    startActivity(intent);
+                } else {
+                    openAppDetailsSettings();
+                }
             } catch (Exception e) {
                 openAppDetailsSettings();
             }
