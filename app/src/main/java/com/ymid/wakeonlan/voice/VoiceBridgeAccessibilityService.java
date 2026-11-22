@@ -101,6 +101,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile String pendingWifiTarget;
     private volatile long pendingWifiSelectionUntilMs;
     private volatile boolean pendingWifiSelectionClicked;
+    private volatile boolean pendingWifiSavedNetworksOpened;
 
     @Override
     public void onServiceConnected() {
@@ -128,20 +129,50 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         if (!"com.android.settings".equals(activePackage)
                 && !"com.android.systemui".equals(activePackage)) return;
         List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(target);
-        if (matches == null) return;
-        for (AccessibilityNodeInfo match : matches) {
-            CharSequence label = match.getText();
-            CharSequence description = match.getContentDescription();
-            boolean exact = (label != null && target.equalsIgnoreCase(label.toString().trim()))
-                    || (description != null && target.equalsIgnoreCase(description.toString().trim()));
-            if (!exact) continue;
-            AccessibilityNodeInfo clickable = match;
-            while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
-            if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                pendingWifiTarget = null;
-                pendingWifiSelectionClicked = true;
-                Log.i(TAG, "Selected requested Wi-Fi network: " + target);
-                return;
+        if (matches != null) {
+            for (AccessibilityNodeInfo match : matches) {
+                CharSequence label = match.getText();
+                CharSequence description = match.getContentDescription();
+                boolean exact = (label != null && target.equalsIgnoreCase(label.toString().trim()))
+                        || (description != null && target.equalsIgnoreCase(description.toString().trim()));
+                if (!exact) continue;
+                AccessibilityNodeInfo clickable = match;
+                while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
+                if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    pendingWifiTarget = null;
+                    pendingWifiSelectionClicked = true;
+                    Log.i(TAG, "Selected requested Wi-Fi network: " + target);
+                    return;
+                }
+            }
+        }
+
+        // Saved Wi-Fi profiles are owned by Android. If the requested SSID is not
+        // listed on the main Wi-Fi page, open its "Saved networks" sub-screen and
+        // let the next accessibility event locate the exact saved profile.
+        if (!pendingWifiSavedNetworksOpened) {
+            String[] savedLabels = new String[] {
+                    "Saved networks", "Saved networks", "Сохраненные сети",
+                    "Сохранённые сети", "Сохраненные сети Wi-Fi", "Сохранённые сети Wi-Fi"
+            };
+            for (String savedLabel : savedLabels) {
+                List<AccessibilityNodeInfo> savedMatches =
+                        root.findAccessibilityNodeInfosByText(savedLabel);
+                if (savedMatches == null) continue;
+                for (AccessibilityNodeInfo savedMatch : savedMatches) {
+                    CharSequence text = savedMatch.getText();
+                    CharSequence description = savedMatch.getContentDescription();
+                    boolean exactSaved = (text != null && savedLabel.equalsIgnoreCase(text.toString().trim()))
+                            || (description != null && savedLabel.equalsIgnoreCase(description.toString().trim()));
+                    if (!exactSaved) continue;
+                    AccessibilityNodeInfo clickable = savedMatch;
+                    while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
+                    if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        pendingWifiSavedNetworksOpened = true;
+                        Log.i(TAG, "Opened Android Saved networks screen to locate: " + target);
+                        return;
+                    }
+                }
             }
         }
     }
@@ -469,6 +500,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         }
 
         pendingWifiSelectionClicked = false;
+        pendingWifiSavedNetworksOpened = false;
         pendingWifiTarget = target;
         pendingWifiSelectionUntilMs = System.currentTimeMillis() + 15_000L;
         JsonObject opened = openWifiSettings();
@@ -480,7 +512,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         // Accessibility selects the exact saved SSID in Android Settings/System UI.
         // Verify the actual active SSID before reporting success; selecting a row is
         // not proof that Android completed the connection.
-        long deadline = System.currentTimeMillis() + 8_000L;
+        long deadline = System.currentTimeMillis() + 15_000L;
         JsonObject status = wifiStatus();
         while (System.currentTimeMillis() < deadline) {
             if (status.has("connected") && status.get("connected").getAsBoolean()
