@@ -24,6 +24,7 @@
             android:summary="@string/pref_trusted_ssids_summary" />
     </PreferenceCategory>
 
+    <!-- RE:Vision Wi-Fi runtime and system access controls -->
     <PreferenceCategory
         app:iconSpaceReserved="false"
         android:title="@string/wifi_access_category">
