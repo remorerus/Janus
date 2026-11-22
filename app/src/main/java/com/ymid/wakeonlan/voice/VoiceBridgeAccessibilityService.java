@@ -101,7 +101,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile String pendingWifiTarget;
     private volatile long pendingWifiSelectionUntilMs;
     private volatile boolean pendingWifiSelectionClicked;
-    private volatile boolean pendingWifiSavedNetworksOpened;
+    private volatile int pendingWifiScrollSteps;
+    private volatile long lastDiagLogMs;
 
     @Override
     public void onServiceConnected() {
@@ -109,71 +110,74 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         startServer();
     }
 
+    private static String norm(CharSequence s) {
+        return s == null ? "" : s.toString().trim().replace('\u00a0', ' ')
+                .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static boolean labelMatches(AccessibilityNodeInfo n, String targetNorm) {
+        String t = norm(n.getText());
+        String d = norm(n.getContentDescription());
+        if (t.equals(targetNorm) || d.equals(targetNorm)) return true;
+        // Some Settings builds describe a row as "<SSID>, Wi-Fi signal full, Secured".
+        return d.startsWith(targetNorm + ",");
+    }
+
+    private static boolean scrollForward(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        if (node.isScrollable() && node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) {
+            return true;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (scrollForward(node.getChild(i))) return true;
+        }
+        return false;
+    }
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // Select only the exact SSID requested by the user's voice command, and only
-        // inside Android Settings. Never click unrelated controls or confirm dialogs.
-        String target = pendingWifiTarget;
+        final String target = pendingWifiTarget;
         if (target == null) return;
-        if (System.currentTimeMillis() > pendingWifiSelectionUntilMs) {
+        long now = System.currentTimeMillis();
+        if (now > pendingWifiSelectionUntilMs) {
             pendingWifiTarget = null;
             return;
         }
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
         CharSequence packageName = root.getPackageName();
-        String activePackage = packageName == null ? "" : packageName.toString();
-        // Android 10+ may render the compact Internet/Wi-Fi panel in System UI,
-        // while the full Wi-Fi settings screen is owned by com.android.settings.
-        // Restrict interaction to these two trusted system surfaces only.
-        if (!"com.android.settings".equals(activePackage)
-                && !"com.android.systemui".equals(activePackage)) return;
+        String pkg = packageName == null ? "" : packageName.toString();
+        if (!"com.android.settings".equals(pkg) && !"com.android.systemui".equals(pkg)) {
+            if (now - lastDiagLogMs > 2000) {
+                lastDiagLogMs = now;
+                Log.w(TAG, "Wi-Fi select: unexpected foreground package " + pkg);
+            }
+            return;
+        }
+        String targetNorm = norm(target);
         List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(target);
+        int candidates = matches == null ? 0 : matches.size();
         if (matches != null) {
             for (AccessibilityNodeInfo match : matches) {
-                CharSequence label = match.getText();
-                CharSequence description = match.getContentDescription();
-                boolean exact = (label != null && target.equalsIgnoreCase(label.toString().trim()))
-                        || (description != null && target.equalsIgnoreCase(description.toString().trim()));
-                if (!exact) continue;
+                if (!labelMatches(match, targetNorm)) continue;
                 AccessibilityNodeInfo clickable = match;
                 while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
                 if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     pendingWifiTarget = null;
                     pendingWifiSelectionClicked = true;
-                    Log.i(TAG, "Selected requested Wi-Fi network: " + target);
+                    Log.i(TAG, "Wi-Fi select: clicked row for " + target + " in " + pkg);
                     return;
                 }
             }
         }
-
-        // Saved Wi-Fi profiles are owned by Android. If the requested SSID is not
-        // listed on the main Wi-Fi page, open its "Saved networks" sub-screen and
-        // let the next accessibility event locate the exact saved profile.
-        if (!pendingWifiSavedNetworksOpened) {
-            String[] savedLabels = new String[] {
-                    "Saved networks", "Saved networks", "Сохраненные сети",
-                    "Сохранённые сети", "Сохраненные сети Wi-Fi", "Сохранённые сети Wi-Fi"
-            };
-            for (String savedLabel : savedLabels) {
-                List<AccessibilityNodeInfo> savedMatches =
-                        root.findAccessibilityNodeInfosByText(savedLabel);
-                if (savedMatches == null) continue;
-                for (AccessibilityNodeInfo savedMatch : savedMatches) {
-                    CharSequence text = savedMatch.getText();
-                    CharSequence description = savedMatch.getContentDescription();
-                    boolean exactSaved = (text != null && savedLabel.equalsIgnoreCase(text.toString().trim()))
-                            || (description != null && savedLabel.equalsIgnoreCase(description.toString().trim()));
-                    if (!exactSaved) continue;
-                    AccessibilityNodeInfo clickable = savedMatch;
-                    while (clickable != null && !clickable.isClickable()) clickable = clickable.getParent();
-                    if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        pendingWifiSavedNetworksOpened = true;
-                        Log.i(TAG, "Opened Android Saved networks screen to locate: " + target);
-                        return;
-                    }
-                }
-            }
+        // The SSID may be below the fold on the small glasses display.
+        if (pendingWifiScrollSteps < 12 && scrollForward(root)) {
+            pendingWifiScrollSteps++;
+            Log.i(TAG, "Wi-Fi select: scrolled, step " + pendingWifiScrollSteps
+                    + ", candidates=" + candidates);
+        } else if (now - lastDiagLogMs > 2000) {
+            lastDiagLogMs = now;
+            Log.w(TAG, "Wi-Fi select: target not found in " + pkg + " (candidates=" + candidates + ")");
         }
     }
 
@@ -323,12 +327,14 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         String method = request[0];
         String target = request[1];
         String path = target.split("\\?", 2)[0];
+        Log.i(TAG, "HTTP " + method + " " + path);
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
                 ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
+            Log.w(TAG, "HTTP 401 for " + path);
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
         }
@@ -392,6 +398,25 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
 
 
+    private boolean hasLocationPermission() {
+        return Build.VERSION.SDK_INT < 23
+                || checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                        == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean isLocationEnabledSafe() {
+        try {
+            android.location.LocationManager lm =
+                    (android.location.LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return lm.isLocationEnabled();
+            return lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** Returns the current Wi-Fi connection without attempting to change networks. */
     private JsonObject wifiStatus() {
         JsonObject response = new JsonObject();
@@ -426,13 +451,21 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             if ("<unknown ssid>".equalsIgnoreCase(ssid) || "unknown ssid".equalsIgnoreCase(ssid)
                     || "0x".equalsIgnoreCase(ssid)) ssid = null;
         }
+        boolean permissionOk = hasLocationPermission();
+        boolean locationOn = isLocationEnabledSafe();
+        response.addProperty("locationPermission", permissionOk);
+        response.addProperty("locationEnabled", locationOn);
+        boolean ssidUnreadable = (ssid == null || ssid.isEmpty()) && (!permissionOk || !locationOn);
+        response.addProperty("ssidUnreadable", ssidUnreadable);
         response.addProperty("ok", true);
         response.addProperty("enabled", enabled);
         response.addProperty("connected", ssid != null && !ssid.isEmpty());
         if (ssid != null && !ssid.isEmpty()) response.addProperty("ssid", ssid);
-        response.addProperty("message", ssid == null || ssid.isEmpty()
-                ? "Wi-Fi is enabled but the current SSID is unavailable."
-                : "Connected to " + ssid);
+        response.addProperty("message",
+                ssid != null && !ssid.isEmpty() ? "Connected to " + ssid
+                : !permissionOk ? "Нужно разрешение на местоположение для RE:Vision."
+                : !locationOn ? "Включи геолокацию на очках: без неё Android скрывает имя сети."
+                : "Wi-Fi is enabled but the current SSID is unavailable.");
         return response;
     }
 
@@ -501,7 +534,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         }
 
         pendingWifiSelectionClicked = false;
-        pendingWifiSavedNetworksOpened = false;
+        pendingWifiScrollSteps = 0;
         pendingWifiTarget = target;
         pendingWifiSelectionUntilMs = System.currentTimeMillis() + 15_000L;
         JsonObject opened = openWifiSettings();
@@ -510,19 +543,49 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             return opened;
         }
 
-        // Return as soon as Android's Wi-Fi screen is open. Accessibility events
-        // select the exact saved SSID asynchronously; do not hold the HTTP request
-        // open while waiting for Android to reconnect.
+        if (!hasLocationPermission() || !isLocationEnabledSafe()) {
+            try { Thread.sleep(2500L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            JsonObject r = new JsonObject();
+            r.addProperty("ok", true);
+            r.addProperty("targetSsid", target);
+            r.addProperty("connected", false);
+            r.addProperty("verified", false);
+            r.addProperty("selectionClicked", pendingWifiSelectionClicked);
+            r.addProperty("message", "Сеть " + target + (pendingWifiSelectionClicked ? " выбрана" : " не выбрана")
+                    + ", но проверить подключение нельзя: включи геолокацию и дай RE:Vision разрешение на местоположение.");
+            return r;
+        }
+
+        long deadline = System.currentTimeMillis() + 8_000L;
+        JsonObject status = wifiStatus();
+        while (System.currentTimeMillis() < deadline) {
+            if (status.has("connected") && status.get("connected").getAsBoolean()
+                    && status.has("ssid") && target.equalsIgnoreCase(status.get("ssid").getAsString())) {
+                status.addProperty("targetSsid", target);
+                status.addProperty("connected", true);
+                status.addProperty("verified", true);
+                status.addProperty("selectionClicked", pendingWifiSelectionClicked);
+                status.addProperty("message", "Подключено к " + target + ".");
+                return status;
+            }
+            try { Thread.sleep(400L); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            status = wifiStatus();
+        }
+
         JsonObject result = new JsonObject();
         result.addProperty("ok", true);
-        result.addProperty("opened", true);
         result.addProperty("targetSsid", target);
         result.addProperty("connected", false);
-        result.addProperty("selectionPending", true);
+        result.addProperty("verified", false);
         result.addProperty("selectionClicked", pendingWifiSelectionClicked);
         result.addProperty("selectionRequired", !pendingWifiSelectionClicked);
-        result.addProperty("message", "Открыт системный выбор Wi-Fi для сети " + target
-                + ". Подключение нужно подтвердить проверкой текущей сети.");
+        result.addProperty("message", pendingWifiSelectionClicked
+                ? "Сеть " + target + " выбрана, но Android ещё не подтвердил подключение. Проверь запрос системы."
+                : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
+                    + ". Выбери её вручную на экране очков.");
         return result;
     }
 
