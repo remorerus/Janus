@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "RE:Vision — настройки",
-  "description": "Открывает локальные настройки ключа доступа к установленному приложению RE:Vision. Используй только когда пользователь явно просит настроить или заменить ключ.",
+  "description": "Открывает локальные настройки PIN доступа к установленному приложению RE:Vision. Используй только когда пользователь явно просит настроить или заменить PIN.",
   "schema": {
     "data": {
       "type": "object",
@@ -12,16 +12,84 @@
 </script>
 
 <script setup>
+const TOKEN_KEY = 'revision_bridge_token';
+
+function validPin(value) {
+  const pin = String(value == null ? '' : value).trim();
+  return /^\\d{4}$/.test(pin) ? pin : '';
+}
+
+function readWxPin() {
+  try {
+    if (typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function') {
+      return validPin(wx.getStorageSync(TOKEN_KEY));
+    }
+  } catch (e) {
+    console.warn('RE:Vision wx storage read failed', e);
+  }
+  return '';
+}
+
+function readLocalPin() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return validPin(localStorage.getItem(TOKEN_KEY));
+    }
+  } catch (e) {
+    console.warn('RE:Vision localStorage read failed', e);
+  }
+  return '';
+}
+
+// Write to both AIUI storage backends and verify each successful write.
+// A single working backend is sufficient; the other acts as a recovery copy.
+function savePinCopies(pin) {
+  let wxSaved = false;
+  let localSaved = false;
+
+  try {
+    if (typeof wx !== 'undefined' && typeof wx.setStorageSync === 'function') {
+      wx.setStorageSync(TOKEN_KEY, pin);
+      wxSaved = validPin(wx.getStorageSync(TOKEN_KEY)) === pin;
+    }
+  } catch (e) {
+    console.warn('RE:Vision wx storage write failed', e);
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOKEN_KEY, pin);
+      localSaved = validPin(localStorage.getItem(TOKEN_KEY)) === pin;
+    }
+  } catch (e) {
+    console.warn('RE:Vision localStorage write failed', e);
+  }
+
+  if (!wxSaved && !localSaved) {
+    throw new Error('AIUI не подтвердил сохранение PIN ни в одном локальном хранилище.');
+  }
+  return { wxSaved, localSaved };
+}
+
+function restorePin() {
+  const pin = readLocalPin() || readWxPin();
+  if (!pin) return '';
+  try { savePinCopies(pin); } catch (e) {
+    console.warn('RE:Vision PIN copy restoration failed', e);
+  }
+  return pin;
+}
+
 export default {
   data: {
     token: '',
-    statusText: 'Введи ключ, который будет показан в настройках приложения RE:Vision.'
+    statusText: 'Введи четырёхзначный PIN, показанный в настройках приложения RE:Vision.'
   },
 
   onLoad() {
-    const saved = wx.getStorageSync('revision_bridge_token');
+    const saved = restorePin();
     if (saved) {
-      this.setData({ token: saved, statusText: 'Ключ уже сохранён на этом устройстве.' });
+      this.setData({ token: saved, statusText: 'PIN найден и восстановлен. Он сохранён в доступных локальных хранилищах AIUI.' });
     }
   },
 
@@ -30,21 +98,32 @@ export default {
   },
 
   saveToken() {
-    const token = String(this.data.token || '').trim();
+    const token = validPin(this.data.token);
     if (!token) {
-      this.setData({ statusText: 'Ключ пустой. Вставь ключ из RE:Vision.' });
+      this.setData({ statusText: 'Нужен ровно четырёхзначный PIN из приложения RE:Vision.' });
       return;
     }
-    wx.setStorageSync('revision_bridge_token', token);
-    this.setData({ statusText: 'Ключ сохранён локально в AIUI.' });
     try {
-      wx.speech.playTTS('Ключ доступа сохранён.');
-    } catch (e) {}
+      const result = savePinCopies(token);
+      const stores = [result.wxSaved ? 'основное хранилище' : '', result.localSaved ? 'резервное хранилище' : '']
+        .filter(Boolean).join(' и ');
+      this.setData({ token, statusText: 'PIN сохранён и проверен: ' + stores + '. При следующем запуске агент попробует восстановить копию автоматически.' });
+      try { wx.speech.playTTS('PIN доступа сохранён.'); } catch (e) {}
+    } catch (error) {
+      this.setData({ statusText: 'Не удалось надёжно сохранить PIN: ' + String(error.message || error) });
+    }
   },
 
   clearToken() {
-    wx.removeStorageSync('revision_bridge_token');
-    this.setData({ token: '', statusText: 'Ключ удалён из локального хранилища AIUI.' });
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.removeStorageSync === 'function') {
+        wx.removeStorageSync(TOKEN_KEY);
+      }
+    } catch (e) {}
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(TOKEN_KEY);
+    } catch (e) {}
+    this.setData({ token: '', statusText: 'PIN удалён из обоих локальных хранилищ AIUI.' });
   }
 };
 </script>
@@ -52,10 +131,10 @@ export default {
 <page>
   <view class="panel">
     <text class="heading">RE:Vision</text>
-    <text class="label">Ключ локального командного моста</text>
-    <input class="token" password="true" value="{{token}}" bindinput="onTokenInput" placeholder="Вставь ключ доступа" />
-    <button bindtap="saveToken">Сохранить ключ</button>
-    <button bindtap="clearToken">Удалить ключ</button>
+    <text class="label">Четырёхзначный PIN локального командного моста</text>
+    <input class="token" password="true" value="{{token}}" bindinput="onTokenInput" placeholder="Например, 0427" />
+    <button bindtap="saveToken">Сохранить PIN</button>
+    <button bindtap="clearToken">Удалить PIN</button>
     <text class="status">{{statusText}}</text>
   </view>
 </page>
