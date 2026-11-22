@@ -153,7 +153,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         // different SSID that merely begins with the requested name.
         if (separator == ',' || separator == ':' || separator == '(' || separator == '['
                 || separator == '-' || separator == '–' || separator == '—'
-                || separator == '·' || separator == '•' || separator == '\\n') {
+                || separator == '·' || separator == '•' || separator == '\n') {
             return true;
         }
         if (Character.isWhitespace(separator)) {
