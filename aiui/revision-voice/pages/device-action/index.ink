@@ -185,7 +185,9 @@ export default {
           throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
         }
         const message = action === 'wifi_connect'
-          ? 'Открыл системный выбор Wi-Fi. Выбери сеть ' + result.targetSsid + ' и подтверди подключение, если Android попросит. Затем скажи: Ревижн, проверь Wi-Fi.'
+          ? (result.connected === true
+              ? 'Уже подключено к сети ' + result.targetSsid + '.'
+              : 'Открыл системный выбор Wi-Fi для сети ' + result.targetSsid + '. Если Android попросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.')
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
         this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + result.targetSsid + '. Подключение ещё не подтверждено.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
         speak(message);
