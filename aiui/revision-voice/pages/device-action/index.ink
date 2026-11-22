@@ -9,7 +9,7 @@
         "action": {
           "type": "string",
           "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_enable", "wifi_disable", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — открыть системную панель для включения Wi-Fi; wifi_disable — открыть системную панель для выключения Wi-Fi; wifi_connect — запросить сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — открыть системную панель для включения Wi-Fi; wifi_disable — открыть системную панель для выключения Wi-Fi; wifi_connect — запросить сеть по имени (Студио Wi-Fi = SSID Studio, Локал нетворк = Local_Network_5G; Studio PC — отдельное имя компьютера, не Wi-Fi); wifi_status — сообщить текущую сеть; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
