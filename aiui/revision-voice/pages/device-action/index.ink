@@ -203,7 +203,8 @@ export default {
         const asksConnect = phrase.includes('подключись') || phrase.includes('подключи') ||
           phrase.includes('переключись') || phrase.includes('переключи');
 
-        if (mentionsWifi || asksCurrentNetwork || asksNetworkList) {
+        const namesNetworkTarget = phrase.includes('студи') || phrase.includes('studio') || phrase.includes('локалнетворк') || phrase.includes('локал') || phrase.includes('localnetwork');
+        if (mentionsWifi || asksCurrentNetwork || asksNetworkList || (asksConnect && namesNetworkTarget)) {
           if (asksNetworkList) {
             action = 'wifi_list';
           } else if (asksCurrentNetwork || (!asksOpenWifi && !asksConnect)) {
