@@ -13,11 +13,11 @@
         },
         "networkName": {
           "type": "string",
-          "description": "Целевая сеть Wi-Fi: Студио / Studio или Локал нетворк / Local_Network_5G."
+          "description": "Целевая сеть Wi-Fi: Студио Wi-Fi / Studio Wi-Fi (SSID Studio) или Локал нетворк / Local_Network_5G. Не путай со Studio PC — это компьютер."
         },
         "deviceName": {
           "type": "string",
-          "description": "Имя или разговорное название сохранённого устройства. Например STUDIO / студия или Odyssey Ark / Одиссей Арк. Не придумывай имя."
+          "description": "Имя или разговорное название сохранённого устройства. Для компьютера используй Studio PC / Студио ПК; это не сеть Wi-Fi. Для Odyssey Ark — Одиссей Арк. Не используй одно слово «студия» без уточнения."
         }
       },
       "required": ["action"]
@@ -117,7 +117,7 @@ function resolveDevice(devices, requested) {
   if (!wanted) return { error: 'device_name_required' };
   const aliases = [];
   aliases.push(wanted);
-  if (wanted.includes('студи') || wanted.includes('studio')) aliases.push('studio');
+  if (wanted === 'studiopc' || wanted === 'студиопк' || wanted === 'компьютерstudiopc' || wanted === 'компьютерстудиопк') aliases.push('studio');
   if (wanted.includes('одиссей') || wanted.includes('odyssey') || wanted.includes('арк') || wanted.includes('ark')) {
     aliases.push('odysseyark', 'odyssey');
   }
