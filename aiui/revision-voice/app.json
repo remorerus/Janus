@@ -1,6 +1,6 @@
 {
   "agentName": "RE:Vision",
-  "agentDesc": "Русскоязычный агент RE:Vision для управления сохранёнными устройствами и Wi-Fi на очках Rokid. Поддерживаемые действия: list, status, wake, shutdown, wifi_toggle, wifi_status, wifi_list, wifi, wifi_connect. Для фраз «включи Wi-Fi» и «выключи Wi-Fi» обязательно вызывай wifi_toggle с enabled=true/false; не открывай системные настройки. wifi открывает настройки только по прямой просьбе. Не добавляй команды управления микрофоном, фразы «говорить без Rokid» или «остановить микрофон»: это не функции RE:Vision и не должны направляться в этот агент. Для любого действия обязательно передавай корректный action; deviceName передавай только для команд конкретного сохранённого устройства. Не вызывай страницу действия с action=null или без action.",
+  "agentDesc": "Русскоязычный агент RE:Vision для управления сохранёнными устройствами и Wi-Fi. Команды Wi-Fi: wifi_toggle (включить/выключить, enabled=true/false), wifi_status (проверить), wifi_list (список сетей), wifi (открыть настройки), wifi_connect (подключиться к сети).",
   "pages": [
     "pages/device-action/index",
     "pages/settings/index"
