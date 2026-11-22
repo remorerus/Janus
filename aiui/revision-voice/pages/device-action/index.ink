@@ -228,16 +228,24 @@ export default {
 
       if (action === 'wifi_status') {
         const state = await request('/wifi/status', 'GET', token);
-        const message = state && state.connected && state.ssid
-          ? 'Сейчас ты подключён к сети ' + state.ssid + '.'
-          : (state && state.connected
-              ? 'Wi-Fi подключён, но Android или прошивка Rokid скрывает имя текущей сети.'
-              : (state && state.locationPermission === false
-                  ? 'RE:Vision не получил разрешение на местоположение, необходимое Android для чтения имени Wi-Fi сети.'
-                  : state && state.locationEnabled === false
-                      ? 'Геолокация выключена. Android может скрывать имя Wi-Fi сети.'
-                      : (state && state.enabled ? 'Wi-Fi включён, но активное подключение к сети не обнаружено.' : 'Wi-Fi выключен.')));
-        this.setData({ statusText: message, detailText: state && state.ssidUnreadable ? 'Подключение обнаружено, но SSID не предоставлен Android/прошивкой.' : (state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : ''), resultText: message, busy: false });
+        if (!state || state.ok !== true) {
+          throw new Error(state && state.error ? state.error : 'Не удалось проверить состояние Wi-Fi');
+        }
+        // SSID is optional: an active Wi-Fi transport is sufficient to confirm
+        // that the device is connected. Never turn a hidden SSID into an error.
+        const message = state.connected === true
+          ? (state.ssid
+              ? 'Wi-Fi подключён. Текущая сеть: ' + state.ssid + '.'
+              : 'Wi-Fi подключён. Подключение подтверждено. Имя сети Android не предоставляет.')
+          : (state.enabled === true
+              ? 'Wi-Fi включён, но подключение к сети не обнаружено.'
+              : 'Wi-Fi выключен.');
+        const detail = state.connected === true && !state.ssid
+          ? 'Подключение подтверждено по активному Wi-Fi соединению. SSID недоступен; это не ошибка подключения.'
+          : (state.permissionRequired === true
+              ? 'Android ограничил доступ к имени сети.'
+              : '');
+        this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
         speak(message);
         return;
       }
