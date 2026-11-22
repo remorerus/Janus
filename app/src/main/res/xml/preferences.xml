@@ -40,6 +40,11 @@
             android:summary="@string/wifi_location_permission_request_summary" />
         <Preference
             app:iconSpaceReserved="false"
+            android:key="pref_wifi_scan_permission"
+            android:title="@string/wifi_scan_permissions_title"
+            android:summary="@string/wifi_scan_permissions_summary" />
+        <Preference
+            app:iconSpaceReserved="false"
             android:key="pref_app_permissions"
             android:title="@string/app_permissions_title"
             android:summary="@string/app_permissions_summary" />
@@ -48,6 +53,41 @@
             android:key="pref_location_settings"
             android:title="@string/location_settings_title"
             android:summary="@string/location_settings_summary" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        android:title="@string/notification_access_category">
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_notification_status"
+            android:title="@string/notification_permission_status_title"
+            android:summary="@string/notification_permission_status_checking" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_notification_request"
+            android:title="@string/notification_permission_request_title"
+            android:summary="@string/notification_permission_request_summary" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_notification_settings"
+            android:title="@string/notification_settings_title"
+            android:summary="@string/notification_settings_summary" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        android:title="@string/background_access_category">
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_battery_status"
+            android:title="@string/battery_optimization_status_title"
+            android:summary="@string/battery_optimization_status_checking" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_battery_settings"
+            android:title="@string/battery_optimization_settings_title"
+            android:summary="@string/battery_optimization_settings_summary" />
     </PreferenceCategory>
 
     <PreferenceCategory
