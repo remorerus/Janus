@@ -55,6 +55,30 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private long authBlockedUntilMs;
 
     /** Returns a stable four-digit pairing PIN stored in app-private preferences. */
+    public static boolean isBridgeEnabled(Context context) {
+        return context.getApplicationContext()
+                .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(BRIDGE_ENABLED_KEY, true);
+    }
+
+    /** Enables or disables only the local HTTP bridge; Accessibility remains under Android control. */
+    public static void setBridgeEnabled(Context context, boolean enabled) {
+        context.getApplicationContext()
+                .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(BRIDGE_ENABLED_KEY, enabled).apply();
+        VoiceBridgeAccessibilityService service = instance;
+        if (service != null) {
+            if (enabled) service.startServer();
+            else service.stopServer();
+        }
+    }
+
+    public static boolean isBridgeServerActive() {
+        VoiceBridgeAccessibilityService service = instance;
+        ServerSocket socket = service == null ? null : service.serverSocket;
+        return service != null && service.running && socket != null && socket.isBound() && !socket.isClosed();
+    }
+
     public static synchronized String getOrCreateAccessToken(Context context) {
         SharedPreferences prefs = context.getApplicationContext()
                 .getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE);
@@ -95,6 +119,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         }
     }
 
+    private static volatile VoiceBridgeAccessibilityService instance;
+    private static final String BRIDGE_ENABLED_KEY = "bridge_enabled";
     private volatile boolean running;
     private volatile ServerSocket serverSocket;
     private volatile Thread serverThread;
@@ -107,7 +133,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
-        startServer();
+        instance = this;
+        if (isBridgeEnabled(this)) startServer();
+        else Log.i(TAG, "Voice bridge disabled in RE:Vision settings");
     }
 
     private static String norm(CharSequence s) {
@@ -191,12 +219,14 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     @Override
     public boolean onUnbind(android.content.Intent intent) {
         stopServer();
+        if (instance == this) instance = null;
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
         stopServer();
+        if (instance == this) instance = null;
         super.onDestroy();
     }
 
