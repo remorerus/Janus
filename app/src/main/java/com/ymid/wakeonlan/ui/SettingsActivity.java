@@ -71,6 +71,8 @@ public class SettingsActivity extends AppCompatActivity {
         private static final String PREF_SCAN_WIFI = "pref_scan_wifi";
         private static final String PREF_VOICE_BRIDGE = "pref_voice_bridge_accessibility";
         private static final String PREF_VOICE_TOKEN = "pref_voice_bridge_token";
+        private static final String PREF_VOICE_BRIDGE_ENABLED = "pref_voice_bridge_enabled";
+        private static final String PREF_VOICE_BRIDGE_STATUS = "pref_voice_bridge_status";
 
         private ActivityResultLauncher<String[]> wifiPermissionLauncher;
         private WifiManager wifiManager;
@@ -120,6 +122,17 @@ public class SettingsActivity extends AppCompatActivity {
             wifiManager = (WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             trustedSsidsPreference = findPreference(PREF_TRUSTED_SSIDS);
             scanWifiPreference = findPreference(PREF_SCAN_WIFI);
+            SwitchPreferenceCompat voiceBridgeEnabledPreference = findPreference(PREF_VOICE_BRIDGE_ENABLED);
+            if (voiceBridgeEnabledPreference != null) {
+                voiceBridgeEnabledPreference.setChecked(VoiceBridgeAccessibilityService.isBridgeEnabled(requireContext()));
+                voiceBridgeEnabledPreference.setOnPreferenceChangeListener((preference, newValue) -> {
+                    VoiceBridgeAccessibilityService.setBridgeEnabled(requireContext(), Boolean.TRUE.equals(newValue));
+                    handler.postDelayed(this::updateVoiceBridgeStatus, 300);
+                    return true;
+                });
+            }
+            updateVoiceBridgeStatus();
+
             Preference voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
             if (voiceBridgePreference != null) {
                 voiceBridgePreference.setOnPreferenceClickListener(preference -> {
@@ -177,6 +190,26 @@ public class SettingsActivity extends AppCompatActivity {
                     }
                     return true;
                 });
+            }
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            updateVoiceBridgeStatus();
+            handler.postDelayed(this::updateVoiceBridgeStatus, 700);
+        }
+
+        private void updateVoiceBridgeStatus() {
+            if (!isAdded()) return;
+            Preference status = findPreference(PREF_VOICE_BRIDGE_STATUS);
+            if (status == null) return;
+            if (!VoiceBridgeAccessibilityService.isBridgeEnabled(requireContext())) {
+                status.setSummary("Выключен — локальный HTTP-мост не принимает команды.");
+            } else if (VoiceBridgeAccessibilityService.isBridgeServerActive()) {
+                status.setSummary("Активен · 127.0.0.1:38761 · локальный сервер слушает запросы.");
+            } else {
+                status.setSummary("Ожидает запуска службы специальных возможностей RE:Vision. Проверь её включение в Android.");
             }
         }
 
