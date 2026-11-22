@@ -528,7 +528,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ssid = ssid.substring(1, ssid.length() - 1);
             }
             if ("<unknown ssid>".equalsIgnoreCase(ssid) || "unknown ssid".equalsIgnoreCase(ssid)
-                    || "0x".equalsIgnoreCase(ssid)) ssid = null;
+                    || "0x".equalsIgnoreCase(ssid) || "null".equalsIgnoreCase(ssid)) ssid = null;
         }
         boolean permissionOk = hasLocationPermission();
         boolean locationOn = isLocationEnabledSafe();
@@ -615,46 +615,16 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         pendingWifiSelectionClicked = false;
         pendingWifiScrollSteps = 0;
         pendingWifiTarget = target;
-        pendingWifiSelectionUntilMs = System.currentTimeMillis() + 15_000L;
+        pendingWifiSelectionUntilMs = System.currentTimeMillis() + 90_000L;
         JsonObject opened = openWifiSettings();
         if (!opened.has("ok") || !opened.get("ok").getAsBoolean()) {
             pendingWifiTarget = null;
             return opened;
         }
 
-        if (!hasLocationPermission() || !isLocationEnabledSafe()) {
-            try { Thread.sleep(2500L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            JsonObject r = new JsonObject();
-            r.addProperty("ok", true);
-            r.addProperty("opened", true);
-            r.addProperty("targetSsid", target);
-            r.addProperty("connected", false);
-            r.addProperty("verified", false);
-            r.addProperty("selectionClicked", pendingWifiSelectionClicked);
-            r.addProperty("message", "Сеть " + target + (pendingWifiSelectionClicked ? " выбрана" : " не выбрана")
-                    + ", но проверить подключение нельзя: включи геолокацию и дай RE:Vision разрешение на местоположение.");
-            return r;
-        }
-
-        long deadline = System.currentTimeMillis() + 8_000L;
-        JsonObject status = wifiStatus();
-        while (System.currentTimeMillis() < deadline) {
-            if (status.has("connected") && status.get("connected").getAsBoolean()
-                    && status.has("ssid") && target.equalsIgnoreCase(status.get("ssid").getAsString())) {
-                status.addProperty("targetSsid", target);
-                status.addProperty("connected", true);
-                status.addProperty("verified", true);
-                status.addProperty("selectionClicked", pendingWifiSelectionClicked);
-                status.addProperty("message", "Подключено к " + target + ".");
-                return status;
-            }
-            try { Thread.sleep(400L); } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-            status = wifiStatus();
-        }
-
+        // Accessibility events may arrive only after the AIUI voice card is dismissed.
+        // Keep the target pending and return immediately; do not tell the user to select it manually
+        // just because the AIUI page is still foreground or the connection takes longer than a few seconds.
         JsonObject result = new JsonObject();
         result.addProperty("ok", true);
         result.addProperty("opened", true);
@@ -662,11 +632,12 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         result.addProperty("connected", false);
         result.addProperty("verified", false);
         result.addProperty("selectionClicked", pendingWifiSelectionClicked);
-        result.addProperty("selectionRequired", !pendingWifiSelectionClicked);
+        result.addProperty("selectionPending", pendingWifiTarget != null);
+        result.addProperty("selectionRequired", false);
         result.addProperty("message", pendingWifiSelectionClicked
-                ? "Сеть " + target + " выбрана, но Android ещё не подтвердил подключение. Проверь запрос системы."
-                : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
-                    + ". Выбери её вручную на экране очков.");
+                ? "Сеть " + target + " выбрана Android. Проверка подключения доступна отдельной командой."
+                : "Список Wi-Fi открыт. Автоматический выбор сети " + target
+                    + " ожидает, когда экран настроек станет активным. Закрой карточку голосового сообщения; сеть будет выбрана автоматически.");
         return result;
     }
 
