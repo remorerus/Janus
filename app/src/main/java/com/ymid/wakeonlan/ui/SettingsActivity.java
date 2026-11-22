@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.Toast;
@@ -25,6 +26,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -78,9 +80,16 @@ public class SettingsActivity extends AppCompatActivity {
         private static final String PREF_WIFI_PERMISSION_REQUEST = "pref_wifi_permission_request";
         private static final String PREF_APP_PERMISSIONS = "pref_app_permissions";
         private static final String PREF_LOCATION_SETTINGS = "pref_location_settings";
+        private static final String PREF_WIFI_SCAN_PERMISSION = "pref_wifi_scan_permission";
+        private static final String PREF_NOTIFICATION_STATUS = "pref_notification_status";
+        private static final String PREF_NOTIFICATION_SETTINGS = "pref_notification_settings";
+        private static final String PREF_NOTIFICATION_REQUEST = "pref_notification_request";
+        private static final String PREF_BATTERY_STATUS = "pref_battery_status";
+        private static final String PREF_BATTERY_SETTINGS = "pref_battery_settings";
 
         private ActivityResultLauncher<String[]> wifiPermissionLauncher;
         private ActivityResultLauncher<String> locationPermissionLauncher;
+        private ActivityResultLauncher<String> notificationPermissionLauncher;
         private WifiManager wifiManager;
         private Preference trustedSsidsPreference;
         private Preference scanWifiPreference;
@@ -101,6 +110,10 @@ public class SettingsActivity extends AppCompatActivity {
         @Override
         public void onCreate(Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
+
+            notificationPermissionLauncher = registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(),
+                    granted -> updateSystemAccessStatuses());
 
             locationPermissionLauncher = registerForActivityResult(
                     new ActivityResultContracts.RequestPermission(),
@@ -142,7 +155,53 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
             updateVoiceBridgeStatus();
-            updateWifiPermissionStatus();
+            updateSystemAccessStatuses();
+
+            Preference wifiScanPermission = findPreference(PREF_WIFI_SCAN_PERMISSION);
+            if (wifiScanPermission != null) {
+                wifiScanPermission.setOnPreferenceClickListener(preference -> {
+                    if (hasWifiScanPermission()) {
+                        Toast.makeText(requireContext(), R.string.wifi_scan_permissions_already_granted, Toast.LENGTH_SHORT).show();
+                    } else {
+                        wifiPermissionLauncher.launch(getWifiScanPermissions());
+                    }
+                    return true;
+                });
+            }
+
+            Preference notificationRequest = findPreference(PREF_NOTIFICATION_REQUEST);
+            if (notificationRequest != null) {
+                notificationRequest.setOnPreferenceClickListener(preference -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                            && ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+                    } else {
+                        openNotificationSettings();
+                    }
+                    return true;
+                });
+            }
+
+            Preference notificationSettings = findPreference(PREF_NOTIFICATION_SETTINGS);
+            if (notificationSettings != null) {
+                notificationSettings.setOnPreferenceClickListener(preference -> {
+                    openNotificationSettings();
+                    return true;
+                });
+            }
+
+            Preference batterySettings = findPreference(PREF_BATTERY_SETTINGS);
+            if (batterySettings != null) {
+                batterySettings.setOnPreferenceClickListener(preference -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                    } catch (Exception e) {
+                        openAppDetailsSettings();
+                    }
+                    return true;
+                });
+            }
 
             Preference requestLocationPermission = findPreference(PREF_WIFI_PERMISSION_REQUEST);
             if (requestLocationPermission != null) {
@@ -160,13 +219,7 @@ public class SettingsActivity extends AppCompatActivity {
             Preference appPermissions = findPreference(PREF_APP_PERMISSIONS);
             if (appPermissions != null) {
                 appPermissions.setOnPreferenceClickListener(preference -> {
-                    Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.fromParts("package", requireContext().getPackageName(), null));
-                    try {
-                        startActivity(intent);
-                    } catch (Exception e) {
-                        Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
-                    }
+                    openAppDetailsSettings();
                     return true;
                 });
             }
@@ -174,11 +227,7 @@ public class SettingsActivity extends AppCompatActivity {
             Preference locationSettings = findPreference(PREF_LOCATION_SETTINGS);
             if (locationSettings != null) {
                 locationSettings.setOnPreferenceClickListener(preference -> {
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
-                    } catch (Exception e) {
-                        Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
-                    }
+                    openLocationSettings();
                     return true;
                 });
             }
@@ -247,8 +296,67 @@ public class SettingsActivity extends AppCompatActivity {
         public void onResume() {
             super.onResume();
             updateVoiceBridgeStatus();
-            updateWifiPermissionStatus();
+            updateSystemAccessStatuses();
             handler.postDelayed(this::updateVoiceBridgeStatus, 700);
+        }
+
+        private void updateSystemAccessStatuses() {
+            updateWifiPermissionStatus();
+            updateNotificationStatus();
+            updateBatteryStatus();
+        }
+
+        private void updateNotificationStatus() {
+            if (!isAdded()) return;
+            Preference status = findPreference(PREF_NOTIFICATION_STATUS);
+            if (status == null) return;
+            boolean enabled = NotificationManagerCompat.from(requireContext()).areNotificationsEnabled();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                enabled = enabled && ContextCompat.checkSelfPermission(requireContext(),
+                        Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+            }
+            status.setSummary(enabled ? R.string.notification_permission_ready : R.string.notification_permission_missing);
+        }
+
+        private void updateBatteryStatus() {
+            if (!isAdded()) return;
+            Preference status = findPreference(PREF_BATTERY_STATUS);
+            if (status == null) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                status.setSummary(R.string.battery_optimization_not_applicable);
+                return;
+            }
+            PowerManager manager = (PowerManager) requireContext().getSystemService(Context.POWER_SERVICE);
+            boolean exempt = manager != null && manager.isIgnoringBatteryOptimizations(requireContext().getPackageName());
+            status.setSummary(exempt ? R.string.battery_optimization_exempt : R.string.battery_optimization_active);
+        }
+
+        private void openAppDetailsSettings() {
+            try {
+                Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", requireContext().getPackageName(), null));
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
+            }
+        }
+
+        private void openNotificationSettings() {
+            try {
+                Intent intent = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, requireContext().getPackageName());
+                startActivity(intent);
+            } catch (Exception e) {
+                openAppDetailsSettings();
+            }
+        }
+
+        private void openLocationSettings() {
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+            } catch (Exception e) {
+                Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
+            }
         }
 
         private void updateWifiPermissionStatus() {
