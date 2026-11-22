@@ -586,6 +586,65 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         }
     }
 
+    /**
+     * Android 10+ blocks ordinary apps targeting API 29+ from enumerating or
+     * enabling saved Wi-Fi configurations. This Rokid build targets API 28
+     * so a user-granted FINE_LOCATION permission can use the legacy API.
+     * Returns null when the SSID is not saved, preserving the system-picker fallback.
+     */
+    private JsonObject connectSavedWifiInBackground(String target) {
+        if (getApplicationInfo().targetSdkVersion >= Build.VERSION_CODES.Q || !hasLocationPermission()) return null;
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) return null;
+        try {
+            List<android.net.wifi.WifiConfiguration> configured = wifi.getConfiguredNetworks();
+            if (configured == null || configured.isEmpty()) return null;
+            android.net.wifi.WifiConfiguration match = null;
+            for (android.net.wifi.WifiConfiguration candidate : configured) {
+                if (candidate == null || candidate.SSID == null) continue;
+                String savedSsid = candidate.SSID.trim();
+                if (savedSsid.length() >= 2 && savedSsid.startsWith("\"") && savedSsid.endsWith("\""))
+                    savedSsid = savedSsid.substring(1, savedSsid.length() - 1);
+                if (target.equalsIgnoreCase(savedSsid)) { match = candidate; break; }
+            }
+            if (match == null) return null;
+            boolean enabled = wifi.enableNetwork(match.networkId, true);
+            boolean reconnecting = enabled && wifi.reconnect();
+            if (!enabled || !reconnecting) return null;
+            long deadline = System.currentTimeMillis() + 20_000L;
+            while (System.currentTimeMillis() < deadline) {
+                JsonObject status = wifiStatus();
+                if (status.has("connected") && status.get("connected").getAsBoolean()
+                        && status.has("ssid") && target.equalsIgnoreCase(status.get("ssid").getAsString())) {
+                    status.addProperty("targetSsid", target);
+                    status.addProperty("opened", false);
+                    status.addProperty("alreadyConnected", false);
+                    status.addProperty("backgroundConnect", true);
+                    status.addProperty("verified", true);
+                    status.addProperty("message", "Подключено к " + target + " в фоне. Системные настройки не открывались.");
+                    return status;
+                }
+                try { Thread.sleep(500L); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+            }
+            JsonObject pending = new JsonObject();
+            pending.addProperty("ok", true);
+            pending.addProperty("opened", false);
+            pending.addProperty("targetSsid", target);
+            pending.addProperty("connected", false);
+            pending.addProperty("verified", false);
+            pending.addProperty("backgroundConnect", true);
+            pending.addProperty("selectionPending", false);
+            pending.addProperty("message", "Android принял команду фонового подключения к " + target + ", но соединение пока не подтверждено.");
+            return pending;
+        } catch (SecurityException e) {
+            Log.w(TAG, "Background Wi-Fi connection requires permission", e);
+            return null;
+        } catch (Exception e) {
+            Log.w(TAG, "Background Wi-Fi connection failed; using system picker", e);
+            return null;
+        }
+    }
     /** Resolves voice aliases and opens Android's Wi-Fi picker; final selection remains user-approved. */
     private JsonObject connectWifi(String body) throws Exception {
         JsonObject request = JsonParser.parseString(body).getAsJsonObject();
@@ -611,6 +670,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             current.addProperty("message", "Уже подключено к " + target + ".");
             return current;
         }
+
+        JsonObject background = connectSavedWifiInBackground(target);
+        if (background != null) return background;
 
         pendingWifiSelectionClicked = false;
         pendingWifiScrollSteps = 0;
