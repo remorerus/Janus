@@ -494,6 +494,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         if (current.has("connected") && current.get("connected").getAsBoolean()
                 && current.has("ssid") && target.equalsIgnoreCase(current.get("ssid").getAsString())) {
             current.addProperty("targetSsid", target);
+            current.addProperty("opened", true);
             current.addProperty("alreadyConnected", true);
             current.addProperty("message", "Уже подключено к " + target + ".");
             return current;
@@ -509,37 +510,19 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             return opened;
         }
 
-        // Accessibility selects the exact saved SSID in Android Settings/System UI.
-        // Verify the actual active SSID before reporting success; selecting a row is
-        // not proof that Android completed the connection.
-        long deadline = System.currentTimeMillis() + 15_000L;
-        JsonObject status = wifiStatus();
-        while (System.currentTimeMillis() < deadline) {
-            if (status.has("connected") && status.get("connected").getAsBoolean()
-                    && status.has("ssid") && target.equalsIgnoreCase(status.get("ssid").getAsString())) {
-                status.addProperty("targetSsid", target);
-                status.addProperty("connected", true);
-                status.addProperty("selectionClicked", pendingWifiSelectionClicked);
-                status.addProperty("message", "Подключено к " + target + ".");
-                return status;
-            }
-            try { Thread.sleep(400L); } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-            status = wifiStatus();
-        }
-
+        // Return as soon as Android's Wi-Fi screen is open. Accessibility events
+        // select the exact saved SSID asynchronously; do not hold the HTTP request
+        // open while waiting for Android to reconnect.
         JsonObject result = new JsonObject();
         result.addProperty("ok", true);
+        result.addProperty("opened", true);
         result.addProperty("targetSsid", target);
         result.addProperty("connected", false);
+        result.addProperty("selectionPending", true);
         result.addProperty("selectionClicked", pendingWifiSelectionClicked);
         result.addProperty("selectionRequired", !pendingWifiSelectionClicked);
-        result.addProperty("message", pendingWifiSelectionClicked
-                ? "Сеть " + target + " выбрана, но Android ещё не подтвердил подключение. Проверь запрос системы."
-                : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
-                    + ". Выбери её вручную на экране очков.");
+        result.addProperty("message", "Открыт системный выбор Wi-Fi для сети " + target
+                + ". Подключение нужно подтвердить проверкой текущей сети.");
         return result;
     }
 
