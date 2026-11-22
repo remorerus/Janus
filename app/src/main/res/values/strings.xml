@@ -318,6 +318,7 @@
     <string name="wifi_location_permission_ready">Разрешение местоположения выдано, службы местоположения включены.</string>
     <string name="wifi_location_permission_location_off">Разрешение выдано, но службы местоположения выключены.</string>
     <string name="wifi_location_permission_missing">Разрешение местоположения не выдано. Фоновое переключение сохранённых сетей может быть недоступно.</string>
+    <string name="wifi_nearby_permission_missing">Не выдано разрешение «Устройства поблизости» для поиска Wi-Fi.</string>
     <string name="wifi_location_permission_request_title">Запросить разрешение местоположения</string>
     <string name="wifi_location_permission_request_summary">Показать системный запрос Android для RE:Vision.</string>
     <string name="wifi_location_permission_already_granted">Разрешение уже выдано.</string>
