@@ -141,115 +141,7 @@ export default {
     detailText: '',
     resultText: '',
     showSettingsButton: false,
-    voiceStatus: 'Для автономной проверки нажми «Говорить без Hi Rokid».',
     busy: true
-  },
-
-  recognition: null,
-
-  startVoiceRecognition() {
-    try {
-      const Recognition = typeof SpeechRecognition !== 'undefined'
-        ? SpeechRecognition
-        : (typeof webkitSpeechRecognition !== 'undefined' ? webkitSpeechRecognition : null);
-      if (!Recognition) {
-        this.setData({ voiceStatus: 'В этом AIUI Runtime нет API SpeechRecognition. Проверь версию Runtime.' });
-        return;
-      }
-      if (this.recognition) {
-        try { this.recognition.abort(); } catch (e) {}
-        this.recognition = null;
-      }
-      const recognition = new Recognition();
-      this.recognition = recognition;
-      recognition.lang = 'ru-RU';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.onstart = () => this.setData({ voiceStatus: 'Слушаю через микрофон очков… Скажи команду.' });
-      recognition.onerror = (event) => {
-        const reason = event && event.error ? String(event.error) : 'unknown';
-        this.setData({ voiceStatus: 'Ошибка распознавания: ' + reason + '. Если просит Hi Rokid, пришли точный текст.' });
-        this.recognition = null;
-      };
-      recognition.onend = () => {
-        if (this.recognition === recognition) this.recognition = null;
-      };
-      recognition.onresult = (event) => {
-        const result = event.results && event.results[event.resultIndex];
-        const transcript = result && result[0] ? String(result[0].transcript || '').trim() : '';
-        if (!transcript) {
-          this.setData({ voiceStatus: 'Речь не распознана. Попробуй ещё раз.' });
-          return;
-        }
-        this.setData({ voiceStatus: 'Распознано: «' + transcript + '». Выполняю команду…' });
-        const phrase = normalize(transcript);
-        let action = '';
-        let deviceName = '';
-        let networkName = '';
-
-        const mentionsWifi = phrase.includes('wifi') || phrase.includes('вайфай') ||
-          phrase.includes('вайф') || phrase.includes('беспровод');
-        const asksCurrentNetwork = phrase.includes('какаясеть') ||
-          phrase.includes('какойсет') || phrase.includes('ккакойсет') ||
-          phrase.includes('назовисеть') || phrase.includes('назовиподключен') ||
-          phrase.includes('имясети') || phrase.includes('имяподключен') ||
-          phrase.includes('текущаясеть') || phrase.includes('подключенаксети') ||
-          phrase.includes('подключенксети') || phrase.includes('сейчасподключено') ||
-          phrase.includes('проверисеть') || phrase.includes('чтозасеть');
-        const asksNetworkList = phrase.includes('доступныесети') ||
-          phrase.includes('списоксетей') || phrase.includes('какиесетивижу') ||
-          phrase.includes('какиесетивидны') || phrase.includes('покажисети') ||
-          phrase.includes('найтисети');
-        const asksOpenWifi = phrase.includes('открой') || phrase.includes('открыть') ||
-          phrase.includes('настройки') || phrase.includes('параметры');
-        const asksConnect = phrase.includes('подключись') || phrase.includes('подключи') ||
-          phrase.includes('переключись') || phrase.includes('переключи');
-
-        const namesNetworkTarget = phrase.includes('студи') || phrase.includes('studio') || phrase.includes('локалнетворк') || phrase.includes('локал') || phrase.includes('localnetwork');
-        if (mentionsWifi || asksCurrentNetwork || asksNetworkList || (asksConnect && namesNetworkTarget)) {
-          if (asksNetworkList) {
-            action = 'wifi_list';
-          } else if (asksCurrentNetwork || (!asksOpenWifi && !asksConnect)) {
-            action = 'wifi_status';
-          } else if (asksConnect) {
-            if (phrase.includes('студи') || phrase.includes('studio')) networkName = 'Studio';
-            else if (phrase.includes('локалнетворк') || phrase.includes('локал') || phrase.includes('localnetwork')) networkName = 'Local_Network_5G';
-            action = networkName ? 'wifi_connect' : 'wifi';
-          } else if (asksOpenWifi) {
-            action = 'wifi';
-          }
-        } else if (phrase.includes('покажиустройства') || phrase.includes('списокустройств') || phrase.includes('какиеустройства')) {
-          action = 'list';
-        } else if (phrase.includes('включи') || phrase.includes('разбуди')) {
-          action = 'wake';
-        } else if (phrase.includes('выключи')) {
-          action = 'shutdown';
-        } else if (phrase.includes('проверь') || phrase.includes('статус') || phrase.includes('доступен') || phrase.includes('всети')) {
-          action = 'status';
-        }
-
-        if (phrase.includes('студи') || phrase.includes('studio')) deviceName = 'STUDIO';
-        else if (phrase.includes('одиссей') || phrase.includes('odyssey') || phrase.includes('арк')) deviceName = 'Odyssey Ark';
-
-        if (!action) {
-          this.setData({ voiceStatus: 'Услышал: «' + transcript + '», но не понял команду. Для Wi-Fi скажи: проверь Wi-Fi, назови текущую сеть, покажи доступные сети или открой настройки Wi-Fi.' });
-          return;
-        }
-        this.onLoad({ action, deviceName, networkName });
-      };
-      recognition.start();
-    } catch (error) {
-      this.setData({ voiceStatus: 'Не удалось запустить микрофон: ' + String(error && error.message ? error.message : error) });
-    }
-  },
-
-  stopVoiceRecognition() {
-    if (this.recognition) {
-      try { this.recognition.stop(); } catch (e) {}
-      this.recognition = null;
-      this.setData({ voiceStatus: 'Распознавание остановлено.' });
-    }
   },
 
   openSettings() {
@@ -258,7 +150,9 @@ export default {
 
   async onLoad(query) {
     const action = String(query.action || '').toLowerCase();
-    const requestedName = String(query.deviceName || query.device || '');
+    const rawRequestedName = query.deviceName ?? query.device ?? '';
+    const requestedText = String(rawRequestedName).trim();
+    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
     this.setData({
       statusText: 'Проверяю связь с RE:Vision…',
@@ -453,9 +347,6 @@ export default {
     <text class="heading">{{title}}</text>
     <text class="status">{{statusText}}</text>
     <text class="detail">{{detailText}}</text>
-    <button bindtap="startVoiceRecognition">Говорить без Hi Rokid</button>
-    <button bindtap="stopVoiceRecognition">Остановить микрофон</button>
-    <text class="detail">{{voiceStatus}}</text>
     <button ink:if="{{showSettingsButton}}" bindtap="openSettings">Настроить ключ доступа</button>
     <text class="footer" ink:if="{{busy}}">Выполняется проверка…</text>
   </view>
