@@ -772,7 +772,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         boolean accepted = false;
         try {
             accepted = wifi.setWifiEnabled(enabled);
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Direct Wi-Fi toggle rejected by firmware; opening system panel", e);
         }
 
