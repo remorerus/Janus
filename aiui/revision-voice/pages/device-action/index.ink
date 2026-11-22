@@ -31,6 +31,7 @@
 </script>
 
 <script setup>
+// Wi-Fi radio on/off uses the Android bridge POST /wifi/toggle; opening Settings is a separate explicit intent.
 const BRIDGE = 'http://127.0.0.1:38761';
 
 function normalize(value) {
