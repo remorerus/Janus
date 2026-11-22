@@ -1,6 +1,7 @@
 name: Build RE:Vision AIUI Agent
 # Agent bridge diagnostics rebuild
 # AIX artifact packaging retry
+# Wi-Fi location diagnostics rebuild
 
 on:
   push:
