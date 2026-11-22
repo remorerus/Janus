@@ -52,7 +52,7 @@ function request(path, method, token, data) {
       header,
       data,
       dataType: 'json',
-      timeout: 12000,
+      timeout: 25000,
       success(res) {
         const status = Number(res && res.statusCode || 0);
         if (status >= 200 && status < 300) {
