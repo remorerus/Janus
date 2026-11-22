@@ -16,7 +16,7 @@ const TOKEN_KEY = 'revision_bridge_token';
 
 function validPin(value) {
   const pin = String(value == null ? '' : value).trim();
-  return /^\\d{4}$/.test(pin) ? pin : '';
+  return /^\d{4}$/.test(pin) ? pin : '';
 }
 
 function readWxPin() {
