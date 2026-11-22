@@ -33,7 +33,7 @@ android {
         applicationId "com.ymid.wakeonlan"
         minSdk 24
         targetSdk 36
-        versionName "1.9.16"
+        versionName "1.9.17"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
