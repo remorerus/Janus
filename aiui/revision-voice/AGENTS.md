@@ -15,13 +15,18 @@ Use the device-action Page when the user asks to:
 - check a saved device: "проверь студию", "студия включена?", "статус компьютера";
 - wake a saved device: "включи студию", "разбуди компьютер STUDIO", "включи Одиссей Арк";
 - shut down a saved device: "выключи студию", "выключи компьютер STUDIO";
-- open Wi-Fi settings for manual network selection: "открой Wi-Fi", "покажи настройки Wi-Fi", "переключись на другую сеть"; use `action: "wifi"` and do not ask for a device name;
+- open Wi-Fi settings for manual network selection: "открой Wi-Fi", "покажи настройки Wi-Fi", "переключись на другую сеть"; use `action: "wifi"`;
+- request Wi-Fi enable: "включи Wi-Fi", "включи вай фай", "активируй беспроводную сеть"; use `action: "wifi_enable"`;
+- request Wi-Fi disable: "выключи Wi-Fi", "выключи вай фай", "отключи беспроводную сеть"; use `action: "wifi_disable"`;
+- check current Wi-Fi: "какая сейчас сеть", "проверь Wi-Fi"; use `action: "wifi_status"`;
+- list visible Wi-Fi networks: "покажи доступные сети"; use `action: "wifi_list"`;
+Do not ask for a device name for any Wi-Fi action.
 - configure the local bridge key: open pages/settings/index only when the user explicitly asks to configure or replace the access key.
 
 Recognize natural Russian variants, inflections and word order. Map "студия" to a saved device whose name contains "STUDIO"; map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
 
 For a command, open `pages/device-action/index` with:
-- `action`: one of `list`, `status`, `wake`, `shutdown`, `wifi`;
+- `action`: one of `list`, `status`, `wake`, `shutdown`, `wifi`, `wifi_enable`, `wifi_disable`, `wifi_connect`, `wifi_status`, `wifi_list`;
 - `deviceName`: the user's device name or alias, omitted only for `list`.
 
 If the device name is missing or matches more than one saved device, ask one short clarification question. Do not execute a command against an uncertain device.
@@ -31,7 +36,9 @@ If the device name is missing or matches more than one saved device, ask one sho
 - After `wake`, wait for a real status response. If it does not become reachable, say that the wake command was sent but the device has not yet been confirmed online.
 - A device becoming unreachable after `shutdown` is not absolute proof that it powered off. Report the observed network status accurately.
 - Never claim Wi-Fi changed, RE:Vision opened, or RE:Vision closed unless an implemented and verified Android bridge action confirms it.
-- The `wifi` action only opens Android Wi-Fi controls. The user must choose and confirm the network; never claim a network changed unless the user confirms it or a future verified status endpoint confirms it.
+- The `wifi` action opens Android Wi-Fi controls. The user must choose and confirm the network.
+- The `wifi_enable` and `wifi_disable` actions open the Android Internet/Wi-Fi system panel. On this app's targetSdk 36, Android does not allow an ordinary third-party app to toggle Wi-Fi directly. The user must tap the Wi-Fi control in the panel. Never claim the state changed until `wifi_status` confirms it.
+- Never claim Wi-Fi changed unless a subsequent status check confirms the requested state.
 - Do not claim the agent can select a named saved Wi-Fi network automatically. Android's standard application APIs do not provide that capability to an ordinary app on modern Android.
 - For a combined Wi-Fi-and-wake request, do not send the wake command unless the requested network is already available and the device can be reached.
 - Do not attempt to control the Android UI by simulated taps.
