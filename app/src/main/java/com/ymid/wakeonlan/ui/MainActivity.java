@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.content.pm.PackageManager;
 import android.view.Menu;
 import android.view.View;
 import android.widget.PopupMenu;
@@ -12,6 +13,8 @@ import android.widget.TextView;
 import androidx.annotation.IdRes;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -63,6 +66,18 @@ public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost
         initializeShortcuts();
         InAppUpdateManager.attach(this);
         InAppUpdateManager.checkForUpdate(this);
+        requestWifiControlPermissionIfNeeded();
+    }
+
+    /** One-time runtime permission needed for Android's legacy saved-network API on Rokid. */
+    private void requestWifiControlPermissionIfNeeded() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) return;
+        android.content.SharedPreferences prefs = getSharedPreferences("revision_wifi_permission", MODE_PRIVATE);
+        if (prefs.getBoolean("asked_once", false)) return;
+        prefs.edit().putBoolean("asked_once", true).apply();
+        ActivityCompat.requestPermissions(this,
+                new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 412);
     }
 
     private void applyWindowInsets() {
