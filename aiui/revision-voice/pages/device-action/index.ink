@@ -242,7 +242,25 @@ export default {
           return;
         }
         const requestedEnabled = query.enabled;
-        const result = await request('/wifi/toggle', 'POST', token, { enabled: requestedEnabled });
+        let result;
+        try {
+          result = await request('/wifi/toggle', 'POST', token, { enabled: requestedEnabled });
+        } catch (toggleError) {
+          // Older installed APKs may not yet expose /wifi/toggle. Fall back to
+          // the existing Wi-Fi settings route instead of silently failing.
+          if (toggleError && toggleError.statusCode === 404) {
+            const fallback = await request('/wifi', 'POST', token, {});
+            if (fallback && fallback.ok === true && fallback.opened === true) {
+              const fallbackMessage = requestedEnabled
+                ? 'В этой версии приложения прямое включение Wi-Fi недоступно. Открыл настройки Wi-Fi: включи переключатель вручную.'
+                : 'В этой версии приложения прямое выключение Wi-Fi недоступно. Открыл настройки Wi-Fi: выключи переключатель вручную.';
+              this.setData({ statusText: fallbackMessage, detailText: 'Обнови Android-приложение RE:Vision для обработки команды через Voice Bridge.', resultText: fallbackMessage, busy: false });
+              speak(fallbackMessage);
+              return;
+            }
+          }
+          throw toggleError;
+        }
         if (!result || result.ok !== true) {
           throw new Error(result && result.error ? result.error : 'Android не выполнил переключение Wi-Fi');
         }
@@ -284,10 +302,26 @@ export default {
 
       if (action === 'wifi_status') {
         const state = await request('/wifi/status', 'GET', token);
-        const message = state && state.connected
-          ? 'Сейчас подключено к сети ' + state.ssid + '.'
-          : (state && state.enabled ? 'Wi-Fi включён, но имя текущей сети недоступно.' : 'Wi-Fi выключен или соединение отсутствует.');
-        this.setData({ statusText: message, detailText: state && state.permissionRequired ? 'Android ограничил доступ к имени сети.' : '', resultText: message, busy: false });
+        if (!state || state.ok !== true) {
+          throw new Error(state && state.error ? state.error : 'Android не вернул состояние Wi-Fi');
+        }
+        const ssid = typeof state.ssid === 'string' ? state.ssid.trim() : '';
+        let message;
+        if (state.connected === true && ssid) {
+          message = 'Сейчас подключено к сети ' + ssid + '.';
+        } else if (state.connected === true) {
+          message = 'Wi-Fi подключён, но Android не передал имя сети.';
+        } else if (state.enabled === true) {
+          message = 'Wi-Fi включён, но подключение к сети не подтверждено.';
+        } else if (state.enabled === false) {
+          message = 'Wi-Fi выключен.';
+        } else {
+          message = 'Android не передал достоверное состояние Wi-Fi. Повтори запрос.';
+        }
+        const detail = state.permissionRequired
+          ? 'Android ограничил доступ к имени сети.'
+          : (ssid ? 'Текущая сеть: ' + ssid : 'SSID не получен от Android.');
+        this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
         speak(message);
         return;
       }
