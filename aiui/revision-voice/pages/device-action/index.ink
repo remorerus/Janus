@@ -191,13 +191,16 @@ export default {
         const mentionsWifi = phrase.includes('wifi') || phrase.includes('вайфай') ||
           phrase.includes('вайф') || phrase.includes('беспровод');
         const asksCurrentNetwork = phrase.includes('какаясеть') ||
-          phrase.includes('назовисеть') || phrase.includes('имясети') ||
+          phrase.includes('какойсет') || phrase.includes('ккакойсет') ||
+          phrase.includes('назовисеть') || phrase.includes('назовиподключен') ||
+          phrase.includes('имясети') || phrase.includes('имяподключен') ||
           phrase.includes('текущаясеть') || phrase.includes('подключенаксети') ||
           phrase.includes('подключенксети') || phrase.includes('сейчасподключено') ||
-          phrase.includes('проверисеть');
+          phrase.includes('проверисеть') || phrase.includes('чтозасеть');
         const asksNetworkList = phrase.includes('доступныесети') ||
           phrase.includes('списоксетей') || phrase.includes('какиесетивижу') ||
-          phrase.includes('покажисети') || phrase.includes('найтисети');
+          phrase.includes('какиесетивидны') || phrase.includes('покажисети') ||
+          phrase.includes('найтисети');
         const asksOpenWifi = phrase.includes('открой') || phrase.includes('открыть') ||
           phrase.includes('настройки') || phrase.includes('параметры');
         const asksConnect = phrase.includes('подключись') || phrase.includes('подключи') ||
