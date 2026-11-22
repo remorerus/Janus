@@ -696,7 +696,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 try {
                     startActivity(panel);
                     opened[0] = true;
-                } catch (ActivityNotFoundException | SecurityException | RuntimeException e) {
+                } catch (RuntimeException e) {
                     failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
                     try {
                         Intent settings = new Intent(Settings.ACTION_WIFI_SETTINGS)
