@@ -12,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -73,8 +74,13 @@ public class SettingsActivity extends AppCompatActivity {
         private static final String PREF_VOICE_TOKEN = "pref_voice_bridge_token";
         private static final String PREF_VOICE_BRIDGE_ENABLED = "pref_voice_bridge_enabled";
         private static final String PREF_VOICE_BRIDGE_STATUS = "pref_voice_bridge_status";
+        private static final String PREF_WIFI_PERMISSION_STATUS = "pref_wifi_permission_status";
+        private static final String PREF_WIFI_PERMISSION_REQUEST = "pref_wifi_permission_request";
+        private static final String PREF_APP_PERMISSIONS = "pref_app_permissions";
+        private static final String PREF_LOCATION_SETTINGS = "pref_location_settings";
 
         private ActivityResultLauncher<String[]> wifiPermissionLauncher;
+        private ActivityResultLauncher<String> locationPermissionLauncher;
         private WifiManager wifiManager;
         private Preference trustedSsidsPreference;
         private Preference scanWifiPreference;
@@ -95,6 +101,10 @@ public class SettingsActivity extends AppCompatActivity {
         @Override
         public void onCreate(Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
+
+            locationPermissionLauncher = registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(),
+                    granted -> updateWifiPermissionStatus());
 
             wifiPermissionLauncher = registerForActivityResult(
                     new ActivityResultContracts.RequestMultiplePermissions(),
@@ -132,6 +142,46 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
             updateVoiceBridgeStatus();
+            updateWifiPermissionStatus();
+
+            Preference requestLocationPermission = findPreference(PREF_WIFI_PERMISSION_REQUEST);
+            if (requestLocationPermission != null) {
+                requestLocationPermission.setOnPreferenceClickListener(preference -> {
+                    if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+                        Toast.makeText(requireContext(), R.string.wifi_location_permission_already_granted, Toast.LENGTH_SHORT).show();
+                    } else {
+                        locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION);
+                    }
+                    return true;
+                });
+            }
+
+            Preference appPermissions = findPreference(PREF_APP_PERMISSIONS);
+            if (appPermissions != null) {
+                appPermissions.setOnPreferenceClickListener(preference -> {
+                    Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", requireContext().getPackageName(), null));
+                    try {
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                });
+            }
+
+            Preference locationSettings = findPreference(PREF_LOCATION_SETTINGS);
+            if (locationSettings != null) {
+                locationSettings.setOnPreferenceClickListener(preference -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                    } catch (Exception e) {
+                        Toast.makeText(requireContext(), R.string.app_permissions_settings_unavailable, Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                });
+            }
 
             Preference voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
             if (voiceBridgePreference != null) {
@@ -197,7 +247,24 @@ public class SettingsActivity extends AppCompatActivity {
         public void onResume() {
             super.onResume();
             updateVoiceBridgeStatus();
+            updateWifiPermissionStatus();
             handler.postDelayed(this::updateVoiceBridgeStatus, 700);
+        }
+
+        private void updateWifiPermissionStatus() {
+            if (!isAdded()) return;
+            Preference status = findPreference(PREF_WIFI_PERMISSION_STATUS);
+            if (status == null) return;
+            boolean permissionGranted = ContextCompat.checkSelfPermission(requireContext(),
+                    Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean locationEnabled = isLocationEnabled();
+            if (permissionGranted && locationEnabled) {
+                status.setSummary(R.string.wifi_location_permission_ready);
+            } else if (permissionGranted) {
+                status.setSummary(R.string.wifi_location_permission_location_off);
+            } else {
+                status.setSummary(R.string.wifi_location_permission_missing);
+            }
         }
 
         private void updateVoiceBridgeStatus() {
