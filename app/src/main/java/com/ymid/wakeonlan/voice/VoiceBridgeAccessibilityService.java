@@ -501,27 +501,50 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         JsonObject response = new JsonObject();
         WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         boolean enabled = false;
+        boolean connected = false;
         String ssid = null;
+        boolean permissionError = false;
+
         try {
             enabled = wifi != null && wifi.isWifiEnabled();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ConnectivityManager connectivity = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-                Network active = connectivity == null ? null : connectivity.getActiveNetwork();
-                NetworkCapabilities caps = active == null || connectivity == null
-                        ? null : connectivity.getNetworkCapabilities(active);
-                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        } catch (SecurityException e) {
+            permissionError = true;
+        }
+
+        // Probe the active Wi-Fi network first. Keep this separate from the
+        // legacy WifiManager fallback so one denied API does not suppress both.
+        try {
+            ConnectivityManager connectivity = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network active = connectivity == null ? null : connectivity.getActiveNetwork();
+            NetworkCapabilities caps = active == null || connectivity == null
+                    ? null : connectivity.getNetworkCapabilities(active);
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                connected = true;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                         && caps.getTransportInfo() instanceof WifiInfo) {
                     ssid = ((WifiInfo) caps.getTransportInfo()).getSSID();
                 }
             }
-            if ((ssid == null || ssid.trim().isEmpty()) && wifi != null) {
-                WifiInfo info = wifi.getConnectionInfo();
-                if (info != null) ssid = info.getSSID();
-            }
         } catch (SecurityException e) {
-            response.addProperty("permissionRequired", true);
-        } catch (Exception ignored) {
+            permissionError = true;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not read active Wi-Fi network", e);
         }
+
+        if (wifi != null && (ssid == null || ssid.trim().isEmpty())) {
+            try {
+                WifiInfo info = wifi.getConnectionInfo();
+                if (info != null) {
+                    if (info.getNetworkId() >= 0) connected = true;
+                    if (ssid == null || ssid.trim().isEmpty()) ssid = info.getSSID();
+                }
+            } catch (SecurityException e) {
+                permissionError = true;
+            } catch (Exception e) {
+                Log.w(TAG, "Could not read legacy Wi-Fi connection info", e);
+            }
+        }
+
         if (ssid != null) {
             ssid = ssid.trim();
             if (ssid.length() >= 2 && ssid.charAt(0) == '"' && ssid.charAt(ssid.length() - 1) == '"') {
@@ -530,21 +553,22 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             if ("<unknown ssid>".equalsIgnoreCase(ssid) || "unknown ssid".equalsIgnoreCase(ssid)
                     || "0x".equalsIgnoreCase(ssid) || "null".equalsIgnoreCase(ssid)) ssid = null;
         }
+
         boolean permissionOk = hasLocationPermission();
         boolean locationOn = isLocationEnabledSafe();
         response.addProperty("locationPermission", permissionOk);
         response.addProperty("locationEnabled", locationOn);
-        boolean ssidUnreadable = (ssid == null || ssid.isEmpty()) && (!permissionOk || !locationOn);
-        response.addProperty("ssidUnreadable", ssidUnreadable);
+        response.addProperty("permissionRequired", permissionError || !permissionOk);
+        response.addProperty("ssidUnreadable", connected && (ssid == null || ssid.isEmpty()));
         response.addProperty("ok", true);
         response.addProperty("enabled", enabled);
-        response.addProperty("connected", ssid != null && !ssid.isEmpty());
+        response.addProperty("connected", connected);
         if (ssid != null && !ssid.isEmpty()) response.addProperty("ssid", ssid);
-        response.addProperty("message",
-                ssid != null && !ssid.isEmpty() ? "Connected to " + ssid
-                : !permissionOk ? "Нужно разрешение на местоположение для RE:Vision."
-                : !locationOn ? "Включи геолокацию на очках: без неё Android скрывает имя сети."
-                : "Wi-Fi is enabled but the current SSID is unavailable.");
+        String message = ssid != null && !ssid.isEmpty() ? "Connected to " + ssid
+                : connected ? "Wi-Fi connected; SSID is hidden by Android or firmware."
+                : !enabled ? "Wi-Fi is disabled."
+                : "Wi-Fi is enabled but no active Wi-Fi connection was detected.";
+        response.addProperty("message", message);
         return response;
     }
 
@@ -707,6 +731,12 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
      * Opens Android's Internet panel for an explicit user-confirmed Wi-Fi toggle.
      * Android 10+ blocks direct Wi-Fi toggling for ordinary apps targeting Q or newer.
      */
+    /**
+     * Try the legacy Wi-Fi toggle first. This app intentionally targets API 28,
+     * so Android 10's target-29 restriction does not apply on supported firmware.
+     * Always verify the resulting radio state before reporting success. If the
+     * firmware refuses the call, open the system panel as an honest fallback.
+     */
     private JsonObject openWifiTogglePanel(String body) throws Exception {
         boolean enabled;
         try {
@@ -717,6 +747,60 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             enabled = request.get("enabled").getAsBoolean();
         } catch (Exception e) {
             return error("invalid_toggle_request");
+        }
+
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) return error("wifi_unavailable");
+
+        boolean before;
+        try {
+            before = wifi.isWifiEnabled();
+            if (before == enabled) {
+                JsonObject current = wifiStatus();
+                current.addProperty("requestedEnabled", enabled);
+                current.addProperty("changed", false);
+                current.addProperty("verified", true);
+                current.addProperty("requiresUserAction", false);
+                current.addProperty("message", enabled ? "Wi-Fi уже включён." : "Wi-Fi уже выключен.");
+                return current;
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "Cannot read Wi-Fi state before toggle", e);
+            before = !enabled;
+        }
+
+        boolean accepted = false;
+        try {
+            accepted = wifi.setWifiEnabled(enabled);
+        } catch (SecurityException | RuntimeException e) {
+            Log.w(TAG, "Direct Wi-Fi toggle rejected by firmware; opening system panel", e);
+        }
+
+        if (accepted) {
+            long deadline = System.currentTimeMillis() + 12_000L;
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    boolean actual = wifi.isWifiEnabled();
+                    if (actual == enabled) {
+                        JsonObject verified = wifiStatus();
+                        verified.addProperty("requestedEnabled", enabled);
+                        verified.addProperty("changed", actual != before);
+                        verified.addProperty("verified", true);
+                        verified.addProperty("requiresUserAction", false);
+                        verified.addProperty("message", enabled ? "Wi-Fi включён; состояние проверено." : "Wi-Fi выключен; состояние проверено.");
+                        return verified;
+                    }
+                    Thread.sleep(400L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (SecurityException e) {
+                    Log.w(TAG, "Cannot verify Wi-Fi toggle", e);
+                    break;
+                }
+            }
+            // The request was accepted but the firmware did not reach the target
+            // state in time. Do not claim success; fall through to the system UI.
         }
 
         final boolean[] opened = new boolean[1];
@@ -758,8 +842,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("opened", true);
         response.addProperty("requestedEnabled", enabled);
         response.addProperty("changed", false);
+        response.addProperty("verified", false);
         response.addProperty("requiresUserAction", true);
-        response.addProperty("message", "Android requires the user to confirm the Wi-Fi toggle in the system panel.");
+        response.addProperty("message", "Direct Wi-Fi toggle was not confirmed; Android system panel opened for manual action.");
         return response;
     }
 
