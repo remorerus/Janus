@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "RE:Vision",
-  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Вызывай этот агент, когда пользователь просит открыть Wi-Fi, показать доступные сети, переключиться на другую точку доступа или поменять сеть. Показывает сохранённые устройства, проверяет доступность, включает и выключает настроенные устройства; для Wi-Fi открывает системную панель выбора сети на самих очках.",
+  "description": "Единый голосовой агент RE:Vision для Rokid. Вызывается только через Hi Rokid. Обрабатывает распознанную Hi Rokid команду: показывает сохранённые устройства, проверяет доступность, включает и выключает настроенные устройства, открывает Wi-Fi. Не запускает собственный микрофон и не использует автономное распознавание речи.",
   "schema": {
     "data": {
       "type": "object",
@@ -141,80 +141,7 @@ export default {
     detailText: '',
     resultText: '',
     showSettingsButton: false,
-    voiceStatus: 'Для автономной проверки нажми «Говорить без Hi Rokid».',
     busy: true
-  },
-
-  recognition: null,
-
-  startVoiceRecognition() {
-    try {
-      const Recognition = typeof SpeechRecognition !== 'undefined'
-        ? SpeechRecognition
-        : (typeof webkitSpeechRecognition !== 'undefined' ? webkitSpeechRecognition : null);
-      if (!Recognition) {
-        this.setData({ voiceStatus: 'В этом AIUI Runtime нет API SpeechRecognition. Проверь версию Runtime.' });
-        return;
-      }
-      if (this.recognition) {
-        try { this.recognition.abort(); } catch (e) {}
-        this.recognition = null;
-      }
-      const recognition = new Recognition();
-      this.recognition = recognition;
-      recognition.lang = 'ru-RU';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.onstart = () => this.setData({ voiceStatus: 'Слушаю через микрофон очков… Скажи команду.' });
-      recognition.onerror = (event) => {
-        const reason = event && event.error ? String(event.error) : 'unknown';
-        this.setData({ voiceStatus: 'Ошибка распознавания: ' + reason + '. Если просит Hi Rokid, пришли точный текст.' });
-        this.recognition = null;
-      };
-      recognition.onend = () => {
-        if (this.recognition === recognition) this.recognition = null;
-      };
-      recognition.onresult = (event) => {
-        const result = event.results && event.results[event.resultIndex];
-        const transcript = result && result[0] ? String(result[0].transcript || '').trim() : '';
-        if (!transcript) {
-          this.setData({ voiceStatus: 'Речь не распознана. Попробуй ещё раз.' });
-          return;
-        }
-        this.setData({ voiceStatus: 'Распознано: «' + transcript + '». Выполняю команду…' });
-        const phrase = normalize(transcript);
-        let action = '';
-        if (phrase.includes('покажиустройства') || phrase.includes('списокустройств') || phrase.includes('какиеустройства')) {
-          action = 'list';
-        } else if (phrase.includes('включи') || phrase.includes('разбуди')) {
-          action = 'wake';
-        } else if (phrase.includes('выключи')) {
-          action = 'shutdown';
-        } else if (phrase.includes('проверь') || phrase.includes('статус') || phrase.includes('доступен') || phrase.includes('всети')) {
-          action = 'status';
-        }
-        let deviceName = '';
-        if (phrase.includes('студи') || phrase.includes('studio')) deviceName = 'STUDIO';
-        else if (phrase.includes('одиссей') || phrase.includes('odyssey') || phrase.includes('арк')) deviceName = 'Odyssey Ark';
-        if (!action) {
-          this.setData({ voiceStatus: 'Услышал: «' + transcript + '», но не понял команду. Скажи: покажи устройства, проверь студию, включи студию или выключи студию.' });
-          return;
-        }
-        this.onLoad({ action, deviceName });
-      };
-      recognition.start();
-    } catch (error) {
-      this.setData({ voiceStatus: 'Не удалось запустить микрофон: ' + String(error && error.message ? error.message : error) });
-    }
-  },
-
-  stopVoiceRecognition() {
-    if (this.recognition) {
-      try { this.recognition.stop(); } catch (e) {}
-      this.recognition = null;
-      this.setData({ voiceStatus: 'Распознавание остановлено.' });
-    }
   },
 
   openSettings() {
@@ -418,9 +345,6 @@ export default {
     <text class="heading">{{title}}</text>
     <text class="status">{{statusText}}</text>
     <text class="detail">{{detailText}}</text>
-    <button bindtap="startVoiceRecognition">Говорить без Hi Rokid</button>
-    <button bindtap="stopVoiceRecognition">Остановить микрофон</button>
-    <text class="detail">{{voiceStatus}}</text>
     <button ink:if="{{showSettingsButton}}" bindtap="openSettings">Настроить ключ доступа</button>
     <text class="footer" ink:if="{{busy}}">Выполняется проверка…</text>
   </view>
