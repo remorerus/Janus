@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - revision-aiui-agent
+      - revision-pin-persistence-fix
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"

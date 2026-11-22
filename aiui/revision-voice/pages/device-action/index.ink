@@ -139,6 +139,50 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// The PIN is duplicated in AIUI's wx storage and Web Storage. If one
+// backend loses its copy during a resource update, recover it from the other.
+const TOKEN_KEY = 'revision_bridge_token';
+
+function validBridgeToken(value) {
+  const token = String(value == null ? '' : value).trim();
+  return /^\d{4}$/.test(token) ? token : '';
+}
+
+function readBridgeToken() {
+  let token = '';
+  try {
+    if (typeof localStorage !== 'undefined') {
+      token = validBridgeToken(localStorage.getItem(TOKEN_KEY));
+    }
+  } catch (e) {
+    console.warn('RE:Vision localStorage read failed', e);
+  }
+  if (!token) {
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function') {
+        token = validBridgeToken(wx.getStorageSync(TOKEN_KEY));
+      }
+    } catch (e) {
+      console.warn('RE:Vision wx storage read failed', e);
+    }
+  }
+  if (token) {
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.setStorageSync === 'function') {
+        wx.setStorageSync(TOKEN_KEY, token);
+      }
+    } catch (e) {
+      console.warn('RE:Vision wx storage recovery failed', e);
+    }
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(TOKEN_KEY, token);
+    } catch (e) {
+      console.warn('RE:Vision localStorage recovery failed', e);
+    }
+  }
+  return token;
+}
+
 export default {
   data: {
     title: 'RE:Vision',
@@ -182,7 +226,7 @@ export default {
         return;
       }
 
-      const token = wx.getStorageSync('revision_bridge_token');
+      const token = readBridgeToken();
       if (!token) {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
