@@ -407,7 +407,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         Log.i(TAG, "HTTP " + method + " " + path);
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
-                ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
+                ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path) || "/wifi/toggle".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
                 ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
@@ -430,6 +430,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, executeCommand(new String(body, StandardCharsets.UTF_8)));
         } else if ("POST".equals(method) && "/wifi".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
+        } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, openWifiTogglePanel(new String(body, StandardCharsets.UTF_8)));
         } else if ("GET".equals(method) && "/wifi/status".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, wifiStatus());
         } else if ("GET".equals(method) && "/wifi/networks".equals(path)) {
@@ -666,6 +668,66 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
                     + ". Выбери её вручную на экране очков.");
         return result;
+    }
+
+    /**
+     * Opens Android's Internet panel for an explicit user-confirmed Wi-Fi toggle.
+     * Android 10+ blocks direct Wi-Fi toggling for ordinary apps targeting Q or newer.
+     */
+    private JsonObject openWifiTogglePanel(String body) throws Exception {
+        boolean enabled;
+        try {
+            JsonObject request = JsonParser.parseString(body).getAsJsonObject();
+            if (!request.has("enabled") || !request.get("enabled").isJsonPrimitive()) {
+                return error("enabled_required");
+            }
+            enabled = request.get("enabled").getAsBoolean();
+        } catch (Exception e) {
+            return error("invalid_toggle_request");
+        }
+
+        final boolean[] opened = new boolean[1];
+        final String[] failure = new String[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Intent panel = new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(panel);
+                    opened[0] = true;
+                } catch (ActivityNotFoundException | SecurityException | RuntimeException e) {
+                    failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+                    try {
+                        Intent settings = new Intent(Settings.ACTION_WIFI_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(settings);
+                        opened[0] = true;
+                    } catch (Exception fallback) {
+                        failure[0] += "; fallback: " + fallback.getClass().getSimpleName()
+                                + ": " + String.valueOf(fallback.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+            } finally {
+                latch.countDown();
+            }
+        });
+        if (!latch.await(4, TimeUnit.SECONDS)) return error("wifi_panel_timeout");
+        if (!opened[0]) {
+            JsonObject response = error("wifi_panel_unavailable");
+            if (failure[0] != null) response.addProperty("detail", failure[0]);
+            return response;
+        }
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("opened", true);
+        response.addProperty("requestedEnabled", enabled);
+        response.addProperty("changed", false);
+        response.addProperty("requiresUserAction", true);
+        response.addProperty("message", "Android requires the user to confirm the Wi-Fi toggle in the system panel.");
+        return response;
     }
 
     /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
