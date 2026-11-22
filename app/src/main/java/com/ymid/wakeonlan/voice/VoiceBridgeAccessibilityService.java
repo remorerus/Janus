@@ -409,7 +409,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path) || "/wifi/toggle".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
-                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path)));
+                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             Log.w(TAG, "HTTP 401 for " + path);
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
@@ -432,6 +432,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
         } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, openWifiTogglePanel(new String(body, StandardCharsets.UTF_8)));
+        } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, toggleWifi(new String(body, StandardCharsets.UTF_8)));
         } else if ("GET".equals(method) && "/wifi/status".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, wifiStatus());
         } else if ("GET".equals(method) && "/wifi/networks".equals(path)) {
@@ -494,6 +496,46 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Android 10+ blocks ordinary apps targeting API 29+ from toggling Wi-Fi
+     * with WifiManager.setWifiEnabled(). Open the system Wi-Fi controls and
+     * explicitly report that the user must complete the requested change.
+     */
+    private JsonObject toggleWifi(String body) throws Exception {
+        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
+        if (!request.has("enabled") || request.get("enabled").isJsonNull()) {
+            return error("wifi_enabled_required");
+        }
+
+        boolean requestedEnabled;
+        try {
+            requestedEnabled = request.get("enabled").getAsBoolean();
+        } catch (Exception e) {
+            return error("wifi_enabled_invalid");
+        }
+
+        JsonObject current = wifiStatus();
+        if (current.has("enabled") && current.get("enabled").getAsBoolean() == requestedEnabled) {
+            current.addProperty("verified", true);
+            current.addProperty("requestedEnabled", requestedEnabled);
+            current.addProperty("requiresUserAction", false);
+            return current;
+        }
+
+        JsonObject opened = openWifiSettings();
+        if (!opened.has("ok") || !opened.get("ok").getAsBoolean()) {
+            return opened;
+        }
+        opened.addProperty("requiresUserAction", true);
+        opened.addProperty("verified", false);
+        opened.addProperty("requestedEnabled", requestedEnabled);
+        if (current.has("enabled")) opened.add("enabled", current.get("enabled"));
+        opened.addProperty("message", requestedEnabled
+                ? "Android требует подтверждения пользователя для включения Wi-Fi. Открыты системные настройки."
+                : "Android требует подтверждения пользователя для выключения Wi-Fi. Открыты системные настройки.");
+        return opened;
     }
 
     /** Returns the current Wi-Fi connection without attempting to change networks. */
