@@ -24,6 +24,22 @@
             android:summary="@string/pref_trusted_ssids_summary" />
     </PreferenceCategory>
 
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        android:title="@string/voice_bridge_local_category">
+        <SwitchPreferenceCompat
+            app:iconSpaceReserved="false"
+            android:key="pref_voice_bridge_enabled"
+            android:title="@string/voice_bridge_local_enabled_title"
+            android:summary="@string/voice_bridge_local_enabled_summary"
+            android:defaultValue="true" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="pref_voice_bridge_status"
+            android:title="@string/voice_bridge_local_status_title"
+            android:summary="@string/voice_bridge_local_status_waiting" />
+    </PreferenceCategory>
+
     <Preference
         app:iconSpaceReserved="false"
         android:key="pref_voice_bridge_accessibility"
