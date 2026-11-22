@@ -21,5 +21,9 @@ Import the GitHub subdirectory:
 
 Bind the imported project to a new AIUI Agent named RE:Vision, then package/upload it in AIUI Studio. Update the glasses resource package through the Rokid app.
 
+## Intent routing safeguards
+
+The action page rejects missing or unsupported `action` values before contacting the device list. Microphone controls belong to the Rokid host and must not be routed to RE:Vision. Device names are required only for saved-device operations; Wi-Fi actions do not take a device name.
+
 ## Current milestone
 The first build is a bridge-integration foundation. It checks whether the AIUI runtime can reach the loopback bridge and contains the command flow, but commands remain blocked until the Android bridge adds token authentication and the localhost route is verified on the glasses.
