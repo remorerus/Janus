@@ -15,14 +15,15 @@ Use the device-action Page when the user asks to:
 - check a saved device: "проверь студию", "студия включена?", "статус компьютера";
 - wake a saved device: "включи студию", "разбуди компьютер STUDIO", "включи Одиссей Арк";
 - shut down a saved device: "выключи студию", "выключи компьютер STUDIO";
-- open Wi-Fi settings for manual network selection: "открой Wi-Fi", "покажи настройки Wi-Fi", "переключись на другую сеть"; use `action: "wifi"` and do not ask for a device name;
+- check Wi-Fi status/current SSID: use `action: "wifi_status"`; list visible networks: use `action: "wifi_list"`; open Wi-Fi settings only on a direct request: use `action: "wifi"`; connect to a named network: use `action: "wifi_connect"`; none of these actions requires `deviceName`;
+- microphone commands such as "говорить без Rokid" or "остановить микрофон" are not RE:Vision features and must never be routed to this agent;
 - configure the local bridge key: open pages/settings/index only when the user explicitly asks to configure or replace the access key.
 
 Recognize natural Russian variants, inflections and word order. Map "студия" to a saved device whose name contains "STUDIO"; map "Одиссей Арк" to a saved device whose name contains "Odyssey Ark". Otherwise resolve against the actual names returned by RE:Vision. Never invent a device or device ID.
 
-For a command, open `pages/device-action/index` with:
-- `action`: one of `list`, `status`, `wake`, `shutdown`, `wifi`;
-- `deviceName`: the user's device name or alias, omitted only for `list`.
+For a command, open `pages/device-action/index` only with a recognized non-empty `action`: `list`, `status`, `wake`, `shutdown`, `wifi_status`, `wifi_list`, `wifi`, or `wifi_connect`.
+- `deviceName` is required for `status`, `wake`, and `shutdown`; it is not required for list or Wi-Fi actions.
+- Never open the page with `action: null`, an empty action, or a microphone command. If the intent does not map to a supported action, ask the user to repeat or clarify instead.
 
 If the device name is missing or matches more than one saved device, ask one short clarification question. Do not execute a command against an uncertain device.
 
