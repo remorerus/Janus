@@ -272,9 +272,9 @@ export default {
         }
         if (result.requiresUserAction === true) {
           const message = requestedEnabled
-            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системную панель для подтверждения.'
-            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системную панель для подтверждения.';
-          this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системной панели.', resultText: message, busy: false });
+            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — включи переключатель вручную.'
+            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — выключи переключатель вручную.';
+          this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системных настройках.', resultText: message, busy: false });
           speak(message);
           return;
         }
