@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import com.ymid.wakeonlan.monitoring.MonitoringScheduler
 import com.ymid.wakeonlan.voice.VoiceBridgeKeepAliveService
+import com.ymid.wakeonlan.voice.VoiceBridgeRecoveryService
 
 class PackageReplacedReceiver : BroadcastReceiver() {
 
@@ -14,6 +15,10 @@ class PackageReplacedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         resetAliasesToDefault(context)
         MonitoringScheduler.scheduleIfEnabled(context)
+        val bridgePrefs = context.getSharedPreferences("revision_voice_bridge", Context.MODE_PRIVATE)
+        if (bridgePrefs.getBoolean("bridge_ever_enabled", false)) {
+            VoiceBridgeRecoveryService.start(context)
+        }
         if (VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)) {
             VoiceBridgeKeepAliveService.start(context)
         }
