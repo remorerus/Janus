@@ -22,7 +22,12 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (accessibilityEnabled) {
             bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
         }
-        if (bridgePrefs.getBoolean("bridge_ever_enabled", false)) {
+        // Existing installations may predate bridge_ever_enabled. A saved bridge
+        // PIN proves that the AIUI bridge was configured before this upgrade.
+        val recoveryWasConfigured = bridgePrefs.getBoolean("bridge_ever_enabled", false)
+                || bridgePrefs.contains("access_token")
+        if (recoveryWasConfigured) {
+            bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
             VoiceBridgeRecoveryService.start(context)
         }
         if (accessibilityEnabled) {
