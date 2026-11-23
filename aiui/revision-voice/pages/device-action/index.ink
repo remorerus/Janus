@@ -1,23 +1,27 @@
 <script def>
 {
-  "navigationBarTitleText": "RE:Vision",
-  "description": "Единый голосовой агент RE:Vision для Rokid. Вызывается только через Hi Rokid. Обрабатывает распознанную Hi Rokid команду: показывает сохранённые устройства, проверяет доступность, управляет Wi-Fi через RE:Vision и сообщает фактическое состояние подключения. Не запускает собственный микрофон и не использует автономное распознавание речи.",
+  "navigationBarTitleText": "Ревижн",
+  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства.",
   "schema": {
     "data": {
       "type": "object",
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi", "wifi_enable", "wifi_disable", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность; wake — включить; shutdown — выключить; wifi — открыть настройки Wi-Fi; wifi_enable — включить Wi-Fi через RE:Vision и проверить фактическое состояние; wifi_disable — выключить Wi-Fi через RE:Vision и проверить фактическое состояние; wifi_connect — запросить сеть по имени (Студио Wi-Fi = SSID Studio, Локал нетворк = Local_Network_5G; Studio PC — отдельное имя компьютера, не Wi-Fi); wifi_status — сообщить включён ли Wi-Fi, есть ли активное подключение и точное имя текущей сети (SSID), если Android его предоставляет; wifi_list — показать видимые сети. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list", "bridge_settings"],
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; bridge_settings — открыть меню восстановления Voice Bridge и системные настройки специальных возможностей RE:Vision. Фразы «открой настройки Ревижн», «открой меню Voice Bridge», «зайди в Voice Bridge», «перейди напрямую в Voice Bridge», «открой страницу Voice Bridge», «войс бридж», «проверь службу Ревижн», «дай доступ к Voice Bridge», «подключись к Voice Bridge», «восстанови Voice Bridge», «почему не работает Voice Bridge», «открой настройки голосового моста», «включи службу Ревижн» должны выбирать bridge_settings. При любом явном запросе пользователя перейти непосредственно к Voice Bridge выбирай bridge_settings, а не обычные настройки приложения и не действие Wi-Fi. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
-          "description": "Целевая сеть Wi-Fi: Студио Wi-Fi / Studio Wi-Fi (SSID Studio) или Локал нетворк / Local_Network_5G. Не путай со Studio PC — это компьютер."
+          "description": "Целевая сеть Wi-Fi: Студио / Studio или Локал нетворк / Local_Network_5G."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Требуется только для wifi_toggle: true — включить Wi-Fi, false — выключить Wi-Fi."
         },
         "deviceName": {
           "type": "string",
-          "description": "Имя или разговорное название сохранённого устройства. Для компьютера используй Studio PC / Студио ПК; это не сеть Wi-Fi. Для Odyssey Ark — Одиссей Арк. Не используй одно слово «студия» без уточнения."
+          "description": "Имя или разговорное название сохранённого устройства. Например STUDIO / студия или Odyssey Ark / Одиссей Арк. Не придумывай имя."
         }
       },
       "required": ["action"]
@@ -27,6 +31,7 @@
 </script>
 
 <script setup>
+// Wi-Fi radio on/off uses the Android bridge POST /wifi/toggle; opening Settings is a separate explicit intent.
 const BRIDGE = 'http://127.0.0.1:38761';
 
 function normalize(value) {
@@ -36,7 +41,7 @@ function normalize(value) {
     .replace(/[^a-zа-я0-9]/g, '');
 }
 
-function request(path, method, token, data) {
+function request(path, method, token, data, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
       const error = new Error('wx.request недоступен в AIUI runtime');
@@ -52,7 +57,7 @@ function request(path, method, token, data) {
       header,
       data,
       dataType: 'json',
-      timeout: 25000,
+      timeout: timeoutMs || 12000,
       success(res) {
         const status = Number(res && res.statusCode || 0);
         if (status >= 200 && status < 300) {
@@ -79,16 +84,24 @@ function request(path, method, token, data) {
   });
 }
 
-async function requestWithRetry(path, method, token, data, attempts) {
+async function requestWithRetry(path, method, token, data, attempts, timeoutMs, onRetry) {
   let lastError;
   const total = attempts || 3;
+  const retryDelays = [800, 1500, 3000, 5000, 8000, 8000];
   for (let attempt = 0; attempt < total; attempt += 1) {
     try {
-      return await request(path, method, token, data);
+      return await request(path, method, token, data, timeoutMs);
     } catch (error) {
       lastError = error;
-      if (error && error.statusCode) throw error;
-      if (attempt + 1 < total) await delay(700 * (attempt + 1));
+      const status = error && Number(error.statusCode || 0);
+      // Authentication and missing-route errors are configuration problems,
+      // not transient connection failures. Retry network errors and temporary
+      // server/rate-limit responses only.
+      const retryable = !status || status === 408 || status === 429 || status >= 500;
+      if (!retryable || attempt + 1 >= total) throw error;
+      const waitMs = retryDelays[Math.min(attempt, retryDelays.length - 1)];
+      if (typeof onRetry === 'function') onRetry(attempt + 1, total, error);
+      await delay(waitMs);
     }
   }
   throw lastError || new Error('Сетевая ошибка');
@@ -117,7 +130,7 @@ function resolveDevice(devices, requested) {
   if (!wanted) return { error: 'device_name_required' };
   const aliases = [];
   aliases.push(wanted);
-  if (wanted === 'studiopc' || wanted === 'студиопк' || wanted === 'компьютерstudiopc' || wanted === 'компьютерстудиопк') aliases.push('studio');
+  if (wanted.includes('студи') || wanted.includes('studio')) aliases.push('studio');
   if (wanted.includes('одиссей') || wanted.includes('odyssey') || wanted.includes('арк') || wanted.includes('ark')) {
     aliases.push('odysseyark', 'odyssey');
   }
@@ -134,9 +147,53 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// The PIN is duplicated in AIUI's wx storage and Web Storage. If one
+// backend loses its copy during a resource update, recover it from the other.
+const TOKEN_KEY = 'revision_bridge_token';
+
+function validBridgeToken(value) {
+  const token = String(value == null ? '' : value).trim();
+  return /^\d{4}$/.test(token) ? token : '';
+}
+
+function readBridgeToken() {
+  let token = '';
+  try {
+    if (typeof localStorage !== 'undefined') {
+      token = validBridgeToken(localStorage.getItem(TOKEN_KEY));
+    }
+  } catch (e) {
+    console.warn('RE:Vision localStorage read failed', e);
+  }
+  if (!token) {
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function') {
+        token = validBridgeToken(wx.getStorageSync(TOKEN_KEY));
+      }
+    } catch (e) {
+      console.warn('RE:Vision wx storage read failed', e);
+    }
+  }
+  if (token) {
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.setStorageSync === 'function') {
+        wx.setStorageSync(TOKEN_KEY, token);
+      }
+    } catch (e) {
+      console.warn('RE:Vision wx storage recovery failed', e);
+    }
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(TOKEN_KEY, token);
+    } catch (e) {
+      console.warn('RE:Vision localStorage recovery failed', e);
+    }
+  }
+  return token;
+}
+
 export default {
   data: {
-    title: 'RE:Vision',
+    title: 'Ревижн',
     statusText: 'Подключение к RE:Vision…',
     detailText: '',
     resultText: '',
@@ -149,8 +206,27 @@ export default {
   },
 
   async onLoad(query) {
-    const action = String(query.action || '').toLowerCase();
-    const requestedName = String(query.deviceName || query.device || '');
+    const requestedAction = String((query && query.action) || '').toLowerCase().trim();
+    if (requestedAction === 'bridge_settings') {
+      wx.navigateTo({ url: '/pages/bridge-settings/index' });
+      return;
+    }
+    // Use direction-specific intents so AIUI cannot drop the boolean enabled field.
+    const toggleEnabled = requestedAction === 'wifi_enable' ? true
+      : requestedAction === 'wifi_disable' ? false
+      : (query && typeof query.enabled === 'boolean' ? query.enabled : undefined);
+    const action = (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
+      ? 'wifi_toggle' : requestedAction;
+    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'];
+    if (!allowedActions.includes(action)) {
+      const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
+      this.setData({ statusText: message, detailText: 'Не получено корректное значение action. Команды микрофона выполняются средствами Rokid и не относятся к RE:Vision.', busy: false });
+      speak(message);
+      return;
+    }
+    const rawRequestedName = query && (query.deviceName ?? query.device) || '';
+    const requestedText = String(rawRequestedName).trim();
+    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
     this.setData({
       statusText: 'Проверяю связь с RE:Vision…',
@@ -159,16 +235,25 @@ export default {
     });
 
     try {
-      const health = await requestWithRetry('/health', 'GET', '', null, 4);
+      const health = await requestWithRetry(
+        '/health', 'GET', '', null, 5, 5000,
+        (retryNumber, retryTotal) => {
+          this.setData({
+            statusText: 'Связь с мостом пока отсутствует. Повторная проверка ' + retryNumber + ' из ' + (retryTotal - 1) + '…',
+            detailText: 'Ожидаю восстановления локального Voice Bridge на очках.',
+            busy: true
+          });
+        }
+      );
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
-      if (['wifi', 'wifi_enable', 'wifi_disable', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
+      if (['wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
         this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
         speak(message);
         return;
       }
 
-      const token = wx.getStorageSync('revision_bridge_token');
+      const token = readBridgeToken();
       if (!token) {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
@@ -176,52 +261,102 @@ export default {
         return;
       }
 
-      if (action === 'wifi_enable' || action === 'wifi_disable') {
-        const enabled = action === 'wifi_enable';
-        const result = await request('/wifi/toggle', 'POST', token, { enabled });
+      if (action === 'wifi_toggle') {
+        if (typeof toggleEnabled !== 'boolean') {
+          const message = 'Уточни действие: включить или выключить Wi-Fi?';
+          this.setData({ statusText: message, detailText: 'Не получил параметр enabled=true или enabled=false. Настройки не открывал.', busy: false });
+          speak(message);
+          return;
+        }
+        const requestedEnabled = toggleEnabled;
+        let result;
+        try {
+          result = await request('/wifi/toggle', 'POST', token, { enabled: requestedEnabled });
+        } catch (toggleError) {
+          // Older installed APKs may not yet expose /wifi/toggle. Fall back to
+          // the existing Wi-Fi settings route instead of silently failing.
+          if (toggleError && toggleError.statusCode === 404) {
+            const fallback = await request('/wifi', 'POST', token, {});
+            if (fallback && fallback.ok === true && fallback.opened === true) {
+              const fallbackMessage = requestedEnabled
+                ? 'В этой версии приложения прямое включение Wi-Fi недоступно. Открыл настройки Wi-Fi: включи переключатель вручную.'
+                : 'В этой версии приложения прямое выключение Wi-Fi недоступно. Открыл настройки Wi-Fi: выключи переключатель вручную.';
+              this.setData({ statusText: fallbackMessage, detailText: 'Обнови Android-приложение RE:Vision для обработки команды через Voice Bridge.', resultText: fallbackMessage, busy: false });
+              speak(fallbackMessage);
+              return;
+            }
+          }
+          throw toggleError;
+        }
         if (!result || result.ok !== true) {
-          throw new Error(result && result.error ? result.error : 'RE:Vision не смог изменить состояние Wi-Fi');
+          throw new Error(result && result.error ? result.error : 'Android не выполнил переключение Wi-Fi');
         }
-        let message;
-        let detail;
-        if (result.verified === true && result.enabled === enabled) {
-          message = enabled ? 'Wi-Fi включён. Проверка подтвердила состояние.' : 'Wi-Fi выключен. Проверка подтвердила состояние.';
-          detail = result.ssid ? 'Текущая сеть: ' + result.ssid : 'Фактическое состояние радиомодуля проверено.';
-        } else if (result.requiresUserAction === true && result.opened === true) {
-          message = enabled
-            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системную панель: включи Wi-Fi вручную.'
-            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системную панель: выключи Wi-Fi вручную.';
-          detail = 'Само переключение пока не подтверждено.';
-        } else {
-          message = enabled
-            ? 'Запрос на включение Wi-Fi отправлен, но включение пока не подтверждено.'
-            : 'Запрос на выключение Wi-Fi отправлен, но выключение пока не подтверждено.';
-          detail = 'Скажи: Ревижн, проверь Wi-Fi.';
+        if (result.verified === true && result.enabled === requestedEnabled) {
+          const message = requestedEnabled ? 'Wi-Fi включён. Состояние проверено.' : 'Wi-Fi выключен. Состояние проверено.';
+          this.setData({ statusText: message, detailText: result.ssid ? 'Сеть: ' + result.ssid : '', resultText: message, busy: false });
+          speak(message);
+          return;
         }
-        this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
+        if (result.requiresUserAction === true) {
+          const message = requestedEnabled
+            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — включи переключатель вручную.'
+            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — выключи переключатель вручную.';
+          this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системных настройках.', resultText: message, busy: false });
+          speak(message);
+          return;
+        }
+        const message = 'Запрос на изменение Wi-Fi отправлен, но новое состояние не подтверждено.';
+        this.setData({ statusText: message, detailText: JSON.stringify(result), resultText: message, busy: false });
         speak(message);
         return;
       }
 
       if (action === 'wifi' || action === 'wifi_connect') {
-        const targetNetwork = String(query.networkName || query.ssid || '');
-        const result = action === 'wifi_connect'
-          ? await request('/wifi/connect', 'POST', token, { networkName: targetNetwork })
-          : await request('/wifi', 'POST', token, {});
-        if (!result || result.ok !== true || result.opened !== true) {
-          throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
+        const targetNetwork = String(query.networkName || query.ssid || '').trim();
+        let result;
+        let openedPickerForChoice = false;
+
+        if (action === 'wifi_connect' && !targetNetwork) {
+          // AIUI sometimes recognizes "connect to another Wi-Fi" but omits the SSID.
+          // In that case, show Android's network picker instead of reporting an error.
+          result = await request('/wifi', 'POST', token, {});
+          openedPickerForChoice = true;
+        } else if (action === 'wifi_connect') {
+          result = await request('/wifi/connect', 'POST', token, { networkName: targetNetwork });
+          if (result && result.ok !== true && result.error === 'wifi_network_required') {
+            // Unknown or lost SSID: fall back to the visible Android Wi-Fi list.
+            result = await request('/wifi', 'POST', token, {});
+            openedPickerForChoice = true;
+          }
+        } else {
+          result = await request('/wifi', 'POST', token, {});
         }
-        const resolvedTarget = result && typeof result.targetSsid === 'string' && result.targetSsid.trim()
-          ? result.targetSsid.trim()
-          : (targetNetwork || 'запрошенная сеть');
-        const message = action === 'wifi_connect'
-          ? (result.connected === true
-              ? 'Уже подключено к сети ' + resolvedTarget + '.'
-              : (result.selectionClicked === true
-                  ? 'Сеть ' + resolvedTarget + ' выбрана. Проверить подключение можно командой: Ревижн, проверь Wi-Fi.'
-                  : 'Открыл список Wi-Fi и запустил автоматический выбор сети ' + resolvedTarget + '. Закрой карточку голосового сообщения, чтобы настройки стали активны. Затем скажи: Ревижн, проверь Wi-Fi.'))
+
+        if (!result || result.ok !== true || (openedPickerForChoice || action === 'wifi') && result.opened !== true) {
+          throw new Error(result && result.error ? result.error : 'Не удалось открыть системный список Wi-Fi');
+        }
+
+        if (action === 'wifi_connect' && !openedPickerForChoice) {
+          if (result.connected === true) {
+            const message = result.alreadyConnected
+              ? 'Ты уже подключён к сети ' + (result.targetSsid || targetNetwork) + '.'
+              : 'Подключение к сети ' + (result.targetSsid || targetNetwork) + ' подтверждено.';
+            this.setData({ statusText: message, detailText: 'Текущая сеть проверена через Android.', resultText: message, busy: false });
+            speak(message);
+            return;
+          }
+          const message = result.selectionClicked === true
+            ? 'Сеть ' + (result.targetSsid || targetNetwork) + ' выбрана. Если Android запросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
+            : 'Открыл список Wi-Fi. Найди сеть ' + (result.targetSsid || targetNetwork) + ' и выбери её. Затем скажи: Ревижн, проверь Wi-Fi.';
+          this.setData({ statusText: message, detailText: 'Подключение ещё не подтверждено Android.', resultText: message, busy: false });
+          speak(message);
+          return;
+        }
+
+        const message = openedPickerForChoice
+          ? 'Открыл список доступных сетей Wi-Fi. Выбери нужную точку на экране очков и подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
-        this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + resolvedTarget + '. Автоматический выбор ожидает активности системных настроек.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
+        this.setData({ statusText: message, detailText: result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта системная страница выбора сети.', resultText: message, busy: false });
         speak(message);
         return;
       }
@@ -229,22 +364,24 @@ export default {
       if (action === 'wifi_status') {
         const state = await request('/wifi/status', 'GET', token);
         if (!state || state.ok !== true) {
-          throw new Error(state && state.error ? state.error : 'Не удалось проверить состояние Wi-Fi');
+          throw new Error(state && state.error ? state.error : 'Android не вернул состояние Wi-Fi');
         }
-        // SSID is optional: an active Wi-Fi transport is sufficient to confirm
-        // that the device is connected. Never turn a hidden SSID into an error.
-        const message = state.connected === true
-          ? (state.ssid
-              ? 'Wi-Fi подключён. Текущая сеть: ' + state.ssid + '.'
-              : 'Wi-Fi подключён. Подключение подтверждено. Имя сети Android не предоставляет.')
-          : (state.enabled === true
-              ? 'Wi-Fi включён, но подключение к сети не обнаружено.'
-              : 'Wi-Fi выключен.');
-        const detail = state.connected === true && !state.ssid
-          ? 'Подключение подтверждено по активному Wi-Fi соединению. SSID недоступен; это не ошибка подключения.'
-          : (state.permissionRequired === true
-              ? 'Android ограничил доступ к имени сети.'
-              : '');
+        const ssid = typeof state.ssid === 'string' ? state.ssid.trim() : '';
+        let message;
+        if (state.connected === true && ssid) {
+          message = 'Сейчас подключено к сети ' + ssid + '.';
+        } else if (state.connected === true) {
+          message = 'Wi-Fi подключён, но Android не передал имя сети.';
+        } else if (state.enabled === true) {
+          message = 'Wi-Fi включён, но подключение к сети не подтверждено.';
+        } else if (state.enabled === false) {
+          message = 'Wi-Fi выключен.';
+        } else {
+          message = 'Android не передал достоверное состояние Wi-Fi. Повтори запрос.';
+        }
+        const detail = state.permissionRequired
+          ? 'Android ограничил доступ к имени сети.'
+          : (ssid ? 'Текущая сеть: ' + ssid : 'SSID не получен от Android.');
         this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
         speak(message);
         return;
