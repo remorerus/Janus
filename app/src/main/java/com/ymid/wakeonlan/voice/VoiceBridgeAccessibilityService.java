@@ -97,7 +97,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     }
 
     private volatile boolean running;
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
     private Thread serverThread;
     private final Handler serverHandler = new Handler(Looper.getMainLooper());
     private long serverRestartDelayMs = 1_000L;
@@ -185,6 +185,22 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         if (activeInstance == this) activeInstance = null;
         stopServer();
         super.onDestroy();
+    }
+
+    /** True only while Android has actually bound this Accessibility service instance. */
+    public static boolean isServiceConnected() {
+        VoiceBridgeAccessibilityService service = activeInstance;
+        return service != null && service.serviceConnected;
+    }
+
+    /** True only while the main loopback listener is bound and accepting connections. */
+    public static boolean isMainServerRunning() {
+        VoiceBridgeAccessibilityService service = activeInstance;
+        if (service == null || !service.serviceConnected) return false;
+        ServerSocket socket = service.serverSocket;
+        Thread thread = service.serverThread;
+        return socket != null && socket.isBound() && !socket.isClosed()
+                && thread != null && thread.isAlive();
     }
 
     /** Called by the independent foreground keeper while Android keeps Accessibility enabled. */
@@ -318,6 +334,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             response.addProperty("service", "RE:Vision");
             response.addProperty("port", PORT);
             response.addProperty("wifiRoute", true);
+            response.addProperty("accessibilityEnabled", true);
+            response.addProperty("accessibilityConnected", isServiceConnected());
+            response.addProperty("mainServerRunning", isMainServerRunning());
             writeResponse(socket.getOutputStream(), 200, response);
         } else if ("GET".equals(method) && "/devices".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, listDevices());
