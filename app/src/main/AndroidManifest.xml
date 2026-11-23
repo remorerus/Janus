@@ -107,6 +107,11 @@
             android:foregroundServiceType="connectedDevice" />
 
         <service
+            android:name=".voice.VoiceBridgeRecoveryService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <service
             android:name=".voice.VoiceBridgeAccessibilityService"
             android:label="@string/voice_bridge_service_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
