@@ -12,7 +12,7 @@ const REFRESH_MS = 30000;
 
 export default {
   data: {
-    title: 'РЕВИЖН',
+    title: 'Ревижн',
     status: 'Проверяю связь…',
     detail: 'Voice Bridge',
     online: false,
@@ -93,7 +93,7 @@ export default {
   <view class="panel">
     <view class="top">
       <text class="title">{{title}}</text>
-      <view class="indicator" style="{{online ? 'background-color:#40ff5e' : 'background-color:#ff5a5a'}}"></view>
+      <view class="indicator {{online ? 'online' : 'offline'}}"></view>
     </view>
     <text class="status">{{status}}</text>
     <text class="detail">{{detail}}</text>
@@ -132,6 +132,8 @@ export default {
   height: 10px;
   border-radius: 50%;
 }
+.online { background-color: #40ff5e; }
+.offline { background-color: #ff5a5a; }
 .status {
   font-size: 18px;
   font-weight: 700;
