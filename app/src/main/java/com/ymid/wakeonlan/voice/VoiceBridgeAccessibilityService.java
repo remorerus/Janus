@@ -117,14 +117,33 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         super.onServiceConnected();
         activeInstance = this;
         serviceConnected = true;
-        // Persist that the user has explicitly enabled the bridge at least once.
-        // The independent recovery service can then survive firmware resets of
-        // the Android accessibility switch and reopen its settings by voice.
-        getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE)
-                .edit().putBoolean("bridge_ever_enabled", true).apply();
-        startServer();
-        VoiceBridgeRecoveryService.start(this);
-        VoiceBridgeKeepAliveService.start(this);
+
+        // Keep each startup step isolated: a firmware/provider failure in an
+        // auxiliary component must not tear down the Accessibility connection.
+        try {
+            getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE)
+                    .edit().putBoolean("bridge_ever_enabled", true).apply();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to persist Voice Bridge enabled state", e);
+        }
+
+        try {
+            startServer();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to start the main Voice Bridge listener", e);
+        }
+
+        try {
+            VoiceBridgeRecoveryService.start(this);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to start Voice Bridge recovery service", e);
+        }
+
+        try {
+            VoiceBridgeKeepAliveService.start(this);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to start Voice Bridge keeper", e);
+        }
     }
 
     @Override
@@ -211,11 +230,20 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     }
 
     private synchronized void startServer() {
+        if (!serviceConnected || isDestroyed()) return;
         if (serverThread != null && serverThread.isAlive()) return;
         serverHandler.removeCallbacks(restartServerRunnable);
         running = true;
-        serverThread = new Thread(this::serve, "revision-voice-http");
-        serverThread.start();
+        Thread listenerThread = new Thread(this::serve, "revision-voice-http");
+        serverThread = listenerThread;
+        try {
+            listenerThread.start();
+        } catch (RuntimeException e) {
+            running = false;
+            if (serverThread == listenerThread) serverThread = null;
+            Log.e(TAG, "Unable to create Voice Bridge listener thread", e);
+            serverHandler.postDelayed(restartServerRunnable, serverRestartDelayMs);
+        }
     }
 
     private synchronized void stopServer() {
@@ -334,9 +362,11 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             response.addProperty("service", "RE:Vision");
             response.addProperty("port", PORT);
             response.addProperty("wifiRoute", true);
-            response.addProperty("accessibilityEnabled", true);
+            response.addProperty("accessibilityEnabled",
+                    VoiceBridgeKeepAliveService.isAccessibilityEnabled(getApplicationContext()));
             response.addProperty("accessibilityConnected", isServiceConnected());
             response.addProperty("mainServerRunning", isMainServerRunning());
+            response.addProperty("recoveryPort", 38762);
             writeResponse(socket.getOutputStream(), 200, response);
         } else if ("GET".equals(method) && "/devices".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, listDevices());
