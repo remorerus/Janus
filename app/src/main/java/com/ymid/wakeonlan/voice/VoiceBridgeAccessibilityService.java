@@ -323,7 +323,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
-                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path) || "/accessibility/settings".equals(path)));
+                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
