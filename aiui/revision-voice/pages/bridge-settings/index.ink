@@ -6,24 +6,6 @@
 </script>
 
 <script setup>
-const TOKEN_KEY = 'revision_bridge_token';
-
-function readToken() {
-  let token = '';
-  try {
-    if (typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function') {
-      token = String(wx.getStorageSync(TOKEN_KEY) || '').trim();
-    }
-  } catch (e) {}
-  if (!/^\d{4}$/.test(token)) {
-    try {
-      token = typeof localStorage !== 'undefined'
-        ? String(localStorage.getItem(TOKEN_KEY) || '').trim() : '';
-    } catch (e) {}
-  }
-  return /^\d{4}$/.test(token) ? token : '';
-}
-
 function speak(text) {
   try {
     if (typeof wx !== 'undefined' && wx.speech && typeof wx.speech.playTTS === 'function') {
@@ -71,23 +53,11 @@ export default {
   async checkAndOpen() {
     if (this.data.busy) return;
     this.setData({ busy: true, statusText: 'Проверяю каналы RE:Vision…' });
-    const token = readToken();
-    if (!token) {
-      const message = 'PIN агента не настроен.';
-      this.setData({
-        busy: false,
-        statusText: message,
-        detailText: 'Открой «Настройки ключа» агента и введи четырёхзначный PIN из приложения RE:Vision.'
-      });
-      speak(message);
-      return;
-    }
-
     let lastError = null;
     for (const port of [38761, 38762]) {
       try {
         const health = await bridgeRequest(port, '/health', 'GET', '');
-        const opened = await bridgeRequest(port, '/accessibility/settings', 'POST', token);
+        const opened = await bridgeRequest(port, '/accessibility/settings', 'POST', '');
         const wasEnabled = health.accessibilityEnabled !== false && opened.accessibilityEnabled !== false;
         const message = wasEnabled
           ? 'Запрос на открытие системного меню отправлен. Проверь службу RE:Vision.'
