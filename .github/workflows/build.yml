@@ -35,31 +35,72 @@ jobs:
 
       - name: Prepare permanent signing key
         env:
-          REVISION_SIGNING_BUNDLE: ${{ secrets.REVISION_SIGNING_BUNDLE }}
+          REVISION_SIGNING_BUNDLE_V2: ${{ secrets.REVISION_SIGNING_BUNDLE_V2 }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$REVISION_SIGNING_BUNDLE" || { echo "::error::GitHub Actions secret REVISION_SIGNING_BUNDLE is missing"; exit 1; }
-          printf '%s\n' "$REVISION_SIGNING_BUNDLE" > "$RUNNER_TEMP/revision-signing-bundle.txt"
-          KEYSTORE_BASE64="$(sed -n 's/^KEYSTORE_BASE64=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
-          KEYSTORE_PASSWORD="$(sed -n 's/^KEYSTORE_PASSWORD=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
-          KEY_ALIAS="$(sed -n 's/^KEY_ALIAS=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
-          KEY_PASSWORD="$(sed -n 's/^KEY_PASSWORD=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
+          test -n "${REVISION_SIGNING_BUNDLE_V2:-}" || {
+            echo "::error::Add a NEW GitHub Actions secret named REVISION_SIGNING_BUNDLE_V2. The previously exposed signing bundle must not be reused."
+            exit 1
+          }
+
+          BUNDLE="$RUNNER_TEMP/revision-signing-bundle.txt"
+          printf '%s\n' "$REVISION_SIGNING_BUNDLE_V2" > "$BUNDLE"
+          KEYSTORE_BASE64="$(sed -n 's/^KEYSTORE_BASE64=//p' "$BUNDLE")"
+          KEYSTORE_PASSWORD="$(sed -n 's/^KEYSTORE_PASSWORD=//p' "$BUNDLE")"
+          KEY_ALIAS="$(sed -n 's/^KEY_ALIAS=//p' "$BUNDLE")"
+          KEY_PASSWORD="$(sed -n 's/^KEY_PASSWORD=//p' "$BUNDLE")"
+
           test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+
+          # Mask every extracted value before any command can emit diagnostics.
+          echo "::add-mask::$KEYSTORE_BASE64"
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          echo "::add-mask::$KEY_ALIAS"
+          echo "::add-mask::$KEY_PASSWORD"
+
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/revision-signing.jks"
           keytool -list -keystore "$RUNNER_TEMP/revision-signing.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
-          {
-            echo "UPLOAD_KEYSTORE_PATH=$RUNNER_TEMP/revision-signing.jks"
-            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "KEY_ALIAS=$KEY_ALIAS"
-            echo "KEY_PASSWORD=$KEY_PASSWORD"
-          } >> "$GITHUB_ENV"
-          rm -f "$RUNNER_TEMP/revision-signing-bundle.txt"
+
+          # Keep credentials in a runner-local file, not GITHUB_ENV or step environment.
+          # Values are base64-encoded to preserve arbitrary characters in passwords.
+          printf 'UPLOAD_KEYSTORE_PATH=%s\n' "$RUNNER_TEMP/revision-signing.jks" > "$RUNNER_TEMP/revision-signing.properties"
+          printf 'KEYSTORE_PASSWORD_B64=%s\n' "$(printf '%s' "$KEYSTORE_PASSWORD" | base64 -w0)" >> "$RUNNER_TEMP/revision-signing.properties"
+          printf 'KEY_ALIAS_B64=%s\n' "$(printf '%s' "$KEY_ALIAS" | base64 -w0)" >> "$RUNNER_TEMP/revision-signing.properties"
+          printf 'KEY_PASSWORD_B64=%s\n' "$(printf '%s' "$KEY_PASSWORD" | base64 -w0)" >> "$RUNNER_TEMP/revision-signing.properties"
+          chmod 600 "$RUNNER_TEMP/revision-signing.properties" "$RUNNER_TEMP/revision-signing.jks"
+
+          cat > "$RUNNER_TEMP/revision-signing.init.gradle" <<'GRADLE'
+          import java.util.Properties
+          import java.util.Base64
+          import java.nio.charset.StandardCharsets
+
+          def signingFile = new File(System.getenv("RUNNER_TEMP"), "revision-signing.properties")
+          if (!signingFile.isFile()) {
+              throw new GradleException("Temporary release signing properties are missing")
+          }
+          def signing = new Properties()
+          signingFile.withInputStream { signing.load(it) }
+          def decodeSecret = { String key ->
+              def value = signing.getProperty(key)
+              if (value == null) throw new GradleException("Release signing property " + key + " is missing")
+              new String(Base64.decoder.decode(value), StandardCharsets.UTF_8)
+          }
+
+          gradle.beforeProject { project ->
+              project.ext.set("UPLOAD_KEYSTORE_PATH", signing.getProperty("UPLOAD_KEYSTORE_PATH"))
+              project.ext.set("KEYSTORE_PASSWORD", decodeSecret("KEYSTORE_PASSWORD_B64"))
+              project.ext.set("KEY_ALIAS", decodeSecret("KEY_ALIAS_B64"))
+              project.ext.set("KEY_PASSWORD", decodeSecret("KEY_PASSWORD_B64"))
+          }
+          GRADLE
+
+          rm -f "$BUNDLE"
 
       - name: Build signed APK
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon clean assembleRelease
+          ./gradlew --no-daemon --init-script "$RUNNER_TEMP/revision-signing.init.gradle" clean assembleRelease
 
       - name: Verify APK signature
         shell: bash
