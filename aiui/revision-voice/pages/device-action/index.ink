@@ -8,8 +8,8 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi_toggle", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_toggle — непосредственно включить или выключить Wi-Fi через Android Voice Bridge; для него обязательно передай enabled=true при «включи Wi-Fi» и enabled=false при «выключи Wi-Fi». Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi_toggle", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Старое действие wifi_toggle поддерживается только при наличии явного enabled=true/false. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -198,7 +198,13 @@ export default {
   },
 
   async onLoad(query) {
-    const action = String((query && query.action) || '').toLowerCase().trim();
+    const requestedAction = String((query && query.action) || '').toLowerCase().trim();
+    // Use direction-specific intents so AIUI cannot drop the boolean enabled field.
+    const toggleEnabled = requestedAction === 'wifi_enable' ? true
+      : requestedAction === 'wifi_disable' ? false
+      : (query && typeof query.enabled === 'boolean' ? query.enabled : undefined);
+    const action = (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
+      ? 'wifi_toggle' : requestedAction;
     const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'];
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
@@ -235,13 +241,13 @@ export default {
       }
 
       if (action === 'wifi_toggle') {
-        if (typeof query.enabled !== 'boolean') {
+        if (typeof toggleEnabled !== 'boolean') {
           const message = 'Уточни действие: включить или выключить Wi-Fi?';
           this.setData({ statusText: message, detailText: 'Не получил параметр enabled=true или enabled=false. Настройки не открывал.', busy: false });
           speak(message);
           return;
         }
-        const requestedEnabled = query.enabled;
+        const requestedEnabled = toggleEnabled;
         let result;
         try {
           result = await request('/wifi/toggle', 'POST', token, { enabled: requestedEnabled });
