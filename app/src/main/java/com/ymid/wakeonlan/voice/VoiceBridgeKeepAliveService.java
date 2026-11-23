@@ -96,14 +96,22 @@ public final class VoiceBridgeKeepAliveService extends Service {
 
     /** Checks the user-controlled Android accessibility switch without attempting to change it. */
     public static boolean isAccessibilityEnabled(Context context) {
-        String enabled = Settings.Secure.getString(
-                context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (TextUtils.isEmpty(enabled)) return false;
+        if (context == null) return false;
+        try {
+            Context appContext = context.getApplicationContext();
+            String enabled = Settings.Secure.getString(
+                    appContext.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (TextUtils.isEmpty(enabled)) return false;
 
-        String expected = new ComponentName(
-                context, VoiceBridgeAccessibilityService.class).flattenToString();
-        for (String item : enabled.split(":")) {
-            if (expected.equalsIgnoreCase(item.trim())) return true;
+            String expected = new ComponentName(
+                    appContext, VoiceBridgeAccessibilityService.class).flattenToString();
+            for (String item : enabled.split(":")) {
+                if (expected.equalsIgnoreCase(item.trim())) return true;
+            }
+        } catch (RuntimeException e) {
+            // Firmware Settings providers can fail transiently. A state check must
+            // never crash RE:Vision or its settings screen.
+            Log.e(TAG, "Unable to read Android Accessibility state", e);
         }
         return false;
     }
