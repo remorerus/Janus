@@ -39,7 +39,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /** Loopback-only bridge used by the Rokid AIUI voice agent. */
@@ -99,6 +102,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile boolean running;
     private volatile ServerSocket serverSocket;
     private Thread serverThread;
+    private volatile ThreadPoolExecutor requestExecutor;
     private final Handler serverHandler = new Handler(Looper.getMainLooper());
     private long serverRestartDelayMs = 1_000L;
     private final Runnable restartServerRunnable = () -> {
@@ -234,6 +238,16 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         if (serverThread != null && serverThread.isAlive()) return;
         serverHandler.removeCallbacks(restartServerRunnable);
         running = true;
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                2, 4, 30L, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(16),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "revision-voice-client");
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
+        requestExecutor = executor;
         Thread listenerThread = new Thread(this::serve, "revision-voice-http");
         serverThread = listenerThread;
         try {
@@ -249,6 +263,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private synchronized void stopServer() {
         running = false;
         serverHandler.removeCallbacks(restartServerRunnable);
+        ThreadPoolExecutor executor = requestExecutor;
+        requestExecutor = null;
+        if (executor != null) executor.shutdownNow();
         if (serverSocket != null) {
             try { serverSocket.close(); } catch (Exception ignored) { }
             serverSocket = null;
@@ -263,11 +280,33 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             serverSocket = listener;
             synchronized (this) { serverRestartDelayMs = 1_000L; }
             while (running) {
-                try (Socket client = listener.accept()) {
+                Socket client = null;
+                try {
+                    client = listener.accept();
                     client.setSoTimeout(10000);
-                    handle(client);
+                    ThreadPoolExecutor executor = requestExecutor;
+                    if (!running || executor == null) {
+                        client.close();
+                        continue;
+                    }
+                    final Socket accepted = client;
+                    try {
+                        executor.execute(() -> {
+                            try (Socket requestSocket = accepted) {
+                                handle(requestSocket);
+                            } catch (Exception e) {
+                                if (running) Log.w(TAG, "Voice bridge request failed", e);
+                            }
+                        });
+                    } catch (RejectedExecutionException e) {
+                        client.close();
+                        Log.w(TAG, "Voice Bridge request queue is full; request rejected");
+                    }
                 } catch (Exception e) {
-                    if (running) Log.w(TAG, "Voice bridge request failed", e);
+                    if (client != null) {
+                        try { client.close(); } catch (Exception ignored) { }
+                    }
+                    if (running) Log.w(TAG, "Voice bridge accept failed", e);
                 }
             }
         } catch (Exception e) {
