@@ -8,6 +8,7 @@ import com.ymid.wakeonlan.monitoring.MonitoringScheduler
 import com.ymid.wakeonlan.persistence.DatabaseInstanceManager
 import com.ymid.wakeonlan.ui.LauncherIconManager
 import com.ymid.wakeonlan.ui.notifications.NotificationHelper
+import com.ymid.wakeonlan.voice.VoiceBridgeRecoveryService
 import java.util.concurrent.Executors
 
 class JanusApplication : Application() {
@@ -18,6 +19,9 @@ class JanusApplication : Application() {
         RemoteConfigManager.initialize()
         NotificationHelper.createChannels(this)
         MonitoringScheduler.scheduleIfEnabled(this)
+        // Keep a local recovery endpoint available so the AIUI agent can reopen
+        // Android Accessibility settings if the main bridge service is disabled.
+        VoiceBridgeRecoveryService.start(this)
         LauncherIconWorker.schedule(this)
         Executors.newSingleThreadExecutor().execute {
             runCatching { DatabaseInstanceManager.getInstance(this) }

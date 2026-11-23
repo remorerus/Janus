@@ -350,4 +350,6 @@
     <string name="battery_optimization_settings_title">Настройки фоновой работы</string>
     <string name="battery_optimization_settings_summary">Открыть системный список исключений оптимизации батареи. Это необязательная настройка.</string>
 
+    <string name="voice_bridge_notification_title">RE:Vision Voice Bridge</string>
+    <string name="voice_bridge_notification_text">Канал восстановления голосового моста активен</string>
 </resources>

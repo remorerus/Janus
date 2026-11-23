@@ -16,10 +16,10 @@ The GitHub Actions workflow packages this directory and publishes the resulting 
 ## Import to AIUI Studio
 Import the GitHub subdirectory:
 - Repository: `remorerus/Janus`
-- Branch: `revision-aiui-agent`
+- Branch: `revision-1.9.20-integrated`
 - Directory: `aiui/revision-voice`
 
 Bind the imported project to a new AIUI Agent named RE:Vision, then package/upload it in AIUI Studio. Update the glasses resource package through the Rokid app.
 
 ## Current milestone
-The first build is a bridge-integration foundation. It checks whether the AIUI runtime can reach the loopback bridge and contains the command flow, but commands remain blocked until the Android bridge adds token authentication and the localhost route is verified on the glasses.
+The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
