@@ -20,7 +20,12 @@ class PackageReplacedReceiver : BroadcastReceiver() {
         if (accessibilityEnabled) {
             bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
         }
-        if (bridgePrefs.getBoolean("bridge_ever_enabled", false)) {
+        // A saved bridge PIN identifies installations configured before the
+        // bridge_ever_enabled migration flag was introduced.
+        val recoveryWasConfigured = bridgePrefs.getBoolean("bridge_ever_enabled", false)
+                || bridgePrefs.contains("access_token")
+        if (recoveryWasConfigured) {
+            bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
             VoiceBridgeRecoveryService.start(context)
         }
         if (accessibilityEnabled) {
