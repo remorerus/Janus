@@ -97,6 +97,15 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile boolean running;
     private ServerSocket serverSocket;
     private Thread serverThread;
+    private final Handler serverHandler = new Handler(Looper.getMainLooper());
+    private long serverRestartDelayMs = 1_000L;
+    private final Runnable restartServerRunnable = () -> {
+        synchronized (VoiceBridgeAccessibilityService.this) {
+            if (!running) return;
+            if (serverThread != null && serverThread.isAlive()) return;
+            startServer();
+        }
+    };
     private volatile String pendingWifiTarget;
     private volatile long pendingWifiSelectionUntilMs;
     private volatile boolean pendingWifiSelectionClicked;
@@ -166,18 +175,23 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     private synchronized void startServer() {
         if (serverThread != null && serverThread.isAlive()) return;
+        serverHandler.removeCallbacks(restartServerRunnable);
         running = true;
+        serverRestartDelayMs = 1_000L;
         serverThread = new Thread(this::serve, "revision-voice-http");
         serverThread.start();
     }
 
     private synchronized void stopServer() {
         running = false;
+        serverHandler.removeCallbacks(restartServerRunnable);
         if (serverSocket != null) {
             try { serverSocket.close(); } catch (Exception ignored) { }
             serverSocket = null;
         }
+        Thread oldThread = serverThread;
         serverThread = null;
+        if (oldThread != null) oldThread.interrupt();
     }
 
     private void serve() {
@@ -194,7 +208,17 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } catch (Exception e) {
             if (running) Log.e(TAG, "Could not bind loopback port " + PORT, e);
         } finally {
-            serverSocket = null;
+            synchronized (this) {
+                serverSocket = null;
+                if (serverThread == Thread.currentThread()) serverThread = null;
+                if (running) {
+                    long delay = serverRestartDelayMs;
+                    serverRestartDelayMs = Math.min(serverRestartDelayMs * 2L, 60_000L);
+                    Log.w(TAG, "Voice bridge listener stopped; retrying in " + delay + " ms");
+                    serverHandler.removeCallbacks(restartServerRunnable);
+                    serverHandler.postDelayed(restartServerRunnable, delay);
+                }
+            }
         }
     }
 
