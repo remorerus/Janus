@@ -301,7 +301,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
-                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path)));
+                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path) || "/accessibility/settings".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
             return;
@@ -319,6 +319,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, checkStatus(target));
         } else if ("POST".equals(method) && "/command".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, executeCommand(new String(body, StandardCharsets.UTF_8)));
+        } else if ("POST".equals(method) && "/accessibility/settings".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, openAccessibilitySettings());
         } else if ("POST".equals(method) && "/wifi".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
         } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
@@ -556,6 +558,38 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 : "Открыл список Wi-Fi, но не смог подтвердить выбор сети " + target
                     + ". Выбери её вручную на экране очков.");
         return result;
+    }
+
+    /** Opens Android's user-controlled Accessibility settings; enabling the service remains a manual user action. */
+    private JsonObject openAccessibilitySettings() throws Exception {
+        final boolean[] opened = new boolean[1];
+        final String[] failure = new String[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                opened[0] = true;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+            } catch (RuntimeException e) {
+                failure[0] = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+            } finally {
+                latch.countDown();
+            }
+        });
+        if (!latch.await(4, TimeUnit.SECONDS)) return error("accessibility_settings_timeout");
+        if (!opened[0]) {
+            JsonObject response = error("accessibility_settings_unavailable");
+            if (failure[0] != null) response.addProperty("detail", failure[0]);
+            return response;
+        }
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("opened", true);
+        response.addProperty("message", "Android Accessibility settings opened; user must enable RE:Vision manually.");
+        return response;
     }
 
     /** Opens the Wi-Fi picker used by Rokid firmware; the user confirms the network. */
