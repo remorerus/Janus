@@ -38,7 +38,7 @@ public final class VoiceBridgeKeepAliveService extends Service {
     private final Runnable supervisor = new Runnable() {
         @Override
         public void run() {
-            if (!isAccessibilityEnabled()) {
+            if (!isAccessibilityEnabled(VoiceBridgeKeepAliveService.this)) {
                 Log.i(TAG, "Accessibility bridge is disabled by the system/user; stopping keeper");
                 stopForeground(true);
                 stopSelf();
@@ -94,13 +94,14 @@ public final class VoiceBridgeKeepAliveService extends Service {
         return null;
     }
 
-    private boolean isAccessibilityEnabled() {
+    /** Checks the user-controlled Android accessibility switch without attempting to change it. */
+    public static boolean isAccessibilityEnabled(Context context) {
         String enabled = Settings.Secure.getString(
-                getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         if (TextUtils.isEmpty(enabled)) return false;
 
         String expected = new ComponentName(
-                this, VoiceBridgeAccessibilityService.class).flattenToString();
+                context, VoiceBridgeAccessibilityService.class).flattenToString();
         for (String item : enabled.split(":")) {
             if (expected.equalsIgnoreCase(item.trim())) return true;
         }
