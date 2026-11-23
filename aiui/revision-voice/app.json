@@ -1,6 +1,6 @@
 {
   "agentName": "RE:Vision",
-  "agentDesc": "Русскоязычный агент RE:Vision для управления сохранёнными устройствами и Wi-Fi. Команды Wi-Fi: wifi_enable (включить), wifi_disable (выключить), wifi_status (проверить), wifi_list (список сетей), wifi (открыть настройки), wifi_connect (подключиться к сети). Для включения и выключения выбирай отдельное действие по смыслу команды; не запрашивай дополнительный enabled.",
+  "agentDesc": "Русскоязычный агент RE:Vision для управления сохранёнными устройствами и Wi-Fi через Hi Rokid. Команды Wi-Fi: wifi_enable (включить), wifi_disable (выключить), wifi_status (проверить), wifi_list (список сетей), wifi (открыть настройки), wifi_connect (подключиться к сети). Для включения и выключения выбирай отдельное действие по смыслу команды; не запрашивай дополнительный enabled.",
   "pages": [
     "pages/device-action/index",
     "pages/settings/index"
