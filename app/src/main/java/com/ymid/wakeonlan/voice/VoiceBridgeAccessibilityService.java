@@ -177,7 +177,6 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         if (serverThread != null && serverThread.isAlive()) return;
         serverHandler.removeCallbacks(restartServerRunnable);
         running = true;
-        serverRestartDelayMs = 1_000L;
         serverThread = new Thread(this::serve, "revision-voice-http");
         serverThread.start();
     }
@@ -197,6 +196,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private void serve() {
         try (ServerSocket listener = new ServerSocket(PORT, 8, InetAddress.getByName("127.0.0.1"))) {
             serverSocket = listener;
+            synchronized (this) { serverRestartDelayMs = 1_000L; }
             while (running) {
                 try (Socket client = listener.accept()) {
                     client.setSoTimeout(10000);
