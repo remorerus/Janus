@@ -54,6 +54,64 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private int authFailureCount;
     private long authBlockedUntilMs;
 
+    /** Android-controlled Accessibility state; this app never enables it silently. */
+    public static boolean isAccessibilityEnabled(Context context) {
+        try {
+            String enabled = Settings.Secure.getString(
+                    context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (enabled == null || enabled.isEmpty()) return false;
+            ComponentName component = new ComponentName(
+                    context.getApplicationContext(), VoiceBridgeAccessibilityService.class);
+            String expected = component.flattenToString();
+            for (String item : enabled.split(":")) {
+                if (expected.equalsIgnoreCase(item.trim())) return true;
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to read Android Accessibility state", e);
+        }
+        return false;
+    }
+
+    public static boolean isServiceConnected() {
+        return instance != null;
+    }
+
+    public static boolean isMainServerRunning() {
+        return isBridgeServerActive();
+    }
+
+    /** Open Android's user-controlled Accessibility screen; no permission is changed here. */
+    private JsonObject openAccessibilitySettings() throws Exception {
+        final boolean[] opened = new boolean[1];
+        final String[] failure = new String[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                opened[0] = true;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                failure[0] = e.getClass().getSimpleName();
+            } catch (RuntimeException e) {
+                failure[0] = e.getClass().getSimpleName();
+            } finally {
+                latch.countDown();
+            }
+        });
+        if (!latch.await(4, TimeUnit.SECONDS)) return error("accessibility_settings_timeout");
+        if (!opened[0]) {
+            JsonObject response = error("accessibility_settings_unavailable");
+            if (failure[0] != null) response.addProperty("detail", failure[0]);
+            return response;
+        }
+        JsonObject response = new JsonObject();
+        response.addProperty("ok", true);
+        response.addProperty("opened", true);
+        response.addProperty("accessibilityEnabled", isAccessibilityEnabled(this));
+        return response;
+    }
+
     /** Returns a stable four-digit pairing PIN stored in app-private preferences. */
     public static boolean isBridgeEnabled(Context context) {
         return context.getApplicationContext()
@@ -452,7 +510,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             response.addProperty("service", "RE:Vision");
             response.addProperty("port", PORT);
             response.addProperty("wifiRoute", true);
+            response.addProperty("accessibilityEnabled", isAccessibilityEnabled(this));
+            response.addProperty("accessibilityConnected", instance != null);
+            response.addProperty("mainServerRunning", isBridgeServerActive());
+            response.addProperty("recoveryPort", 38762);
             writeResponse(socket.getOutputStream(), 200, response);
+        } else if ("POST".equals(method) && "/accessibility/settings".equals(path)) {
+            writeResponse(socket.getOutputStream(), 200, openAccessibilitySettings());
         } else if ("GET".equals(method) && "/devices".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, listDevices());
         } else if ("GET".equals(method) && "/status".equals(path)) {
