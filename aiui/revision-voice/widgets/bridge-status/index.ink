@@ -16,7 +16,8 @@ export default {
     status: 'Проверяю связь…',
     detail: 'Voice Bridge',
     online: false,
-    checkedAt: ''
+    indicatorClass: 'offline',
+    updated: 'Автопроверка каждые 30 сек.'
   },
 
   refreshStatus() {
@@ -43,13 +44,16 @@ export default {
             status: 'Связь работает',
             detail: 'Voice Bridge доступен · порт ' + String(body.port || 38761),
             online: true,
-            checkedAt: now.toLocaleTimeString()
+            indicatorClass: 'online',
+            updated: 'Проверено: ' + now.toLocaleTimeString()
           });
         } else {
           this.setData({
             status: 'Нет связи с мостом',
             detail: 'RE:Vision не подтвердил состояние',
-            online: false
+            online: false,
+            indicatorClass: 'offline',
+            updated: 'Последняя проверка: ' + new Date().toLocaleTimeString()
           });
         }
       },
@@ -57,7 +61,9 @@ export default {
         this.setData({
           status: 'Связь потеряна',
           detail: 'Проверь приложение RE:Vision и Voice Bridge',
-          online: false
+          online: false,
+          indicatorClass: 'offline',
+          updated: 'Последняя проверка: ' + new Date().toLocaleTimeString()
         });
       }
     });
@@ -93,12 +99,12 @@ export default {
   <view class="panel">
     <view class="top">
       <text class="title">{{title}}</text>
-      <view class="indicator {{online ? 'online' : 'offline'}}"></view>
+      <view class="indicator {{indicatorClass}}"></view>
     </view>
     <text class="status">{{status}}</text>
     <text class="detail">{{detail}}</text>
     <view class="bottom">
-      <text class="updated">{{checkedAt ? 'Проверено: ' + checkedAt : 'Автопроверка каждые 30 сек.'}}</text>
+      <text class="updated">{{updated}}</text>
       <text class="refresh" bindtap="refreshStatus">Обновить</text>
     </view>
   </view>
