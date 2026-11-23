@@ -25,48 +25,54 @@ export default {
       this.setData({
         status: 'Нет доступа к проверке',
         detail: 'AIUI runtime не предоставил сетевой запрос',
-        online: false
+        online: false,
+        indicatorClass: 'offline'
       });
       return;
     }
 
-    wx.request({
-      url: BRIDGE + '/health',
-      method: 'GET',
-      dataType: 'json',
-      timeout: 5000,
-      success: (res) => {
-        const body = res && res.data;
-        if (res && Number(res.statusCode) >= 200 && Number(res.statusCode) < 300
-            && body && body.ok === true) {
-          const now = new Date();
-          this.setData({
-            status: 'Связь работает',
-            detail: 'Voice Bridge доступен · порт ' + String(body.port || 38761),
-            online: true,
-            indicatorClass: 'online',
-            updated: 'Проверено: ' + now.toLocaleTimeString()
-          });
-        } else {
-          this.setData({
-            status: 'Нет связи с мостом',
-            detail: 'RE:Vision не подтвердил состояние',
-            online: false,
-            indicatorClass: 'offline',
-            updated: 'Последняя проверка: ' + new Date().toLocaleTimeString()
-          });
-        }
-      },
-      fail: () => {
+    const ports = [38761, 38762];
+    let index = 0;
+    const tryNext = () => {
+      if (index >= ports.length) {
         this.setData({
           status: 'Связь потеряна',
-          detail: 'Проверь приложение RE:Vision и Voice Bridge',
+          detail: 'Не отвечает ни основной Voice Bridge, ни канал восстановления',
           online: false,
           indicatorClass: 'offline',
           updated: 'Последняя проверка: ' + new Date().toLocaleTimeString()
         });
+        return;
       }
-    });
+      const port = ports[index++];
+      wx.request({
+        url: 'http://127.0.0.1:' + port + '/health',
+        method: 'GET',
+        dataType: 'json',
+        timeout: 5000,
+        success: (res) => {
+          const body = res && res.data;
+          if (!(res && Number(res.statusCode) >= 200 && Number(res.statusCode) < 300
+              && body && body.ok === true)) {
+            tryNext();
+            return;
+          }
+          const now = new Date();
+          const mainRunning = body.mainServerRunning === true || port === 38761;
+          this.setData({
+            status: mainRunning ? 'Основной канал работает' : 'Доступен канал восстановления',
+            detail: mainRunning
+              ? 'Voice Bridge доступен · порт 38761'
+              : 'Основная служба не подключена. Можно открыть системные настройки · порт 38762',
+            online: mainRunning,
+            indicatorClass: mainRunning ? 'online' : 'offline',
+            updated: 'Проверено: ' + now.toLocaleTimeString()
+          });
+        },
+        fail: () => tryNext()
+      });
+    };
+    tryNext();
   },
 
   onCreate() {
