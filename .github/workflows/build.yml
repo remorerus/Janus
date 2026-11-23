@@ -1,4 +1,4 @@
-run-name: RE:Vision APK build (${{ github.ref_name }})
+run-name: RE:Vision signed APK build (${{ github.ref_name }})
 name: Build RE:Vision APK
 
 on:
@@ -23,7 +23,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,15 +33,48 @@ jobs:
           java-version: "17"
           distribution: temurin
 
-      - name: Build APK
+      - name: Prepare permanent signing key
+        env:
+          REVISION_SIGNING_BUNDLE: ${{ secrets.REVISION_SIGNING_BUNDLE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$REVISION_SIGNING_BUNDLE" || { echo "::error::GitHub Actions secret REVISION_SIGNING_BUNDLE is missing"; exit 1; }
+          printf '%s\n' "$REVISION_SIGNING_BUNDLE" > "$RUNNER_TEMP/revision-signing-bundle.txt"
+          KEYSTORE_BASE64="$(sed -n 's/^KEYSTORE_BASE64=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
+          KEYSTORE_PASSWORD="$(sed -n 's/^KEYSTORE_PASSWORD=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
+          KEY_ALIAS="$(sed -n 's/^KEY_ALIAS=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
+          KEY_PASSWORD="$(sed -n 's/^KEY_PASSWORD=//p' "$RUNNER_TEMP/revision-signing-bundle.txt")"
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/revision-signing.jks"
+          keytool -list -keystore "$RUNNER_TEMP/revision-signing.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          {
+            echo "UPLOAD_KEYSTORE_PATH=$RUNNER_TEMP/revision-signing.jks"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/revision-signing-bundle.txt"
+
+      - name: Build signed APK
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon clean assembleDebug
+          ./gradlew --no-daemon clean assembleRelease
 
-      - name: Upload APK
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: RE-Vision-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: RE-Vision-SIGNED-APK
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
