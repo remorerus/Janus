@@ -90,14 +90,14 @@ export default {
         const opened = await bridgeRequest(port, '/accessibility/settings', 'POST', token);
         const wasEnabled = health.accessibilityEnabled !== false && opened.accessibilityEnabled !== false;
         const message = wasEnabled
-          ? 'Системное меню специальных возможностей открыто. Проверь службу RE:Vision.'
-          : 'Служба RE:Vision выключена. Я открыл системное меню для её включения.';
+          ? 'Запрос на открытие системного меню отправлен. Проверь службу RE:Vision.'
+          : 'Служба RE:Vision выключена. Запрос на открытие системного меню отправлен.';
         this.setData({
           busy: false,
           statusText: message,
-          detailText: 'Использован локальный канал ' + String(port) + '. Найди RE:Vision и включи переключатель, если он выключен.'
+          detailText: 'Использован локальный канал ' + String(port) + '. Если системный экран не появился, открой RE:Vision → Настройки → Voice Bridge вручную. В системном меню найди RE:Vision и включи переключатель.'
         });
-        speak(message);
+        speak(message + ' Если экран не появился, открой настройки Ревижн вручную.');
         return;
       } catch (error) {
         lastError = error;
