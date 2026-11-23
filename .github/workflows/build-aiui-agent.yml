@@ -8,6 +8,7 @@ on:
     branches:
       - revision-aiui-agent
       - revision-r08-stability
+      - revision-1.9.20-integrated
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
