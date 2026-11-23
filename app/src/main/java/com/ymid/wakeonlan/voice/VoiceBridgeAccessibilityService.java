@@ -314,7 +314,12 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } finally {
             synchronized (this) {
                 serverSocket = null;
-                if (serverThread == Thread.currentThread()) serverThread = null;
+                if (serverThread == Thread.currentThread()) {
+                    serverThread = null;
+                    ThreadPoolExecutor executor = requestExecutor;
+                    requestExecutor = null;
+                    if (executor != null) executor.shutdownNow();
+                }
                 if (running) {
                     long delay = serverRestartDelayMs;
                     serverRestartDelayMs = Math.min(serverRestartDelayMs * 2L, 60_000L);
@@ -542,8 +547,22 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("enabled", enabled);
         response.addProperty("connected", ssid != null && !ssid.isEmpty());
         if (ssid != null && !ssid.isEmpty()) response.addProperty("ssid", ssid);
+        if (ssid == null || ssid.isEmpty()) {
+            boolean fineLocation = Build.VERSION.SDK_INT < 23
+                    || checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                            == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            boolean nearbyWifi = Build.VERSION.SDK_INT < 33
+                    || checkSelfPermission(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+                            == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            response.addProperty("permissionRequired", !fineLocation || !nearbyWifi);
+            response.addProperty("locationServicesMayBeRequired", Build.VERSION.SDK_INT >= 29);
+            response.addProperty("ssidUnavailableReason", !fineLocation
+                    ? "ACCESS_FINE_LOCATION permission is not granted"
+                    : (!nearbyWifi ? "NEARBY_WIFI_DEVICES permission is not granted"
+                    : "Android or Rokid firmware did not expose the current SSID"));
+        }
         response.addProperty("message", ssid == null || ssid.isEmpty()
-                ? "Wi-Fi is enabled but the current SSID is unavailable."
+                ? "Wi-Fi is enabled, but Android did not expose the connected network name."
                 : "Connected to " + ssid);
         return response;
     }
