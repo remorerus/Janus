@@ -117,7 +117,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         super.onServiceConnected();
         activeInstance = this;
         serviceConnected = true;
+        // Persist that the user has explicitly enabled the bridge at least once.
+        // The independent recovery service can then survive firmware resets of
+        // the Android accessibility switch and reopen its settings by voice.
+        getSharedPreferences(BRIDGE_PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean("bridge_ever_enabled", true).apply();
         startServer();
+        VoiceBridgeRecoveryService.start(this);
         VoiceBridgeKeepAliveService.start(this);
     }
 
