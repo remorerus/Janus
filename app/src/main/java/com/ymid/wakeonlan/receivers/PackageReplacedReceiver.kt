@@ -16,10 +16,14 @@ class PackageReplacedReceiver : BroadcastReceiver() {
         resetAliasesToDefault(context)
         MonitoringScheduler.scheduleIfEnabled(context)
         val bridgePrefs = context.getSharedPreferences("revision_voice_bridge", Context.MODE_PRIVATE)
+        val accessibilityEnabled = VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)
+        if (accessibilityEnabled) {
+            bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
+        }
         if (bridgePrefs.getBoolean("bridge_ever_enabled", false)) {
             VoiceBridgeRecoveryService.start(context)
         }
-        if (VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)) {
+        if (accessibilityEnabled) {
             VoiceBridgeKeepAliveService.start(context)
         }
     }
