@@ -8,8 +8,8 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list"],
-          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list", "bridge_settings"],
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; bridge_settings — открыть меню восстановления Voice Bridge и системные настройки специальных возможностей RE:Vision. Фразы «открой настройки Ревижн», «открой меню Voice Bridge», «проверь службу Ревижн» должны выбирать bridge_settings. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -207,6 +207,10 @@ export default {
 
   async onLoad(query) {
     const requestedAction = String((query && query.action) || '').toLowerCase().trim();
+    if (requestedAction === 'bridge_settings') {
+      wx.navigateTo({ url: '/pages/bridge-settings/index' });
+      return;
+    }
     // Use direction-specific intents so AIUI cannot drop the boolean enabled field.
     const toggleEnabled = requestedAction === 'wifi_enable' ? true
       : requestedAction === 'wifi_disable' ? false
