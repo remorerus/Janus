@@ -159,8 +159,13 @@ public final class VoiceBridgeRecoveryService extends Service {
         String path = request[1].split("\\?", 2)[0];
         if ("GET".equals(method) && "/health".equals(path)) {
             boolean enabled = VoiceBridgeKeepAliveService.isAccessibilityEnabled(this);
+            boolean connected = VoiceBridgeAccessibilityService.isServiceConnected();
+            boolean mainRunning = VoiceBridgeAccessibilityService.isMainServerRunning();
             String body = "{\"ok\":true,\"service\":\"RE:Vision recovery\",\"port\":" + PORT
-                    + ",\"accessibilityEnabled\":" + enabled + "}";
+                    + ",\"accessibilityEnabled\":" + enabled
+                    + ",\"accessibilityConnected\":" + connected
+                    + ",\"mainServerRunning\":" + mainRunning
+                    + ",\"recoveryServerRunning\":true}";
             writeResponse(socket.getOutputStream(), 200, body);
             return;
         }
