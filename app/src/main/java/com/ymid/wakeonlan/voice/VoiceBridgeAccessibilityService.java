@@ -68,8 +68,14 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 .edit().putBoolean(BRIDGE_ENABLED_KEY, enabled).apply();
         VoiceBridgeAccessibilityService service = instance;
         if (service != null) {
-            if (enabled) service.startServer();
-            else service.stopServer();
+            if (enabled) {
+                service.startServer();
+                service.bridgeWatchdogHandler.removeCallbacks(service.bridgeWatchdog);
+                service.bridgeWatchdogHandler.postDelayed(service.bridgeWatchdog, 8_000L);
+            } else {
+                service.bridgeWatchdogHandler.removeCallbacks(service.bridgeWatchdog);
+                service.stopServer();
+            }
         }
     }
 
@@ -130,12 +136,35 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile int pendingWifiScrollSteps;
     private volatile long lastDiagLogMs;
 
+    // Recover the loopback HTTP listener if its worker exits while Android keeps
+    // the AccessibilityService bound. Android still owns service enable/disable.
+    private final Handler bridgeWatchdogHandler = new Handler(Looper.getMainLooper());
+    private final Runnable bridgeWatchdog = new Runnable() {
+        @Override public void run() {
+            if (!isBridgeEnabled(VoiceBridgeAccessibilityService.this)) {
+                stopServer();
+                return;
+            }
+            Thread worker = serverThread;
+            if (!running || worker == null || !worker.isAlive()) {
+                Log.w(TAG, "Voice bridge watchdog: restarting inactive HTTP listener");
+                startServer();
+            }
+            bridgeWatchdogHandler.postDelayed(this, 8_000L);
+        }
+    };
+
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-        if (isBridgeEnabled(this)) startServer();
-        else Log.i(TAG, "Voice bridge disabled in RE:Vision settings");
+        if (isBridgeEnabled(this)) {
+            startServer();
+            bridgeWatchdogHandler.removeCallbacks(bridgeWatchdog);
+            bridgeWatchdogHandler.postDelayed(bridgeWatchdog, 8_000L);
+        } else {
+            Log.i(TAG, "Voice bridge disabled in RE:Vision settings");
+        }
     }
 
     private static String norm(CharSequence s) {
@@ -265,6 +294,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     @Override
     public boolean onUnbind(android.content.Intent intent) {
+        bridgeWatchdogHandler.removeCallbacks(bridgeWatchdog);
         stopServer();
         if (instance == this) instance = null;
         return super.onUnbind(intent);
@@ -272,6 +302,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     @Override
     public void onDestroy() {
+        bridgeWatchdogHandler.removeCallbacks(bridgeWatchdog);
         stopServer();
         if (instance == this) instance = null;
         super.onDestroy();
@@ -432,8 +463,6 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, openWifiSettings());
         } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, openWifiTogglePanel(new String(body, StandardCharsets.UTF_8)));
-        } else if ("POST".equals(method) && "/wifi/toggle".equals(path)) {
-            writeResponse(socket.getOutputStream(), 200, toggleWifi(new String(body, StandardCharsets.UTF_8)));
         } else if ("GET".equals(method) && "/wifi/status".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, wifiStatus());
         } else if ("GET".equals(method) && "/wifi/networks".equals(path)) {
