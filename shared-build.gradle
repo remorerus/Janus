@@ -4,10 +4,18 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(project.findProperty('UPLOAD_KEYSTORE_PATH') ?: " ")
-            storePassword project.findProperty('KEYSTORE_PASSWORD') ?: ""
-            keyAlias project.findProperty('KEY_ALIAS') ?: ""
-            keyPassword project.findProperty('KEY_PASSWORD') ?: ""
+            // Values are injected as Gradle project properties by the CI init script.
+            // Do not fall back to a whitespace path: it hides missing CI configuration.
+            def signingStorePath = project.findProperty('UPLOAD_KEYSTORE_PATH')
+            if (signingStorePath != null && !signingStorePath.toString().trim().isEmpty()) {
+                storeFile file(signingStorePath)
+            }
+            def signingStorePassword = project.findProperty('KEYSTORE_PASSWORD')
+            if (signingStorePassword != null) storePassword signingStorePassword
+            def signingAlias = project.findProperty('KEY_ALIAS')
+            if (signingAlias != null) keyAlias signingAlias
+            def signingKeyPassword = project.findProperty('KEY_PASSWORD')
+            if (signingKeyPassword != null) keyPassword signingKeyPassword
 
             v1SigningEnabled true
             v2SigningEnabled true
