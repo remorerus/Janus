@@ -47,6 +47,15 @@ public final class VoiceBridgeRecoveryService extends Service {
     private volatile ServerSocket serverSocket;
     private volatile Thread serverThread;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable supervisor = new Runnable() {
+        @Override
+        public void run() {
+            if (!running || serverThread == null || !serverThread.isAlive()) {
+                startServer();
+            }
+            mainHandler.postDelayed(this, 20_000L);
+        }
+    };
 
     public static void start(Context context) {
         Intent intent = new Intent(context, VoiceBridgeRecoveryService.class);
@@ -67,6 +76,7 @@ public final class VoiceBridgeRecoveryService extends Service {
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
         startServer();
+        mainHandler.postDelayed(supervisor, 20_000L);
     }
 
     @Override
@@ -78,6 +88,7 @@ public final class VoiceBridgeRecoveryService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        mainHandler.removeCallbacks(supervisor);
         ServerSocket socket = serverSocket;
         if (socket != null) {
             try { socket.close(); } catch (Exception ignored) { }
