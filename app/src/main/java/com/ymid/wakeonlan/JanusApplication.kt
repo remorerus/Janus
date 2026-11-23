@@ -21,8 +21,10 @@ class JanusApplication : Application() {
         MonitoringScheduler.scheduleIfEnabled(this)
         // If this installation has used Voice Bridge before, restore its independent
         // recovery endpoint whenever the app process is brought up manually.
-        if (getSharedPreferences("revision_voice_bridge", MODE_PRIVATE)
-                .getBoolean("bridge_ever_enabled", false)) {
+        val bridgePrefs = getSharedPreferences("revision_voice_bridge", MODE_PRIVATE)
+        if (bridgePrefs.getBoolean("bridge_ever_enabled", false)
+                || bridgePrefs.contains("access_token")) {
+            bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
             VoiceBridgeRecoveryService.start(this)
         }
         LauncherIconWorker.schedule(this)
