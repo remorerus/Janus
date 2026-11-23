@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - revision-aiui-agent
+      - revision-voice-bridge-keeper
     paths:
       - "app/**"
       - "*.gradle"

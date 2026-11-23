@@ -45,6 +45,8 @@ import java.util.concurrent.TimeUnit;
 /** Loopback-only bridge used by the Rokid AIUI voice agent. */
 public final class VoiceBridgeAccessibilityService extends AccessibilityService {
     private static final String TAG = "RevisionVoiceBridge";
+    private static volatile VoiceBridgeAccessibilityService activeInstance;
+    private volatile boolean serviceConnected;
     private static final int PORT = 38761;
     private static final String BRIDGE_PREFS = "revision_voice_bridge";
     private static final String TOKEN_KEY = "access_token";
@@ -113,7 +115,10 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
+        activeInstance = this;
+        serviceConnected = true;
         startServer();
+        VoiceBridgeKeepAliveService.start(this);
     }
 
     @Override
@@ -163,14 +168,24 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
     @Override
     public boolean onUnbind(android.content.Intent intent) {
+        serviceConnected = false;
         stopServer();
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
+        serviceConnected = false;
+        if (activeInstance == this) activeInstance = null;
         stopServer();
         super.onDestroy();
+    }
+
+    /** Called by the independent foreground keeper while Android keeps Accessibility enabled. */
+    public static void ensureServerRunning() {
+        VoiceBridgeAccessibilityService service = activeInstance;
+        if (service == null || !service.serviceConnected) return;
+        service.startServer();
     }
 
     private synchronized void startServer() {
