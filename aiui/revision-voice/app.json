@@ -1,18 +1,28 @@
 {
-  "agentName": "RE:Vision",
-  "agentDesc": "Русскоязычный агент для Rokid, вызываемый через Hi Rokid. Управляет сохранёнными компьютерами и устройствами: показывает список, проверяет состояние, включает и выключает устройства. Также помогает управлять Wi-Fi: открывает системную панель для включения и выключения Wi-Fi, показывает текущую сеть, доступные сети и помогает выбрать сеть Студио Wi-Fi (SSID Studio) или Local_Network_5G. Для переключения Wi-Fi Android может потребовать подтверждение пользователя в системной панели.",
+  "agentName": "Ревижн",
+  "agentDesc": "Русскоязычный голосовой агент Ревижн для управления сохранёнными устройствами и Wi-Fi на очках Rokid. Команды Wi-Fi: wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; wifi_status — проверить состояние и текущую сеть; wifi_list — показать доступные сети; wifi — открыть системные настройки Wi-Fi по прямой просьбе; wifi_connect — выбрать и подключить сеть. По командам «открой настройки Ревижн», «открой меню Voice Bridge», «проверь службу Ревижн», «дай доступ к Voice Bridge», «подключись к Voice Bridge», «восстанови Voice Bridge», «почему не работает Voice Bridge», «открой настройки голосового моста», «включи службу Ревижн» передавай action=bridge_settings, чтобы открыть панель восстановления и экран специальных возможностей Android. При любой однозначной фразе о выключении Wi-Fi (включая «выключи», «выключить», «отключи», «отключить», «выруби», «вай-фай», «вайфай») немедленно передавай action=wifi_disable. При любой однозначной фразе о включении Wi-Fi («включи», «включить», «активируй») передавай action=wifi_enable. Это два самостоятельных действия: никогда не используй wifi_toggle и не требуй параметр enabled. Не задавай уточняющий вопрос, если направление явно названо.",
   "pages": [
     "pages/device-action/index",
-    "pages/settings/index"
+    "pages/settings/index",
+    "pages/bridge-settings/index"
   ],
   "permissions": [
     "INTERNET",
     "RECORD_AUDIO"
   ],
   "window": {
-    "navigationBarTitleText": "RE:Vision",
+    "navigationBarTitleText": "Ревижн",
     "viewport": {
       "width": "device-width"
     }
-  }
+  },
+  "widgets": [
+    {
+      "path": "widgets/bridge-status/index",
+      "family": "1x2",
+      "placement": "persistent",
+      "displayName": "Состояние Ревижн",
+      "description": "Показывает доступность приложения RE:Vision и Voice Bridge."
+    }
+  ]
 }
