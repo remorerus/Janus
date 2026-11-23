@@ -291,17 +291,51 @@ export default {
       }
 
       if (action === 'wifi' || action === 'wifi_connect') {
-        const targetNetwork = String(query.networkName || query.ssid || '');
-        const result = action === 'wifi_connect'
-          ? await request('/wifi/connect', 'POST', token, { networkName: targetNetwork })
-          : await request('/wifi', 'POST', token, {});
-        if (!result || result.ok !== true || result.opened !== true) {
-          throw new Error(result && result.error ? result.error : 'Не удалось открыть системные настройки Wi-Fi');
+        const targetNetwork = String(query.networkName || query.ssid || '').trim();
+        let result;
+        let openedPickerForChoice = false;
+
+        if (action === 'wifi_connect' && !targetNetwork) {
+          // AIUI sometimes recognizes "connect to another Wi-Fi" but omits the SSID.
+          // In that case, show Android's network picker instead of reporting an error.
+          result = await request('/wifi', 'POST', token, {});
+          openedPickerForChoice = true;
+        } else if (action === 'wifi_connect') {
+          result = await request('/wifi/connect', 'POST', token, { networkName: targetNetwork });
+          if (result && result.ok !== true && result.error === 'wifi_network_required') {
+            // Unknown or lost SSID: fall back to the visible Android Wi-Fi list.
+            result = await request('/wifi', 'POST', token, {});
+            openedPickerForChoice = true;
+          }
+        } else {
+          result = await request('/wifi', 'POST', token, {});
         }
-        const message = action === 'wifi_connect'
-          ? 'Открыл системный выбор Wi-Fi. Выбери сеть ' + result.targetSsid + ' и подтверди подключение, если Android попросит. Затем скажи: Ревижн, проверь Wi-Fi.'
+
+        if (!result || result.ok !== true || (openedPickerForChoice || action === 'wifi') && result.opened !== true) {
+          throw new Error(result && result.error ? result.error : 'Не удалось открыть системный список Wi-Fi');
+        }
+
+        if (action === 'wifi_connect' && !openedPickerForChoice) {
+          if (result.connected === true) {
+            const message = result.alreadyConnected
+              ? 'Ты уже подключён к сети ' + (result.targetSsid || targetNetwork) + '.'
+              : 'Подключение к сети ' + (result.targetSsid || targetNetwork) + ' подтверждено.';
+            this.setData({ statusText: message, detailText: 'Текущая сеть проверена через Android.', resultText: message, busy: false });
+            speak(message);
+            return;
+          }
+          const message = result.selectionClicked === true
+            ? 'Сеть ' + (result.targetSsid || targetNetwork) + ' выбрана. Если Android запросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
+            : 'Открыл список Wi-Fi. Найди сеть ' + (result.targetSsid || targetNetwork) + ' и выбери её. Затем скажи: Ревижн, проверь Wi-Fi.';
+          this.setData({ statusText: message, detailText: 'Подключение ещё не подтверждено Android.', resultText: message, busy: false });
+          speak(message);
+          return;
+        }
+
+        const message = openedPickerForChoice
+          ? 'Открыл список доступных сетей Wi-Fi. Выбери нужную точку на экране очков и подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
-        this.setData({ statusText: message, detailText: action === 'wifi_connect' ? 'Целевая сеть: ' + result.targetSsid + '. Подключение ещё не подтверждено.' : (result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта полная страница настроек Wi-Fi.'), resultText: message, busy: false });
+        this.setData({ statusText: message, detailText: result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта системная страница выбора сети.', resultText: message, busy: false });
         speak(message);
         return;
       }
