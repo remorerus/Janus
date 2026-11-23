@@ -171,10 +171,9 @@ public final class VoiceBridgeRecoveryService extends Service {
         }
 
         if ("POST".equals(method) && "/accessibility/settings".equals(path)) {
-            if (!isAuthorized(token)) {
-                writeResponse(socket.getOutputStream(), 401, "{\"ok\":false,\"error\":\"unauthorized\"}");
-                return;
-            }
+            // This endpoint only opens Android's user-controlled settings screen.
+            // It cannot enable Accessibility or execute device commands, so pairing
+            // PIN is not required for recovery navigation.
             boolean opened = openAccessibilitySettings();
             if (opened) {
                 writeResponse(socket.getOutputStream(), 200,
