@@ -306,4 +306,6 @@
         <item>scan network</item>
         <item>find devices</item>
     </string-array>
+    <string name="voice_bridge_notification_title">RE:Vision Voice Bridge</string>
+    <string name="voice_bridge_notification_text">Voice command bridge is being monitored</string>
 </resources>
