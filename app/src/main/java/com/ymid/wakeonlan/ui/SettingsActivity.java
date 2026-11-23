@@ -76,6 +76,7 @@ public class SettingsActivity extends AppCompatActivity {
         private WifiManager wifiManager;
         private Preference trustedSsidsPreference;
         private Preference scanWifiPreference;
+        private Preference voiceBridgePreference;
         private SwitchPreferenceCompat monitoringPreference;
         private boolean openDialogAfterScan;
         private boolean receiverRegistered;
@@ -120,7 +121,7 @@ public class SettingsActivity extends AppCompatActivity {
             wifiManager = (WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             trustedSsidsPreference = findPreference(PREF_TRUSTED_SSIDS);
             scanWifiPreference = findPreference(PREF_SCAN_WIFI);
-            Preference voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
+            voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
             if (voiceBridgePreference != null) {
                 voiceBridgePreference.setOnPreferenceClickListener(preference -> {
                     startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
@@ -178,6 +179,21 @@ public class SettingsActivity extends AppCompatActivity {
                     return true;
                 });
             }
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            updateVoiceBridgeSummary();
+        }
+
+        private void updateVoiceBridgeSummary() {
+            if (voiceBridgePreference == null || !isAdded()) return;
+            boolean enabled = com.ymid.wakeonlan.voice.VoiceBridgeKeepAliveService
+                    .isAccessibilityEnabled(requireContext());
+            voiceBridgePreference.setSummary(enabled
+                    ? "Служба специальных возможностей RE:Vision включена в Android. Voice Bridge должен запускаться автоматически."
+                    : "Служба выключена в Android. Нажми сюда, чтобы открыть системное меню и включить RE:Vision.");
         }
 
         @Override
