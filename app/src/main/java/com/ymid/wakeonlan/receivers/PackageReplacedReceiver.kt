@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import com.ymid.wakeonlan.monitoring.MonitoringScheduler
+import com.ymid.wakeonlan.voice.VoiceBridgeKeepAliveService
 
 class PackageReplacedReceiver : BroadcastReceiver() {
 
@@ -13,6 +14,9 @@ class PackageReplacedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         resetAliasesToDefault(context)
         MonitoringScheduler.scheduleIfEnabled(context)
+        if (VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)) {
+            VoiceBridgeKeepAliveService.start(context)
+        }
     }
 
     companion object {
