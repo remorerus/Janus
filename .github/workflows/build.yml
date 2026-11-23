@@ -35,17 +35,17 @@ jobs:
 
       - name: Prepare permanent signing key
         env:
-          REVISION_SIGNING_BUNDLE_V2: ${{ secrets.REVISION_SIGNING_BUNDLE_V2 }}
+          REVISION_SIGNING_BUNDLE: ${{ secrets.REVISION_SIGNING_BUNDLE }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${REVISION_SIGNING_BUNDLE_V2:-}" || {
-            echo "::error::Add a NEW GitHub Actions secret named REVISION_SIGNING_BUNDLE_V2. The previously exposed signing bundle must not be reused."
+          test -n "${REVISION_SIGNING_BUNDLE:-}" || {
+            echo "::error::The existing signing secret REVISION_SIGNING_BUNDLE is missing. Add it in GitHub Actions secrets."
             exit 1
           }
 
           BUNDLE="$RUNNER_TEMP/revision-signing-bundle.txt"
-          printf '%s\n' "$REVISION_SIGNING_BUNDLE_V2" > "$BUNDLE"
+          printf '%s\n' "$REVISION_SIGNING_BUNDLE" > "$BUNDLE"
           KEYSTORE_BASE64="$(sed -n 's/^KEYSTORE_BASE64=//p' "$BUNDLE")"
           KEYSTORE_PASSWORD="$(sed -n 's/^KEYSTORE_PASSWORD=//p' "$BUNDLE")"
           KEY_ALIAS="$(sed -n 's/^KEY_ALIAS=//p' "$BUNDLE")"
