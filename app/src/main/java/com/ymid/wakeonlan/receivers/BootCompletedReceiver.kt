@@ -13,16 +13,19 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         MonitoringScheduler.scheduleIfEnabled(context)
 
-        // Accessibility remains user-controlled. If Android retained the user's
-        // enabled state, start the foreground supervisor during boot so the
-        // loopback bridge is supervised even before the app is opened manually.
         val bridgePrefs = context.getSharedPreferences("revision_voice_bridge", Context.MODE_PRIVATE)
+        val accessibilityEnabled = VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)
+
+        // Migrate installations that had Voice Bridge enabled before the recovery
+        // flag existed, and keep the emergency endpoint available after a firmware
+        // reset of the Android accessibility switch.
+        if (accessibilityEnabled) {
+            bridgePrefs.edit().putBoolean("bridge_ever_enabled", true).apply()
+        }
         if (bridgePrefs.getBoolean("bridge_ever_enabled", false)) {
-            // This local recovery endpoint does not depend on AccessibilityService,
-            // so the AIUI agent can still open Android settings if firmware reset it.
             VoiceBridgeRecoveryService.start(context)
         }
-        if (VoiceBridgeKeepAliveService.isAccessibilityEnabled(context)) {
+        if (accessibilityEnabled) {
             VoiceBridgeKeepAliveService.start(context)
         }
     }
