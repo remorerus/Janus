@@ -179,7 +179,7 @@ public final class VoiceBridgeRecoveryService extends Service {
             if (opened) {
                 writeResponse(socket.getOutputStream(), 200,
                         "{\"ok\":true,\"opened\":true,\"accessibilityEnabled\":"
-                                + VoiceBridgeKeepAliveService.isAccessibilityEnabled(this) + "}");
+                                + isAccessibilityEnabled(this) + "}");
             } else {
                 writeResponse(socket.getOutputStream(), 500,
                         "{\"ok\":false,\"error\":\"accessibility_settings_unavailable\"}");
