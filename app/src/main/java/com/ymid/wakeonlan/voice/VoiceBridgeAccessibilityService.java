@@ -230,7 +230,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     }
 
     private synchronized void startServer() {
-        if (!serviceConnected || isDestroyed()) return;
+        if (!serviceConnected) return;
         if (serverThread != null && serverThread.isAlive()) return;
         serverHandler.removeCallbacks(restartServerRunnable);
         running = true;
