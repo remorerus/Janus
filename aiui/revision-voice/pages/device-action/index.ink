@@ -41,7 +41,7 @@ function normalize(value) {
     .replace(/[^a-zа-я0-9]/g, '');
 }
 
-function request(path, method, token, data) {
+function request(path, method, token, data, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
       const error = new Error('wx.request недоступен в AIUI runtime');
@@ -57,7 +57,7 @@ function request(path, method, token, data) {
       header,
       data,
       dataType: 'json',
-      timeout: 12000,
+      timeout: timeoutMs || 12000,
       success(res) {
         const status = Number(res && res.statusCode || 0);
         if (status >= 200 && status < 300) {
@@ -84,16 +84,24 @@ function request(path, method, token, data) {
   });
 }
 
-async function requestWithRetry(path, method, token, data, attempts) {
+async function requestWithRetry(path, method, token, data, attempts, timeoutMs, onRetry) {
   let lastError;
   const total = attempts || 3;
+  const retryDelays = [800, 1500, 3000, 5000, 8000, 8000];
   for (let attempt = 0; attempt < total; attempt += 1) {
     try {
-      return await request(path, method, token, data);
+      return await request(path, method, token, data, timeoutMs);
     } catch (error) {
       lastError = error;
-      if (error && error.statusCode) throw error;
-      if (attempt + 1 < total) await delay(700 * (attempt + 1));
+      const status = error && Number(error.statusCode || 0);
+      // Authentication and missing-route errors are configuration problems,
+      // not transient connection failures. Retry network errors and temporary
+      // server/rate-limit responses only.
+      const retryable = !status || status === 408 || status === 429 || status >= 500;
+      if (!retryable || attempt + 1 >= total) throw error;
+      const waitMs = retryDelays[Math.min(attempt, retryDelays.length - 1)];
+      if (typeof onRetry === 'function') onRetry(attempt + 1, total, error);
+      await delay(waitMs);
     }
   }
   throw lastError || new Error('Сетевая ошибка');
@@ -223,7 +231,16 @@ export default {
     });
 
     try {
-      const health = await requestWithRetry('/health', 'GET', '', null, 4);
+      const health = await requestWithRetry(
+        '/health', 'GET', '', null, 5, 5000,
+        (retryNumber, retryTotal) => {
+          this.setData({
+            statusText: 'Связь с мостом пока отсутствует. Повторная проверка ' + retryNumber + ' из ' + (retryTotal - 1) + '…',
+            detailText: 'Ожидаю восстановления локального Voice Bridge на очках.',
+            busy: true
+          });
+        }
+      );
       if (!health || health.ok !== true) throw new Error('Неожиданный ответ /health');
       if (['wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
