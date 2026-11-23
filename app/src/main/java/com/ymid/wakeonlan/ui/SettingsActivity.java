@@ -124,7 +124,19 @@ public class SettingsActivity extends AppCompatActivity {
             voiceBridgePreference = findPreference(PREF_VOICE_BRIDGE);
             if (voiceBridgePreference != null) {
                 voiceBridgePreference.setOnPreferenceClickListener(preference -> {
-                    startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    try {
+                        Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        if (intent.resolveActivity(requireContext().getPackageManager()) != null) {
+                            startActivity(intent);
+                        } else {
+                            startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
+                        }
+                    } catch (RuntimeException e) {
+                        Toast.makeText(requireContext(),
+                                "Не удалось открыть системные настройки специальных возможностей: "
+                                        + e.getClass().getSimpleName(),
+                                Toast.LENGTH_LONG).show();
+                    }
                     return true;
                 });
             }
@@ -132,7 +144,15 @@ public class SettingsActivity extends AppCompatActivity {
             Preference voiceTokenPreference = findPreference(PREF_VOICE_TOKEN);
             if (voiceTokenPreference != null) {
                 voiceTokenPreference.setOnPreferenceClickListener(preference -> {
-                    String token = VoiceBridgeAccessibilityService.getOrCreateAccessToken(requireContext());
+                    final String token;
+                    try {
+                        token = VoiceBridgeAccessibilityService.getOrCreateAccessToken(requireContext());
+                    } catch (RuntimeException e) {
+                        Toast.makeText(requireContext(),
+                                "Не удалось получить PIN Voice Bridge: " + e.getClass().getSimpleName(),
+                                Toast.LENGTH_LONG).show();
+                        return true;
+                    }
                     new AlertDialog.Builder(requireContext())
                             .setTitle(R.string.voice_bridge_token_dialog_title)
                             .setMessage(getString(R.string.voice_bridge_token_dialog_message, token))
@@ -189,8 +209,15 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void updateVoiceBridgeSummary() {
             if (voiceBridgePreference == null || !isAdded()) return;
-            boolean enabled = com.ymid.wakeonlan.voice.VoiceBridgeKeepAliveService
-                    .isAccessibilityEnabled(requireContext());
+            boolean enabled;
+            try {
+                enabled = com.ymid.wakeonlan.voice.VoiceBridgeKeepAliveService
+                        .isAccessibilityEnabled(requireContext().getApplicationContext());
+            } catch (RuntimeException e) {
+                android.util.Log.e("REVisionSettings", "Unable to read Voice Bridge state", e);
+                voiceBridgePreference.setSummary("Не удалось проверить состояние Voice Bridge. Нажми, чтобы открыть системные настройки.");
+                return;
+            }
             voiceBridgePreference.setSummary(enabled
                     ? "Служба специальных возможностей RE:Vision включена в Android. Voice Bridge должен запускаться автоматически."
                     : "Служба выключена в Android. Нажми сюда, чтобы открыть системное меню и включить RE:Vision.");
