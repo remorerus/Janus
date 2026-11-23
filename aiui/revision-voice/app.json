@@ -14,5 +14,14 @@
     "viewport": {
       "width": "device-width"
     }
-  }
+  },
+  "widgets": [
+    {
+      "path": "widgets/bridge-status/index",
+      "family": "1x2",
+      "placement": "persistent",
+      "displayName": "Состояние Ревижн",
+      "description": "Показывает доступность приложения RE:Vision и Voice Bridge."
+    }
+  ]
 }
