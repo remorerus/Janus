@@ -164,7 +164,11 @@ public class SettingsActivity extends AppCompatActivity {
 
             Preference windowsAgentPreference = new Preference(requireContext());
             windowsAgentPreference.setTitle("Windows Agent — STUDIO PC");
-            windowsAgentPreference.setSummary("Сопряжение с компьютером по локальной сети");
+            boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext());
+            String savedAgentHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
+            windowsAgentPreference.setSummary(agentPaired
+                    ? "Сопряжён · " + (savedAgentHost == null ? "адрес сохранён" : savedAgentHost)
+                    : "Не сопряжён · подключение по локальной сети");
             getPreferenceScreen().addPreference(windowsAgentPreference);
 
             // Diagnostic action: send a signed lock command directly to Windows Agent,
@@ -219,6 +223,8 @@ public class SettingsActivity extends AppCompatActivity {
                 EditText host = new EditText(requireContext());
                 host.setSingleLine(true);
                 host.setHint("http://192.168.1.10:47821");
+                String configuredHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
+                if (configuredHost != null) host.setText(configuredHost);
                 host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
                 EditText code = new EditText(requireContext());
                 code.setSingleLine(true);
@@ -228,7 +234,7 @@ public class SettingsActivity extends AppCompatActivity {
                 fields.addView(code);
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Подключить Windows Agent")
-                        .setMessage("На STUDIO PC открой файл agent.pairing-code.txt и введи адрес компьютера и код. Используй только доверенную частную Wi-Fi сеть.")
+                        .setMessage("Адрес STUDIO PC подставляется из сохранённого сопряжения. Одноразовый код берётся из agent.pairing-code.txt только при новом сопряжении и не сохраняется в приложении. Используй только доверенную частную Wi-Fi сеть.")
                         .setView(fields)
                         .setPositiveButton("Сопрячь", (dialog, which) -> {
                             String address = host.getText().toString().trim();
