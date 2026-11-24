@@ -71,9 +71,15 @@ function request(path, method, token, data, timeoutMs) {
           }
           resolve(body);
         } else {
-          const error = new Error('HTTP ' + status);
+          let payload = res && res.data;
+          if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) {}
+          }
+          const detail = payload && (payload.detail || payload.error || payload.message);
+          const error = new Error('HTTP ' + status + (detail ? ' — ' + String(detail) : ''));
           error.statusCode = status;
           error.stage = path;
+          error.responseBody = payload;
           reject(error);
         }
       },
@@ -278,14 +284,22 @@ export default {
           if (windowsAction === 'status') {
             const reachable = result.configured && result.agent && result.agent.paired === true;
             message = reachable ? 'Windows Agent STUDIO PC доступен и сопряжён.' : 'Windows Agent не настроен или недоступен. Проверь сопряжение и сеть.';
+          } else if (result.accepted === true) {
+            message = windowsAction === 'launch' ? 'Команда запуска передана STUDIO PC.' : 'Команда Windows передана компьютеру.';
           } else {
-            message = result.accepted === true ? (windowsAction === 'launch' ? 'Команда запуска передана STUDIO PC.' : 'Команда Windows передана компьютеру.') : 'Windows Agent не подтвердил выполнение команды.';
+            const reason = String(result.error || '');
+            message = reason === 'active_user_session_unavailable'
+              ? 'STUDIO PC доступен, но Windows не предоставила активную консольную сессию для блокировки.'
+              : 'Windows Agent отклонил команду' + (reason ? ': ' + reason : '.');
           }
           this.setData({ statusText: message, detailText: 'STUDIO PC · Windows Agent', resultText: message, busy: false });
           speak(message);
         } catch (error) {
-          const message = 'Не удалось связаться с Windows Agent STUDIO PC.';
-          this.setData({ statusText: message, detailText: String(error && error.message || error), busy: false });
+          const detail = String(error && error.message || error);
+          const message = detail.indexOf('HTTP 502') >= 0 || detail.indexOf('HTTP 500') >= 0
+            ? 'Windows Agent получил запрос, но завершил его с внутренней ошибкой.'
+            : 'Не удалось связаться с Windows Agent STUDIO PC.';
+          this.setData({ statusText: message, detailText: detail, busy: false });
           speak(message);
         }
         return;
