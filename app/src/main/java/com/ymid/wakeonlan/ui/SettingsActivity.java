@@ -164,7 +164,14 @@ public class SettingsActivity extends AppCompatActivity {
 
             Preference windowsAgentPreference = new Preference(requireContext());
             windowsAgentPreference.setTitle("Windows Agent — STUDIO PC");
-            windowsAgentPreference.setSummary("Сопряжение с компьютером по локальной сети");
+            String savedWindowsAgentAddress = com.ymid.wakeonlan.voice.WindowsAgentClient.getSavedBaseUrl(requireContext());
+            if (!TextUtils.isEmpty(savedWindowsAgentAddress)) {
+                windowsAgentPreference.setSummary("Адрес сохранён: " + savedWindowsAgentAddress +
+                        (com.ymid.wakeonlan.voice.WindowsAgentClient.hasPendingPair(requireContext())
+                                ? " · ожидает подтверждения сопряжения" : " · ключ хранится защищённо"));
+            } else {
+                windowsAgentPreference.setSummary("Сопряжение с компьютером по локальной сети");
+            }
             getPreferenceScreen().addPreference(windowsAgentPreference);
             windowsAgentPreference.setOnPreferenceClickListener(preference -> {
                 LinearLayout fields = new LinearLayout(requireContext());
@@ -175,6 +182,8 @@ public class SettingsActivity extends AppCompatActivity {
                 host.setSingleLine(true);
                 host.setHint("http://192.168.1.10:47821");
                 host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                String previouslySavedAddress = com.ymid.wakeonlan.voice.WindowsAgentClient.getSavedBaseUrl(requireContext());
+                if (!TextUtils.isEmpty(previouslySavedAddress)) host.setText(previouslySavedAddress);
                 EditText code = new EditText(requireContext());
                 code.setSingleLine(true);
                 code.setHint("8-значный код сопряжения");
@@ -183,7 +192,7 @@ public class SettingsActivity extends AppCompatActivity {
                 fields.addView(code);
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Подключить Windows Agent")
-                        .setMessage("На STUDIO PC открой файл agent.pairing-code.txt и введи адрес компьютера и код. Используй только доверенную частную Wi-Fi сеть.")
+                        .setMessage("На STUDIO PC открой agent.pairing-code.txt. Если сопряжение ранее прервалось, повтори его с тем же адресом и кодом: приложение безопасно продолжит незавершённую операцию. Если Windows Agent отвечает HTTP 409 с другим ключом, сначала запусти reset-pairing.ps1 на STUDIO и используй новый код. Только доверенная частная Wi-Fi сеть.")
                         .setView(fields)
                         .setPositiveButton("Сопрячь", (dialog, which) -> {
                             String address = host.getText().toString().trim();
@@ -193,7 +202,7 @@ public class SettingsActivity extends AppCompatActivity {
                                 try {
                                     com.ymid.wakeonlan.voice.WindowsAgentClient.pair(requireContext(), address, pairingCode);
                                     handler.post(() -> {
-                                        windowsAgentPreference.setSummary("Windows Agent сопряжён. Нажми для повторного сопряжения.");
+                                        windowsAgentPreference.setSummary("Подключено: " + address + " · адрес и ключ сохранены на устройстве.");
                                         Toast.makeText(requireContext(), "Windows Agent подключён", Toast.LENGTH_LONG).show();
                                     });
                                 } catch (Exception e) {
