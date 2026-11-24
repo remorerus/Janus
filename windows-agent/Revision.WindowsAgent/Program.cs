@@ -106,6 +106,31 @@ app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =
     return Results.BadRequest(new { error = "Unsupported action" });
 });
 
+app.MapPost("/v1/command/execute", async (HttpContext context) =>
+{
+    var body = await new StreamReader(context.Request.Body).ReadToEndAsync();
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    if (config.ClientSecret is null || !Authenticate(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature))
+        return Results.Unauthorized();
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
+    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+
+    ExecuteRequest? request;
+    try { request = JsonSerializer.Deserialize<ExecuteRequest>(body); }
+    catch { return Results.BadRequest(new { error = "Invalid command request" }); }
+    var phrase = (request?.Phrase ?? "").Trim();
+    if (phrase.Length is < 1 or > 160) return Results.BadRequest(new { error = "Voice phrase is required" });
+    var command = CommandCatalog.Load(commandsPath).FirstOrDefault(x =>
+        string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase));
+    if (command is null) return Results.NotFound(new { error = "No matching command in the local catalog" });
+    var launched = LaunchCatalogCommand(command);
+    return Results.Json(new { accepted = launched, command = command.Name, kind = command.Kind });
+});
+
 app.MapPost("/v1/unpair", (HttpContext context) =>
 {
     var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
@@ -120,6 +145,54 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
 
 app.Run($"http://0.0.0.0:{Port}");
 
+
+static bool LaunchCatalogCommand(AgentCommand command)
+{
+    try
+    {
+        var target = Path.GetFullPath(command.Target);
+        if (!File.Exists(target)) return false;
+        string application;
+        string commandLine;
+        string workingDirectory = Path.GetDirectoryName(target) ?? Environment.SystemDirectory;
+        if (string.Equals(command.Kind, "app", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            application = target;
+            commandLine = "\"" + target + "\"" + (string.IsNullOrWhiteSpace(command.Arguments) ? "" : " " + command.Arguments);
+        }
+        else if (string.Equals(command.Kind, "bat", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetExtension(target), ".bat", StringComparison.OrdinalIgnoreCase))
+        {
+            application = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            commandLine = "cmd.exe /d /s /c \\"\"" + target + "\"" +
+                (string.IsNullOrWhiteSpace(command.Arguments) ? "" : " " + command.Arguments) + "\"";
+        }
+        else return false;
+
+        const uint InvalidSessionId = 0xFFFFFFFF;
+        uint sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == InvalidSessionId || !WTSQueryUserToken(sessionId, out var userToken)) return false;
+        IntPtr primaryToken = IntPtr.Zero;
+        try
+        {
+            if (!DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
+            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\\default" };
+            var args = new System.Text.StringBuilder(commandLine);
+            if (!CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
+                    false, 0x00000400, IntPtr.Zero, workingDirectory, ref startup, out var process)) return false;
+            CloseHandle(process.hThread);
+            CloseHandle(process.hProcess);
+            return true;
+        }
+        finally
+        {
+            if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
+            CloseHandle(userToken);
+        }
+    }
+    catch { return false; }
+}
 
 static bool LockActiveConsoleSession()
 {
@@ -253,7 +326,7 @@ loadCommands();
 </script></body></html>
 """;
 
-sealed record PairRequest(string Code);
+sealed record ExecuteRequest(string? Phrase);\nsealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
 sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments);
