@@ -30,12 +30,12 @@ export default {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice wakeup received', { keyword });
     if (keyword === 'clickAiAssist') {
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
+      // Keep Rokid's normal voice interaction active after the user taps RE:Vision.
+      // Do not cancel the AI Shortcut event: the tap must open the agent and leave
+      // the standard speech flow available for the next spoken command.
       this.setData({
-        statusText: 'Ревижн вызван через AI Shortcut.',
-        detailText: 'Готов принять следующую команду.'
+        statusText: 'Ревижн вызван касанием.',
+        detailText: 'Голосовой канал Rokid активен. Готов принять команду.'
       });
       return;
     }
