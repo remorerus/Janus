@@ -207,13 +207,22 @@ static bool LaunchCatalogCommand(AgentCommand command)
         try
         {
             if (!NativeMethods.DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
-            var startup = new NativeMethods.STARTUPINFO { cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>(), lpDesktop = @"winsta0\default" };
-            var args = new System.Text.StringBuilder(commandLine);
-            if (!NativeMethods.CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
-                    false, 0x00000400, IntPtr.Zero, workingDirectory, ref startup, out var process)) return false;
-            NativeMethods.CloseHandle(process.hThread);
-            NativeMethods.CloseHandle(process.hProcess);
-            return true;
+            IntPtr environment = IntPtr.Zero;
+            try
+            {
+                NativeMethods.CreateEnvironmentBlock(out environment, primaryToken, false);
+                var startup = new NativeMethods.STARTUPINFO { cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>(), lpDesktop = @"winsta0\default" };
+                var args = new System.Text.StringBuilder(commandLine);
+                if (!NativeMethods.CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
+                        false, 0x00000400, environment, workingDirectory, ref startup, out var process)) return false;
+                NativeMethods.CloseHandle(process.hThread);
+                NativeMethods.CloseHandle(process.hProcess);
+                return true;
+            }
+            finally
+            {
+                if (environment != IntPtr.Zero) NativeMethods.DestroyEnvironmentBlock(environment);
+            }
         }
         finally
         {
@@ -354,6 +363,12 @@ static class NativeMethods
         System.Text.StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
         bool inheritHandles, uint creationFlags, IntPtr environment, string currentDirectory,
         ref STARTUPINFO startupInfo, out PROCESS_INFORMATION processInformation);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    public static extern bool CreateEnvironmentBlock(out IntPtr environment, IntPtr token, bool inherit);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    public static extern bool DestroyEnvironmentBlock(IntPtr environment);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr handle);
