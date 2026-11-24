@@ -54,3 +54,5 @@ jobs:
 # Rebuild after command-return helper correction
 # Rebuild after returning two navigation levels to the native assistant
 # Rebuild touch-wakeup immediate recognition and native assistant handoff
+
+# Rebuild native Rokid voice-input handoff after temple wakeup
