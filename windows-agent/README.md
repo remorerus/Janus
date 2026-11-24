@@ -1,11 +1,11 @@
 # RE:Vision Windows Agent (prototype)
 
-A small Windows service for RE:Vision. It deliberately exposes only a narrow command set:
+A Windows service prototype for RE:Vision with a local Russian-language command catalog editor. It deliberately exposes only a narrow remote command set:
 - `shutdown` — immediate Windows shutdown
 - `restart` — immediate Windows restart
 - `cancel-shutdown` — cancel a pending shutdown
 
-It does not expose arbitrary shell/PowerShell execution.
+It does not expose arbitrary shell/PowerShell execution.\n\n## Local manager (test build)\nAfter installing and starting the service, open `http://127.0.0.1:47821/manager` in a browser on STUDIO PC. The page is restricted to loopback connections. It can add and remove catalog entries for application EXE files and BAT files, including a display name, voice phrase, target path, and arguments. The catalog is saved to `%ProgramData%\\RevisionWindowsAgent\\commands.json`.\n\nImportant: this test panel currently edits and saves the catalog only. It does not execute these custom entries or connect their phrases to RE:Vision yet. That requires the next user-session execution bridge and Android protocol integration. The existing shutdown/restart commands remain a separate limited prototype.
 
 ## Build
 Requires .NET 8 SDK on Windows:
