@@ -29,6 +29,9 @@ public final class WindowsAgentClient {
     private static final String PREFS = "revision_windows_agent";
     private static final String KEY_BASE = "base_url";
     private static final String KEY_SECRET = "client_secret";
+    private static final String KEY_PENDING_BASE = "pending_base_url";
+    private static final String KEY_PENDING_SECRET = "pending_client_secret";
+    private static final String KEY_PENDING_CODE = "pending_pairing_code";
     private static final int TIMEOUT_MS = 5000;
 
     private WindowsAgentClient() {}
@@ -44,19 +47,76 @@ public final class WindowsAgentClient {
 
     public static JSONObject pair(Context context, String host, String code) throws Exception {
         String base = normalizeBase(host);
-        if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
-            throw new IllegalArgumentException("Код сопряжения должен содержать 8 шестнадцатеричных символов.");
+        SharedPreferences store = prefs(context);
+        String pendingBase = store.getString(KEY_PENDING_BASE, null);
+        String pendingSecret = store.getString(KEY_PENDING_SECRET, null);
+        String pendingCode = store.getString(KEY_PENDING_CODE, null);
+
+        final String candidateSecret;
+        final String pairingCode;
+        if (pendingBase != null || pendingSecret != null) {
+            if (pendingBase == null || pendingSecret == null || !base.equals(pendingBase)) {
+                throw new IllegalStateException("Найдено незавершённое сопряжение с другим адресом. Заверши его с прежним адресом или сбрось ожидающую пару.");
+            }
+            candidateSecret = pendingSecret;
+            pairingCode = code != null && code.trim().matches("[A-Fa-f0-9]{8}")
+                    ? code.trim().toUpperCase(Locale.ROOT) : pendingCode;
+            if (pairingCode == null || !pairingCode.matches("[A-Fa-f0-9]{8}")) {
+                throw new IllegalArgumentException("Введи действующий 8-значный код сопряжения.");
+            }
+            // Keep the same candidate key across retries, but allow a freshly generated
+            // one-time code after the local Windows reset procedure.
+            if (!pairingCode.equals(pendingCode) &&
+                    !store.edit().putString(KEY_PENDING_CODE, pairingCode).commit()) {
+                throw new IllegalStateException("Не удалось сохранить код незавершённого сопряжения.");
+            }
+        } else {
+            if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
+                throw new IllegalArgumentException("Код сопряжения должен содержать 8 шестнадцатеричных символов.");
+            }
+            pairingCode = code.trim().toUpperCase(Locale.ROOT);
+            byte[] candidate = new byte[32];
+            new SecureRandom().nextBytes(candidate);
+            candidateSecret = Base64.encodeToString(candidate, Base64.NO_WRAP);
+            boolean pendingSaved = store.edit()
+                    .putString(KEY_PENDING_BASE, base)
+                    .putString(KEY_PENDING_SECRET, candidateSecret)
+                    .putString(KEY_PENDING_CODE, pairingCode)
+                    .commit();
+            if (!pendingSaved) throw new IllegalStateException("Не удалось предварительно сохранить ключ сопряжения на устройстве.");
         }
+
         JSONObject body = new JSONObject();
-        body.put("code", code.trim().toUpperCase(Locale.ROOT));
+        body.put("code", pairingCode);
+        body.put("clientSecret", candidateSecret);
         JSONObject response = request(base, "POST", "/v1/pair", body.toString(), null);
-        String secret = response.optString("clientSecret", "");
-        if (secret.isEmpty()) throw new IllegalStateException("Windows Agent не вернул ключ сопряжения.");
-        SharedPreferences.Editor editor = prefs(context).edit();
-        editor.putString(KEY_BASE, base);
-        editor.putString(KEY_SECRET, secret);
-        if (!editor.commit()) throw new IllegalStateException("Не удалось сохранить защищённые данные сопряжения.");
+        String returnedSecret = response.optString("clientSecret", "");
+        if (returnedSecret.isEmpty() || !candidateSecret.equals(returnedSecret)) {
+            throw new IllegalStateException("Ключ Windows Agent не совпал с предварительно сохранённым ключом устройства.");
+        }
+
+        boolean saved = store.edit()
+                .putString(KEY_BASE, base)
+                .putString(KEY_SECRET, candidateSecret)
+                .remove(KEY_PENDING_BASE)
+                .remove(KEY_PENDING_SECRET)
+                .remove(KEY_PENDING_CODE)
+                .commit();
+        if (!saved) throw new IllegalStateException("Сервер сопряжён, но Android не подтвердил сохранение. Нажми «Сопрячь» ещё раз с тем же адресом и кодом — операция безопасно повторится.");
         return response;
+    }
+
+    public static String getSavedBaseUrl(Context context) {
+        try { return prefs(context).getString(KEY_BASE, ""); }
+        catch (Exception e) { return ""; }
+    }
+
+    public static boolean hasPendingPair(Context context) {
+        try {
+            SharedPreferences p = prefs(context);
+            return p.getString(KEY_PENDING_BASE, null) != null &&
+                    p.getString(KEY_PENDING_SECRET, null) != null;
+        } catch (Exception e) { return false; }
     }
 
     public static boolean isConfigured(Context context) {
