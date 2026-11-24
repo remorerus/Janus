@@ -30,6 +30,9 @@ export default {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice wakeup received', { keyword });
     if (keyword === 'clickAiAssist') {
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
       this.setData({
         statusText: 'Ревижн вызван через AI Shortcut.',
         detailText: 'Готов принять следующую команду.'
