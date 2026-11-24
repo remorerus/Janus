@@ -28,6 +28,7 @@ import com.ymid.wakeonlan.persistence.repository.DeviceRepository;
 import com.ymid.wakeonlan.shortcuts.DynamicShortcutManager;
 import com.ymid.wakeonlan.ui.onboarding.OnboardingActivity;
 import com.ymid.wakeonlan.update.InAppUpdateManager;
+import com.ymid.wakeonlan.voice.VoiceBridgeRecoveryService;
 
 public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost {
 
@@ -50,6 +51,9 @@ public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost
             finish();
             return;
         }
+
+        // Start the lightweight foreground recovery endpoint when the app opens.
+        VoiceBridgeRecoveryService.start(getApplicationContext());
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
