@@ -134,8 +134,9 @@ function speakAndReturn(page, text) {
   speak(text);
   if (!page || page.keepActionPageOpen === true) return;
 
-  // wx.speech.playTTS() has no completion callback in the current AIUI API.
-  // Keep the result visible and audible, then close only this action page.
+  // TTS has no completion callback in the current AIUI API.
+  // Once the spoken response has had time to finish, exit the AIUI agent
+  // itself and return focus to the Rokid assistant home, not an agent page.
   const spokenText = String(text || '');
   const delayMs = Math.max(2600, Math.min(9000, 1200 + spokenText.length * 105));
   if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
@@ -143,16 +144,22 @@ function speakAndReturn(page, text) {
     page.returnHomeTimer = null;
     if (page.keepActionPageOpen === true || page.returningHome === true) return;
     page.returningHome = true;
-    wx.navigateBack({
-      delta: 2,
-      success() {
-        console.log('[RE:Vision] returned to main voice input page');
-      },
-      fail(error) {
-        page.returningHome = false;
-        console.warn('[RE:Vision] could not return to main page', error);
-      }
-    });
+
+    if (typeof wx !== 'undefined' && typeof wx.exitMiniProgram === 'function') {
+      wx.exitMiniProgram({
+        success() {
+          console.log('[RE:Vision] exited AIUI agent to Rokid assistant home');
+        },
+        fail(error) {
+          page.returningHome = false;
+          console.warn('[RE:Vision] could not exit AIUI agent', error);
+        }
+      });
+      return;
+    }
+
+    page.returningHome = false;
+    console.warn('[RE:Vision] wx.exitMiniProgram is unavailable in this AIUI runtime');
   }, delayMs);
 }
 
