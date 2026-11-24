@@ -119,12 +119,15 @@ app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =
     var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
     var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
     var signature = context.Request.Headers["X-Revision-Signature"].ToString();
-    if (config.ClientSecret is null || !Authenticate(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature))
-        return Results.Unauthorized();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
 
     var now = DateTimeOffset.UtcNow;
     foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
-    if (!usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+    if (!usedNonces.TryAdd(nonce, now)) return Results.Json(new { error = "nonce_replay" }, statusCode: StatusCodes.Status401Unauthorized);
 
     if (action == "lock")
     {
@@ -151,12 +154,15 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
     var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
     var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
     var signature = context.Request.Headers["X-Revision-Signature"].ToString();
-    if (config.ClientSecret is null || !Authenticate(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature))
-        return Results.Unauthorized();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
 
     var now = DateTimeOffset.UtcNow;
     foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
-    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+    if (!usedNonces.TryAdd(nonce, now)) return Results.Json(new { error = "nonce_replay" }, statusCode: StatusCodes.Status401Unauthorized);
 
     ExecuteRequest? request;
     try { request = JsonSerializer.Deserialize<ExecuteRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
@@ -175,8 +181,11 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
     var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
     var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
     var signature = context.Request.Headers["X-Revision-Signature"].ToString();
-    if (config.ClientSecret is null || !Authenticate(config.ClientSecret, "POST", context.Request.Path, timestamp, nonce, "", signature))
-        return Results.Unauthorized();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, "POST", context.Request.Path, timestamp, nonce, "", signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
     config.ClientSecret = null;
     config.Save(configPath);
     return Results.Ok(new { paired = false });
@@ -311,19 +320,23 @@ static bool LockActiveConsoleSession()
 static bool IsLocal(HttpContext context) =>
     context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
 
-static bool Authenticate(string secretBase64, string method, string path, string timestamp, string nonce, string body, string signature)
+static string? GetAuthenticationFailureReason(string secretBase64, string method, string path, string timestamp, string nonce, string body, string signature)
 {
-    if (!long.TryParse(timestamp, out var unix) || Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - unix) > 60 ||
-        nonce.Length < 16 || nonce.Length > 128 || signature.Length == 0) return false;
+    if (!long.TryParse(timestamp, out var unix)) return "invalid_timestamp";
+    if (Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - unix) > 60) return "timestamp_out_of_window";
+    if (nonce.Length < 16 || nonce.Length > 128) return "invalid_nonce";
+    if (signature.Length == 0) return "missing_signature";
     try
     {
         var key = Convert.FromBase64String(secretBase64);
+        if (key.Length != 32) return "stored_secret_length_invalid";
         var payload = $"{method}\n{path}\n{timestamp}\n{nonce}\n{body}";
         var expected = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
         var supplied = Convert.FromBase64String(signature);
-        return CryptographicOperations.FixedTimeEquals(expected, supplied);
+        return CryptographicOperations.FixedTimeEquals(expected, supplied) ? null : "signature_mismatch";
     }
-    catch { return false; }
+    catch (FormatException) { return "invalid_base64"; }
+    catch { return "authentication_error"; }
 }
 
 static string GetManagerHtml() => """
