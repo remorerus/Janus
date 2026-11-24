@@ -1091,9 +1091,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             int id = request.get("deviceId").getAsInt();
             for (Device device : devices) if (device.id == id) selected = device;
         } else if (request.has("device")) {
-            String name = request.get("device").getAsString();
+            String name = normalizeDeviceLookupName(request.get("device").getAsString());
             for (Device device : devices) {
-                if (device.name != null && device.name.equalsIgnoreCase(name.trim())) selected = device;
+                if (device.name != null &&
+                        normalizeDeviceLookupName(device.name).equalsIgnoreCase(name)) {
+                    selected = device;
+                    break;
+                }
             }
         }
         if (selected == null) return error("device_not_found");
@@ -1119,6 +1123,31 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("stateConfirmed", false);
         response.addProperty("message", "Command accepted; device power state is not yet confirmed.");
         return response;
+    }
+
+
+    /**
+     * Normalize voice-bridge device names before matching. AIUI may pass a
+     * percent-encoded UTF-8 name (sometimes double encoded), while the local
+     * device catalog stores readable Unicode. Decode a bounded number of
+     * times and normalize whitespace/Unicode without changing stored names.
+     */
+    private static String normalizeDeviceLookupName(String value) {
+        if (value == null) return "";
+        String normalized = value.trim();
+        for (int i = 0; i < 3 && normalized.indexOf('%') >= 0; i++) {
+            try {
+                String decoded = URLDecoder.decode(normalized, "UTF-8");
+                if (decoded.equals(normalized)) break;
+                normalized = decoded.trim();
+            } catch (IllegalArgumentException malformedEncoding) {
+                break;
+            } catch (Exception ignored) {
+                break;
+            }
+        }
+        normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFKC);
+        return normalized.replaceAll("\\s+", " ").trim();
     }
 
     private static String queryParameter(String target, String name) throws Exception {
