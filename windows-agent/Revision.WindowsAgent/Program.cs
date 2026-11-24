@@ -293,7 +293,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <main><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
-<label>Тип</label><select id="kind"><option value="app">Приложение (.exe)</option><option value="bat">BAT-файл</option></select>
+<label>Тип</label><select id="kind"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option></select>
 <label>Полный путь к файлу</label><input id="target" placeholder="C:\Program Files\...\app.exe">
 <label>Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
 <button onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
@@ -311,7 +311,7 @@ if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Та�
 commands.push(c);render();clearForm();msg('Команда добавлена в редактор. Нажми «Сохранить изменения».')}
 function removeCommand(i){commands.splice(i,1);render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.kind==='bat'?'BAT':'EXE')+' · '+c.target;info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
+root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.kind==='bat'?'BAT':c.kind==='close'?'Закрытие EXE':c.kind==='restart'?'Перезапуск EXE':'Запуск EXE')+' · '+c.target;info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 loadCommands();
