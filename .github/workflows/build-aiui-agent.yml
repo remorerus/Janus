@@ -9,6 +9,7 @@ on:
       - revision-aiui-agent
       - revision-r08-stability
       - revision-1.9.20-integrated
+      - revision-windows-agent-integration-test
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
