@@ -64,15 +64,43 @@ app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agen
 
 app.MapPost("/v1/pair", (PairRequest request) =>
 {
-    if (config.ClientSecret is not null) return Results.Conflict(new { error = "Already paired. Reset pairing locally to pair again." });
+    // Idempotent retry: Android persists its candidate secret before sending the request.
+    // If the first response was lost after this service saved it, the same candidate
+    // receives the original result instead of an unrecoverable HTTP 409.
+    if (config.ClientSecret is not null)
+    {
+        if (TryDecodeClientSecret(request.ClientSecret, out var retrySecret) &&
+            CryptographicOperations.FixedTimeEquals(
+                Convert.FromBase64String(config.ClientSecret), retrySecret))
+            return Results.Json(new PairResponse(config.ClientSecret, "HMAC-SHA256", Port));
+
+        return Results.Conflict(new { error = "Already paired with another client key. Run reset-pairing.ps1 locally on STUDIO, then pair again." });
+    }
+
     if (DateTimeOffset.UtcNow > config.PairingExpiresUtc || string.IsNullOrWhiteSpace(request.Code) ||
         !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(request.Code), Encoding.UTF8.GetBytes(config.PairingCode)))
         return Results.Unauthorized();
-    config.ClientSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    if (!TryDecodeClientSecret(request.ClientSecret, out var clientSecret))
+        return Results.BadRequest(new { error = "A valid 32-byte clientSecret is required. Update the Android app." });
+
+    config.ClientSecret = Convert.ToBase64String(clientSecret);
     config.PairingCode = "";
     config.Save(configPath);
     return Results.Json(new PairResponse(config.ClientSecret, "HMAC-SHA256", Port));
 });
+
+static bool TryDecodeClientSecret(string? value, out byte[] secret)
+{
+    secret = Array.Empty<byte>();
+    if (string.IsNullOrWhiteSpace(value)) return false;
+    try
+    {
+        secret = Convert.FromBase64String(value);
+        return secret.Length == 32;
+    }
+    catch { return false; }
+}
 
 app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =>
 {
@@ -376,7 +404,7 @@ static class NativeMethods
 }
 
 sealed record ExecuteRequest(string? Phrase);
-sealed record PairRequest(string Code);
+sealed record PairRequest(string Code, string? ClientSecret);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
 sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments);
