@@ -497,8 +497,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         boolean protectedEndpoint =
                 ("GET".equals(method) && ("/devices".equals(path) || "/status".equals(path))) ||
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path) || "/wifi/toggle".equals(path))) ||
-                ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path))) ||
-                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path)));
+                ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path) || "/windows/status".equals(path))) ||
+                ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path))) ||
+                ("POST".equals(method) && path.startsWith("/windows/command/"));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             Log.w(TAG, "HTTP 401 for " + path);
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
@@ -533,9 +534,35 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             writeResponse(socket.getOutputStream(), 200, wifiNetworks());
         } else if ("POST".equals(method) && "/wifi/connect".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, connectWifi(new String(body, StandardCharsets.UTF_8)));
+        } else if ("GET".equals(method) && "/windows/status".equals(path)) {
+            JsonObject response = new JsonObject();
+            response.addProperty("ok", true);
+            response.addProperty("configured", WindowsAgentClient.isConfigured(this));
+            if (WindowsAgentClient.isConfigured(this)) {
+                try { response.add("agent", JsonParser.parseString(WindowsAgentClient.status(this).toString()).getAsJsonObject()); }
+                catch (Exception e) { response.addProperty("reachable", false); response.addProperty("error", safeError(e)); }
+            } else { response.addProperty("reachable", false); response.addProperty("error", "windows_agent_not_paired"); }
+            writeResponse(socket.getOutputStream(), 200, response);
+        } else if ("POST".equals(method) && path.startsWith("/windows/command/")) {
+            String action = path.substring("/windows/command/".length());
+            try {
+                JsonObject response = JsonParser.parseString(WindowsAgentClient.command(this, action).toString()).getAsJsonObject();
+                response.addProperty("ok", true);
+                writeResponse(socket.getOutputStream(), 200, response);
+            } catch (Exception e) {
+                JsonObject response = error("windows_agent_command_failed");
+                response.addProperty("detail", safeError(e));
+                writeResponse(socket.getOutputStream(), 502, response);
+            }
         } else {
             writeResponse(socket.getOutputStream(), 404, error("not_found"));
         }
+    }
+
+    private static String safeError(Exception error) {
+        String message = error == null ? "unknown_error" : error.getMessage();
+        if (message == null) message = error.getClass().getSimpleName();
+        return message.length() > 180 ? message.substring(0, 180) : message;
     }
 
     private JsonObject listDevices() {
