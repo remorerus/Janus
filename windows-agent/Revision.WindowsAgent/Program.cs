@@ -123,7 +123,7 @@ app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =
         ? "not_paired"
         : GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature);
     if (authError is not null)
-        return Results.Unauthorized(new { error = authError });
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
 
     var now = DateTimeOffset.UtcNow;
     foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
@@ -158,7 +158,7 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
         ? "not_paired"
         : GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature);
     if (authError is not null)
-        return Results.Unauthorized(new { error = authError });
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
 
     var now = DateTimeOffset.UtcNow;
     foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
@@ -185,7 +185,7 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
         ? "not_paired"
         : GetAuthenticationFailureReason(config.ClientSecret, "POST", context.Request.Path, timestamp, nonce, "", signature);
     if (authError is not null)
-        return Results.Unauthorized(new { error = authError });
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
     config.ClientSecret = null;
     config.Save(configPath);
     return Results.Ok(new { paired = false });
