@@ -24,6 +24,10 @@ export default {
 
   onShow() {
     console.log('[RE:Vision] startup page shown');
+    this.setData({
+      statusText: 'Ревижн готов. Двойное касание двумя пальцами для новой команды.',
+      detailText: 'После выполнения команды вернулся на начальный экран.'
+    });
   },
 
   onVoiceWakeup(event) {
