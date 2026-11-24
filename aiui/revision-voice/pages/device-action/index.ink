@@ -144,7 +144,7 @@ function speakAndReturn(page, text) {
     if (page.keepActionPageOpen === true || page.returningHome === true) return;
     page.returningHome = true;
     wx.navigateBack({
-      delta: 1,
+      delta: 2,
       success() {
         console.log('[RE:Vision] returned to main voice input page');
       },
