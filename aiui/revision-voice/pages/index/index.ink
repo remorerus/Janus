@@ -32,10 +32,24 @@ export default {
 
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice wakeup received', { keyword });
-    // Match Kavi's verified two-entry-point pattern: after the agent is
-    // foregrounded, listen locally without cancelling Rokid's host flow.
+    console.log('[RE:Vision] voice/touch wakeup received', { keyword });
+    // Take over the wakeup event so Rokid does not continue its default
+    // launch/confirmation flow and wait for a second interaction.
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
     this.startListening();
+  },
+
+  onKeyUp(event) {
+    const code = String(event && event.code || '');
+    if (code === 'GlobalHook') {
+      console.log('[RE:Vision] temple touch received');
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      this.startListening();
+    }
   },
 
   onUnload() {
