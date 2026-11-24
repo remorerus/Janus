@@ -4,6 +4,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Http.Json;
 
 const int Port = 47821;
@@ -86,6 +87,11 @@ app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =
     foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
     if (!usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
 
+    if (action == "lock")
+    {
+        var locked = LockActiveConsoleSession();
+        return Results.Json(new { accepted = locked, action, error = locked ? null : "active_user_session_unavailable" });
+    }
     if (action == "shutdown" || action == "restart")
     {
         var args = action == "shutdown" ? "/s /t 0" : "/r /t 0";
@@ -113,6 +119,81 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
 });
 
 app.Run($"http://0.0.0.0:{Port}");
+
+
+static bool LockActiveConsoleSession()
+{
+    const uint InvalidSessionId = 0xFFFFFFFF;
+    uint sessionId = WTSGetActiveConsoleSessionId();
+    if (sessionId == InvalidSessionId || !WTSQueryUserToken(sessionId, out var userToken))
+        return false;
+
+    IntPtr primaryToken = IntPtr.Zero;
+    try
+    {
+        const uint TokenAllAccess = 0x000F01FF;
+        if (!DuplicateTokenEx(userToken, TokenAllAccess, IntPtr.Zero, 2, 1, out primaryToken))
+            return false;
+
+        var startup = new STARTUPINFO
+        {
+            cb = Marshal.SizeOf<STARTUPINFO>(),
+            lpDesktop = @"winsta0\\default"
+        };
+        var commandLine = new System.Text.StringBuilder("rundll32.exe user32.dll,LockWorkStation");
+        if (!CreateProcessAsUser(primaryToken, Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
+                commandLine, IntPtr.Zero, IntPtr.Zero, false, 0x00000400,
+                IntPtr.Zero, Environment.SystemDirectory, ref startup, out var process))
+            return false;
+
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        return true;
+    }
+    finally
+    {
+        if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
+        CloseHandle(userToken);
+    }
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+struct STARTUPINFO
+{
+    public int cb;
+    public string? lpReserved;
+    public string? lpDesktop;
+    public string? lpTitle;
+    public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+    public short wShowWindow, cbReserved2;
+    public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+struct PROCESS_INFORMATION
+{
+    public IntPtr hProcess, hThread;
+    public uint dwProcessId, dwThreadId;
+}
+
+[DllImport("kernel32.dll")]
+static extern uint WTSGetActiveConsoleSessionId();
+
+[DllImport("Wtsapi32.dll", SetLastError = true)]
+static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
+
+[DllImport("advapi32.dll", SetLastError = true)]
+static extern bool DuplicateTokenEx(IntPtr existingToken, uint desiredAccess, IntPtr tokenAttributes,
+    int impersonationLevel, int tokenType, out IntPtr newToken);
+
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+static extern bool CreateProcessAsUser(IntPtr token, string applicationName,
+    System.Text.StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
+    bool inheritHandles, uint creationFlags, IntPtr environment, string currentDirectory,
+    ref STARTUPINFO startupInfo, out PROCESS_INFORMATION processInformation);
+
+[DllImport("kernel32.dll", SetLastError = true)]
+static extern bool CloseHandle(IntPtr handle);
 
 static bool IsLocal(HttpContext context) =>
     context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
