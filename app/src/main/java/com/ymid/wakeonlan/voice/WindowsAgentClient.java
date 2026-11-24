@@ -88,7 +88,12 @@ public final class WindowsAgentClient {
 
     public static JSONObject status(Context context) throws Exception {
         String base = prefs(context).getString(KEY_BASE, null);
-        if (base == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        if (base == null) throw new IllegalStateException("Адрес Windows Agent ещё не сохранён.");
+        return status(context, base);
+    }
+
+    public static JSONObject status(Context context, String host) throws Exception {
+        String base = normalizeBase(host);
         return request(base, "GET", "/v1/status", "", null);
     }
 
