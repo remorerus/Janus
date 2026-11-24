@@ -50,3 +50,5 @@ jobs:
           path: dist/RE-Vision.aix
           if-no-files-found: error
           retention-days: 14
+
+# Rebuild after command-return helper correction
