@@ -1,7 +1,7 @@
 name: Build RE:Vision Windows Agent
 on:
   push:
-    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test]
+    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test, revision-windows-agent-pairing-recovery]
     paths:
       - 'windows-agent/**'
       - '.github/workflows/windows-agent.yml'
