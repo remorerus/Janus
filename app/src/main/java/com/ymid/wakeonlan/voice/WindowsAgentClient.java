@@ -47,13 +47,24 @@ public final class WindowsAgentClient {
         if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
             throw new IllegalArgumentException("Код сопряжения должен содержать 8 шестнадцатеричных символов.");
         }
-        byte[] secretBytes = new byte[32];
-        new SecureRandom().nextBytes(secretBytes);
-        String secret = Base64.encodeToString(secretBytes, Base64.NO_WRAP);
+        // The Windows Agent is the authority for the pairing secret. It creates the
+        // 32-byte key and returns it in PairResponse; never save a locally generated key.
         JSONObject body = new JSONObject();
         body.put("code", code.trim().toUpperCase(Locale.ROOT));
-        body.put("clientSecret", secret);
         JSONObject response = request(base, "POST", "/v1/pair", body.toString(), null);
+        String secret = response.optString("clientSecret", null);
+        if (secret == null || secret.isEmpty()) {
+            throw new IllegalStateException("Windows Agent не вернул ключ сопряжения.");
+        }
+        byte[] secretBytes;
+        try {
+            secretBytes = Base64.decode(secret, Base64.DEFAULT);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Windows Agent вернул некорректный ключ сопряжения.", e);
+        }
+        if (secretBytes.length != 32) {
+            throw new IllegalStateException("Windows Agent вернул ключ неверной длины.");
+        }
         SharedPreferences.Editor editor = prefs(context).edit();
         editor.putString(KEY_BASE, base);
         editor.putString(KEY_SECRET, secret);
