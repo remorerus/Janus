@@ -196,7 +196,7 @@ public class SettingsActivity extends AppCompatActivity {
                             windowsAgentPreference.setSummary("Проверяем Windows Agent…");
                             new Thread(() -> {
                                 try {
-                                    org.json.JSONObject status = com.ymid.wakeonlan.voice.WindowsAgentClient.status(requireContext());
+                                    org.json.JSONObject status = com.ymid.wakeonlan.voice.WindowsAgentClient.status(requireContext(), address);
                                     boolean paired = status.optBoolean("paired", false);
                                     handler.post(() -> {
                                         windowsAgentPreference.setSummary(paired
