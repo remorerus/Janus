@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC: windows_status — проверить Windows Agent; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_launch — выполнить сохранённую команду: запустить, закрыть или перезапустить EXE, либо запустить BAT; распознавай фразы «запусти Mixxx», «закрой Mixxx», «перезапусти Mixxx» и передавай исходную фразу в commandPhrase; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для этих команд требуется предварительное сопряжение Windows Agent в настройках Android-приложения RE:Vision.",
+  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC всегда выполняй через сопряжённый Windows Agent, не через SSH. Фразы «выключи STUDIO PC», «выключи студио писи», «выключи студию через Ревижн Агент» и аналогичные явные команды выключения STUDIO PC должны выбирать windows_shutdown (даже если распознавание предлагает общий shutdown); передавай deviceName=STUDIO PC. windows_status — проверить Windows Agent; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_launch — выполнить сохранённую команду: запустить, закрыть или перезапустить EXE, либо запустить BAT; распознавай фразы «запусти Mixxx», «закрой Mixxx», «перезапусти Mixxx» и передавай исходную фразу в commandPhrase; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для этих команд требуется предварительное сопряжение Windows Agent в настройках Android-приложения RE:Vision.",
   "schema": {
     "data": {
       "type": "object",
@@ -215,12 +215,19 @@ export default {
       wx.navigateTo({ url: '/pages/bridge-settings/index' });
       return;
     }
+    const rawRequestedName = query && (query.deviceName ?? query.device) || '';
+    const requestedText = String(rawRequestedName).trim();
+    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
+    // STUDIO PC is controlled by the paired Windows Agent, never by the legacy SSH route.
+    const normalizedDeviceName = normalize(requestedName);
+    const isStudioPc = ['studiopc', 'studio', 'студия', 'студиписи', 'студиописи', 'студийныйпк'].includes(normalizedDeviceName);
     // Use direction-specific intents so AIUI cannot drop the boolean enabled field.
     const toggleEnabled = requestedAction === 'wifi_enable' ? true
       : requestedAction === 'wifi_disable' ? false
       : (query && typeof query.enabled === 'boolean' ? query.enabled : undefined);
     const action = (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
-      ? 'wifi_toggle' : requestedAction;
+      ? 'wifi_toggle'
+      : (requestedAction === 'shutdown' && isStudioPc ? 'windows_shutdown' : requestedAction);
     const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list', 'windows_status', 'windows_lock', 'windows_launch', 'windows_shutdown', 'windows_restart', 'windows_cancel_shutdown'];
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
@@ -228,9 +235,6 @@ export default {
       speak(message);
       return;
     }
-    const rawRequestedName = query && (query.deviceName ?? query.device) || '';
-    const requestedText = String(rawRequestedName).trim();
-    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
     this.setData({
       statusText: 'Проверяю связь с RE:Vision…',
