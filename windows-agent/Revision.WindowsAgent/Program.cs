@@ -49,7 +49,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
         var arguments = item.Arguments ?? "";
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
             target.Length is < 1 or > 500 || arguments.Length > 500 ||
-            kind is not ("app" or "bat"))
+            kind is not ("app" or "bat" or "close" or "restart"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, тип и путь к файлу." });
         if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
             return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
@@ -146,12 +146,43 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
 app.Run($"http://0.0.0.0:{Port}");
 
 
+static bool StopCatalogProcess(string target, uint sessionId)
+{
+    if (!string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase)) return false;
+    string processName = Path.GetFileNameWithoutExtension(target);
+    bool found = false;
+    foreach (var process in Process.GetProcessesByName(processName))
+    {
+        using (process)
+        {
+            try
+            {
+                if ((uint)process.SessionId != sessionId) continue;
+                found = true;
+                if (!process.CloseMainWindow() || !process.WaitForExit(3000))
+                    process.Kill(true);
+                process.WaitForExit(3000);
+            }
+            catch { }
+        }
+    }
+    return found;
+}
+
 static bool LaunchCatalogCommand(AgentCommand command)
 {
     try
     {
         var target = Path.GetFullPath(command.Target);
         if (!File.Exists(target)) return false;
+        const uint InvalidSessionId = 0xFFFFFFFF;
+        uint sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
+        if (sessionId == InvalidSessionId) return false;
+        if (string.Equals(command.Kind, "close", StringComparison.OrdinalIgnoreCase))
+            return StopCatalogProcess(target, sessionId);
+        if (string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase) &&
+            !StopCatalogProcess(target, sessionId)) return false;
+
         string application;
         string commandLine;
         string workingDirectory = Path.GetDirectoryName(target) ?? Environment.SystemDirectory;
@@ -170,9 +201,7 @@ static bool LaunchCatalogCommand(AgentCommand command)
         }
         else return false;
 
-        const uint InvalidSessionId = 0xFFFFFFFF;
-        uint sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
-        if (sessionId == InvalidSessionId || !NativeMethods.WTSQueryUserToken(sessionId, out var userToken)) return false;
+        if (!NativeMethods.WTSQueryUserToken(sessionId, out var userToken)) return false;
         IntPtr primaryToken = IntPtr.Zero;
         try
         {
