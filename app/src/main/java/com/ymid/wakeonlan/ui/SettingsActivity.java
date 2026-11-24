@@ -173,6 +173,51 @@ public class SettingsActivity extends AppCompatActivity {
                 windowsAgentPreference.setSummary("Сопряжение с компьютером по локальной сети");
             }
             getPreferenceScreen().addPreference(windowsAgentPreference);
+
+            // Diagnostic action: send a signed lock command directly to Windows Agent,
+            // bypassing AIUI and the voice bridge.
+            Preference directLockTestPreference = new Preference(requireContext());
+            directLockTestPreference.setTitle("Тест: заблокировать ПК");
+            directLockTestPreference.setSummary("Прямая проверка связи с Windows Agent без AIUI");
+            directLockTestPreference.setEnabled(
+                    com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext()));
+            getPreferenceScreen().addPreference(directLockTestPreference);
+            directLockTestPreference.setOnPreferenceClickListener(preference -> {
+                new AlertDialog.Builder(requireContext())
+                        .setTitle("Проверка блокировки")
+                        .setMessage("Компьютер STUDIO будет немедленно заблокирован. Продолжить?")
+                        .setPositiveButton("Заблокировать", (dialog, which) -> {
+                            directLockTestPreference.setEnabled(false);
+                            directLockTestPreference.setSummary("Отправка прямой команды Windows Agent…");
+                            Context appContext = requireContext().getApplicationContext();
+                            new Thread(() -> {
+                                try {
+                                    com.ymid.wakeonlan.voice.WindowsAgentClient.command(appContext, "lock");
+                                    handler.post(() -> {
+                                        if (!isAdded()) return;
+                                        directLockTestPreference.setSummary("Команда принята Windows Agent.");
+                                        directLockTestPreference.setEnabled(true);
+                                        Toast.makeText(appContext,
+                                                "Команда блокировки принята Windows Agent",
+                                                Toast.LENGTH_LONG).show();
+                                    });
+                                } catch (Exception e) {
+                                    String message = e.getMessage() == null
+                                            ? "Не удалось отправить команду" : e.getMessage();
+                                    handler.post(() -> {
+                                        if (!isAdded()) return;
+                                        directLockTestPreference.setSummary("Ошибка: " + message);
+                                        directLockTestPreference.setEnabled(true);
+                                        Toast.makeText(appContext, message, Toast.LENGTH_LONG).show();
+                                    });
+                                }
+                            }, "revision-direct-lock-test").start();
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return true;
+            });
+
             windowsAgentPreference.setOnPreferenceClickListener(preference -> {
                 LinearLayout fields = new LinearLayout(requireContext());
                 fields.setOrientation(LinearLayout.VERTICAL);
