@@ -1093,8 +1093,10 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } else if (request.has("device")) {
             String name = normalizeDeviceLookupName(request.get("device").getAsString());
             for (Device device : devices) {
-                if (device.name != null &&
-                        normalizeDeviceLookupName(device.name).equalsIgnoreCase(name)) {
+                if (device.name == null) continue;
+                String storedName = normalizeDeviceLookupName(device.name);
+                // Ignore diagnostic noise before a valid decoded device-name suffix.
+                if (storedName.equalsIgnoreCase(name) || name.endsWith(storedName)) {
                     selected = device;
                     break;
                 }
@@ -1134,14 +1136,38 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
      */
     private static String normalizeDeviceLookupName(String value) {
         if (value == null) return "";
-        String normalized = value.trim();
+        String normalized = value.trim().replaceAll("%\\s+", "%");
+        // AIUI/firmware sometimes mixes Latin hex digits with visually similar
+        // Cyrillic characters inside percent escapes (for example %D0%BА).
+        StringBuilder repaired = new StringBuilder(normalized.length());
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            boolean inEscape = (i > 0 && normalized.charAt(i - 1) == '%')
+                    || (i > 1 && normalized.charAt(i - 2) == '%');
+            if (inEscape) {
+                switch (ch) {
+                    case 'А': ch = 'A'; break;
+                    case 'В': ch = 'B'; break;
+                    case 'С': ch = 'C'; break;
+                    case 'Е': ch = 'E'; break;
+                    case 'Н': ch = 'H'; break;
+                    case 'К': ch = 'K'; break;
+                    case 'М': ch = 'M'; break;
+                    case 'О': ch = '0'; break;
+                    case 'Р': ch = 'P'; break;
+                    case 'Т': ch = 'T'; break;
+                    case 'Х': ch = 'X'; break;
+                    default: break;
+                }
+            }
+            repaired.append(ch);
+        }
+        normalized = repaired.toString().replaceAll("%(?![0-9A-Fa-f]{2})", "");
         for (int i = 0; i < 3 && normalized.indexOf('%') >= 0; i++) {
             try {
                 String decoded = URLDecoder.decode(normalized, "UTF-8");
                 if (decoded.equals(normalized)) break;
                 normalized = decoded.trim();
-            } catch (IllegalArgumentException malformedEncoding) {
-                break;
             } catch (Exception ignored) {
                 break;
             }
