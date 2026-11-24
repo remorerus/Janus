@@ -90,6 +90,30 @@ public final class WindowsAgentClient {
         return result;
     }
 
+    public static JSONObject executePhrase(Context context, String phrase) throws Exception {
+        if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160) {
+            throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
+        }
+        SharedPreferences p = prefs(context);
+        String base = p.getString(KEY_BASE, null);
+        String secret = p.getString(KEY_SECRET, null);
+        if (base == null || secret == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        JSONObject body = new JSONObject();
+        body.put("phrase", phrase.trim());
+        String bodyText = body.toString();
+        String path = "/v1/command/execute";
+        long timestamp = System.currentTimeMillis() / 1000L;
+        byte[] nonceBytes = new byte[16];
+        new SecureRandom().nextBytes(nonceBytes);
+        String nonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP | Base64.URL_SAFE);
+        String payload = "POST\\n" + path + "\\n" + timestamp + "\\n" + nonce + "\\n" + bodyText;
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
+        String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
+        return request(base, "POST", path, bodyText,
+                new String[]{Long.toString(timestamp), nonce, signature});
+    }
+
     public static void unpair(Context context) throws Exception {
         SharedPreferences p = prefs(context);
         String base = p.getString(KEY_BASE, null);
