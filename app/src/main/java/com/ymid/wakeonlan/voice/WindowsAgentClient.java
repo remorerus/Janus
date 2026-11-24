@@ -81,6 +81,15 @@ public final class WindowsAgentClient {
         }
     }
 
+    /** Returns the saved STUDIO PC address without exposing the pairing secret. */
+    public static String getConfiguredBaseUrl(Context context) {
+        try {
+            return prefs(context).getString(KEY_BASE, null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public static JSONObject status(Context context) throws Exception {
         String base = prefs(context).getString(KEY_BASE, null);
         if (base == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
