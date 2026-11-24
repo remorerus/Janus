@@ -22,7 +22,7 @@ var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
 app.MapGet("/manager", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
-    return Results.Content(ManagerHtml, "text/html; charset=utf-8");
+    return Results.Content(GetManagerHtml(), "text/html; charset=utf-8");
 });
 
 app.MapGet("/v1/manager/commands", (HttpContext context) =>
@@ -132,7 +132,7 @@ static bool Authenticate(string secretBase64, string method, string path, string
     catch { return false; }
 }
 
-const string ManagerHtml = """
+static string GetManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RE:Vision Windows Agent</title><style>
 :root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1100px;margin:auto}
