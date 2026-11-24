@@ -177,7 +177,7 @@ static bool LaunchCatalogCommand(AgentCommand command)
         try
         {
             if (!DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
-            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = "winsta0\\\\default" };
+            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
             var args = new System.Text.StringBuilder(commandLine);
             if (!CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
                     false, 0x00000400, IntPtr.Zero, workingDirectory, ref startup, out var process)) return false;
@@ -211,7 +211,7 @@ static bool LockActiveConsoleSession()
         var startup = new STARTUPINFO
         {
             cb = Marshal.SizeOf<STARTUPINFO>(),
-            lpDesktop = @"winsta0\\default"
+            lpDesktop = @"winsta0\default"
         };
         var commandLine = new System.Text.StringBuilder("rundll32.exe user32.dll,LockWorkStation");
         if (!CreateProcessAsUser(primaryToken, Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
