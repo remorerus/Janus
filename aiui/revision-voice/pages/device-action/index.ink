@@ -195,7 +195,7 @@ function readBridgeToken() {
 function finishCommand(page, message) {
   // Speak the result first, then return to the agent's start page.
   // Keep the result visible briefly so Rokid TTS can finish.
-  finishCommand(this, message);
+  speak(message);
   if (page._returnScheduled) return;
   page._returnScheduled = true;
   const text = String(message || '');
