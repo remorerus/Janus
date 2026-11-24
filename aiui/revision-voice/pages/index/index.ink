@@ -135,7 +135,8 @@ export default {
     let params = null;
 
     const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
-    const isStudioPc = /(studio\\s*pc|студио\\s*писи|студи\\s*писи|студия|студийный\\s*пк)/i.test(compact);
+    const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк)/i.test(compact);
+
     if (isStudioPc && /(выключи|выключить|отключи|заверши)/i.test(compact)) {
       params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
     } else if (isStudioPc && /(перезагрузи|перезагрузить|рестарт)/i.test(compact)) {
@@ -144,42 +145,45 @@ export default {
       params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
     } else if (/(отмени|отменить).*(выключени|перезагрузк)/i.test(compact)) {
       params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
-    } else if (/(проверь|статус|состояние).*(windows\\s*agent|виндовс|студио\\s*писи|студия)/i.test(compact)) {
+    } else if (/(проверь|статус|состояние).*(windows\s*agent|виндовс|студио\s*писи|студия)/i.test(compact)) {
       params = { action: 'windows_status', deviceName: 'STUDIO PC' };
-    } else if (/(запусти|закрой|перезапусти|открой).*(mixxx|\\.exe|\\.bat)/i.test(compact)) {
+    } else if (/(запусти|закрой|перезапусти|открой).*(mixxx|\.exe|\.bat)/i.test(compact)) {
       params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
     }
-    if (/(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн)/i.test(compact)) {
-      params = { action: 'bridge_settings' };
-    } else if (hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
-      params = { action: 'wifi_disable' };
-    } else if (hasWifi && /(включи|включить|активируй)/i.test(compact)) {
-      params = { action: 'wifi_enable' };
-    } else if (hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
-      params = { action: 'wifi' };
-    } else if (hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
-      params = { action: 'wifi_list' };
-    } else if (hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни)/i.test(compact)) {
-      params = { action: 'wifi_status' };
-    } else if (/(подключись|переключись|соединись)/i.test(compact) &&
-               /(сеть|wi\s*fi|вай\s*фай|вайфай|локал\s*нетворк|local\s*network|студио|studio)/i.test(compact)) {
-      let networkName = '';
-      if (/(локал\s*нетворк|local\s*network)/i.test(compact)) networkName = 'Local_Network_5G';
-      else if (/(студио|studio)/i.test(compact)) networkName = 'Studio';
-      params = { action: 'wifi_connect', networkName };
-    } else if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
-      params = { action: 'list' };
-    } else {
-      const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
-        : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
-        : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
-      if (verb) {
-        let deviceName = compact
-          .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
-          .replace(/^(компьютер|устройство|пк)\s+/i, '')
-          .replace(/\s+(пожалуйста|сейчас)$/i, '')
-          .trim();
-        params = { action: verb, deviceName };
+
+    if (!params) {
+      if (/(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн)/i.test(compact)) {
+        params = { action: 'bridge_settings' };
+      } else if (hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
+        params = { action: 'wifi_disable' };
+      } else if (hasWifi && /(включи|включить|активируй)/i.test(compact)) {
+        params = { action: 'wifi_enable' };
+      } else if (hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
+        params = { action: 'wifi' };
+      } else if (hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
+        params = { action: 'wifi_list' };
+      } else if (hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни)/i.test(compact)) {
+        params = { action: 'wifi_status' };
+      } else if (/(подключись|переключись|соединись)/i.test(compact) &&
+                 /(сеть|wi\s*fi|вай\s*фай|вайфай|локал\s*нетворк|local\s*network|студио|studio)/i.test(compact)) {
+        let networkName = '';
+        if (/(локал\s*нетворк|local\s*network)/i.test(compact)) networkName = 'Local_Network_5G';
+        else if (/(студио|studio)/i.test(compact)) networkName = 'Studio';
+        params = { action: 'wifi_connect', networkName };
+      } else if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
+        params = { action: 'list' };
+      } else {
+        const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
+          : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
+          : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
+        if (verb) {
+          let deviceName = compact
+            .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
+            .replace(/^(компьютер|устройство|пк)\s+/i, '')
+            .replace(/\s+(пожалуйста|сейчас)$/i, '')
+            .trim();
+          params = { action: verb, deviceName };
+        }
       }
     }
 
