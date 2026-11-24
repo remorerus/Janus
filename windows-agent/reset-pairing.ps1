@@ -29,7 +29,7 @@ try {
     $random = [byte[]]::new(4)
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($random) } finally { $rng.Dispose() }
-    $code = [Convert]::ToHexString($random)
+    $code = [BitConverter]::ToString($random).Replace('-', '')
     $expires = [DateTimeOffset]::UtcNow.AddHours(24).ToString('o')
 
     $newConfig = [ordered]@{
