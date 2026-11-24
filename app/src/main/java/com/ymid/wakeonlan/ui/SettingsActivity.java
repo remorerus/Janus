@@ -223,8 +223,6 @@ public class SettingsActivity extends AppCompatActivity {
                 EditText host = new EditText(requireContext());
                 host.setSingleLine(true);
                 host.setHint("http://192.168.1.10:47821");
-                String configuredHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
-                if (configuredHost != null) host.setText(configuredHost);
                 host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
                 String savedAgentBase = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
                 if (savedAgentBase != null) host.setText(savedAgentBase);
