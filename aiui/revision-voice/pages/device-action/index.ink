@@ -193,23 +193,26 @@ function readBridgeToken() {
 
 
 function finishCommand(page, message) {
-  // Speak the result first, then return to the agent's start page.
-  // Keep the result visible briefly so Rokid TTS can finish.
-  speak(message);
+  // Speak the result, then close the RE:Vision agent instance completely.
+  // This returns control to Rokid's native assistant instead of leaving
+  // RE:Vision's own start page in the foreground.
   if (page._returnScheduled) return;
   page._returnScheduled = true;
+  speak(message);
   const text = String(message || '');
   const waitMs = Math.min(12000, Math.max(2800, 1100 + text.length * 82));
   setTimeout(() => {
-    if (typeof wx !== 'undefined' && typeof wx.navigateBack === 'function') {
-      wx.navigateBack({
-        delta: 2,
-        fail() {
-          if (typeof wx.redirectTo === 'function') wx.redirectTo({ url: '/pages/index/index' });
+    if (typeof wx !== 'undefined' && typeof wx.exitMiniProgram === 'function') {
+      wx.exitMiniProgram({
+        fail(error) {
+          console.error('[RE:Vision] agent exit failed', error);
+          if (typeof wx.navigateBack === 'function') {
+            wx.navigateBack({ delta: 99 });
+          }
         }
       });
-    } else if (typeof wx !== 'undefined' && typeof wx.redirectTo === 'function') {
-      wx.redirectTo({ url: '/pages/index/index' });
+    } else if (typeof wx !== 'undefined' && typeof wx.navigateBack === 'function') {
+      wx.navigateBack({ delta: 99 });
     }
   }, waitMs);
 }
@@ -305,7 +308,7 @@ export default {
                 ? 'В этой версии приложения прямое включение Wi-Fi недоступно. Открыл настройки Wi-Fi: включи переключатель вручную.'
                 : 'В этой версии приложения прямое выключение Wi-Fi недоступно. Открыл настройки Wi-Fi: выключи переключатель вручную.';
               this.setData({ statusText: fallbackMessage, detailText: 'Обнови Android-приложение RE:Vision для обработки команды через Voice Bridge.', resultText: fallbackMessage, busy: false });
-              speak(fallbackMessage);
+              finishCommand(this, fallbackMessage);
               return;
             }
           }
@@ -417,7 +420,7 @@ export default {
             ? 'Android не выдал RE:Vision разрешение на сканирование Wi-Fi. Разреши доступ к местоположению в настройках приложения.'
             : (scan && scan.error ? scan.error : 'Не удалось получить список сетей.');
           this.setData({ statusText: why, busy: false });
-          speak(why);
+          finishCommand(this, why);
           return;
         }
         const names = (scan.networks || []).map(item => item.ssid);
