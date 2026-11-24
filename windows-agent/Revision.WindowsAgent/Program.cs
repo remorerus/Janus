@@ -171,24 +171,24 @@ static bool LaunchCatalogCommand(AgentCommand command)
         else return false;
 
         const uint InvalidSessionId = 0xFFFFFFFF;
-        uint sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == InvalidSessionId || !WTSQueryUserToken(sessionId, out var userToken)) return false;
+        uint sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
+        if (sessionId == InvalidSessionId || !NativeMethods.WTSQueryUserToken(sessionId, out var userToken)) return false;
         IntPtr primaryToken = IntPtr.Zero;
         try
         {
-            if (!DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
-            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
+            if (!NativeMethods.DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
+            var startup = new NativeMethods.STARTUPINFO { cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>(), lpDesktop = @"winsta0\default" };
             var args = new System.Text.StringBuilder(commandLine);
-            if (!CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
+            if (!NativeMethods.CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
                     false, 0x00000400, IntPtr.Zero, workingDirectory, ref startup, out var process)) return false;
-            CloseHandle(process.hThread);
-            CloseHandle(process.hProcess);
+            NativeMethods.CloseHandle(process.hThread);
+            NativeMethods.CloseHandle(process.hProcess);
             return true;
         }
         finally
         {
-            if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
-            CloseHandle(userToken);
+            if (primaryToken != IntPtr.Zero) NativeMethods.CloseHandle(primaryToken);
+            NativeMethods.CloseHandle(userToken);
         }
     }
     catch { return false; }
@@ -197,76 +197,38 @@ static bool LaunchCatalogCommand(AgentCommand command)
 static bool LockActiveConsoleSession()
 {
     const uint InvalidSessionId = 0xFFFFFFFF;
-    uint sessionId = WTSGetActiveConsoleSessionId();
-    if (sessionId == InvalidSessionId || !WTSQueryUserToken(sessionId, out var userToken))
+    uint sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
+    if (sessionId == InvalidSessionId || !NativeMethods.WTSQueryUserToken(sessionId, out var userToken))
         return false;
 
     IntPtr primaryToken = IntPtr.Zero;
     try
     {
         const uint TokenAllAccess = 0x000F01FF;
-        if (!DuplicateTokenEx(userToken, TokenAllAccess, IntPtr.Zero, 2, 1, out primaryToken))
+        if (!NativeMethods.DuplicateTokenEx(userToken, TokenAllAccess, IntPtr.Zero, 2, 1, out primaryToken))
             return false;
 
-        var startup = new STARTUPINFO
+        var startup = new NativeMethods.STARTUPINFO
         {
-            cb = Marshal.SizeOf<STARTUPINFO>(),
+            cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>(),
             lpDesktop = @"winsta0\default"
         };
         var commandLine = new System.Text.StringBuilder("rundll32.exe user32.dll,LockWorkStation");
-        if (!CreateProcessAsUser(primaryToken, Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
+        if (!NativeMethods.CreateProcessAsUser(primaryToken, Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
                 commandLine, IntPtr.Zero, IntPtr.Zero, false, 0x00000400,
                 IntPtr.Zero, Environment.SystemDirectory, ref startup, out var process))
             return false;
 
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
+        NativeMethods.CloseHandle(process.hThread);
+        NativeMethods.CloseHandle(process.hProcess);
         return true;
     }
     finally
     {
-        if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
-        CloseHandle(userToken);
+        if (primaryToken != IntPtr.Zero) NativeMethods.CloseHandle(primaryToken);
+        NativeMethods.CloseHandle(userToken);
     }
 }
-
-[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-struct STARTUPINFO
-{
-    public int cb;
-    public string? lpReserved;
-    public string? lpDesktop;
-    public string? lpTitle;
-    public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
-    public short wShowWindow, cbReserved2;
-    public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
-}
-
-[StructLayout(LayoutKind.Sequential)]
-struct PROCESS_INFORMATION
-{
-    public IntPtr hProcess, hThread;
-    public uint dwProcessId, dwThreadId;
-}
-
-[DllImport("kernel32.dll")]
-static extern uint WTSGetActiveConsoleSessionId();
-
-[DllImport("Wtsapi32.dll", SetLastError = true)]
-static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
-
-[DllImport("advapi32.dll", SetLastError = true)]
-static extern bool DuplicateTokenEx(IntPtr existingToken, uint desiredAccess, IntPtr tokenAttributes,
-    int impersonationLevel, int tokenType, out IntPtr newToken);
-
-[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-static extern bool CreateProcessAsUser(IntPtr token, string applicationName,
-    System.Text.StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
-    bool inheritHandles, uint creationFlags, IntPtr environment, string currentDirectory,
-    ref STARTUPINFO startupInfo, out PROCESS_INFORMATION processInformation);
-
-[DllImport("kernel32.dll", SetLastError = true)]
-static extern bool CloseHandle(IntPtr handle);
 
 static bool IsLocal(HttpContext context) =>
     context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
@@ -325,6 +287,47 @@ async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:
 loadCommands();
 </script></body></html>
 """;
+
+static class NativeMethods
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct STARTUPINFO
+    {
+        public int cb;
+        public string? lpReserved;
+        public string? lpDesktop;
+        public string? lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_INFORMATION
+    {
+        public IntPtr hProcess, hThread;
+        public uint dwProcessId, dwThreadId;
+    }
+
+    [DllImport("kernel32.dll")]
+    public static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("Wtsapi32.dll", SetLastError = true)]
+    public static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool DuplicateTokenEx(IntPtr existingToken, uint desiredAccess, IntPtr tokenAttributes,
+        int impersonationLevel, int tokenType, out IntPtr newToken);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CreateProcessAsUser(IntPtr token, string applicationName,
+        System.Text.StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
+        bool inheritHandles, uint creationFlags, IntPtr environment, string currentDirectory,
+        ref STARTUPINFO startupInfo, out PROCESS_INFORMATION processInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr handle);
+}
 
 sealed record ExecuteRequest(string? Phrase);\nsealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
