@@ -114,11 +114,10 @@ public final class WindowsAgentClient {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(key, "HmacSHA256"));
         String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
-        JSONObject result = request(base, "POST", path, "", new String[]{Long.toString(timestamp), nonce, signature});
-        if (result.has("accepted") && !result.optBoolean("accepted")) {
-            throw new IllegalStateException("Windows Agent не принял команду.");
-        }
-        return result;
+        // A rejected command is still a valid agent response, not a transport failure.
+        // Preserve the agent's error code (for example active_user_session_unavailable)
+        // so VoiceBridge can report the real cause instead of manufacturing HTTP 502.
+        return request(base, "POST", path, "", new String[]{Long.toString(timestamp), nonce, signature});
     }
 
     public static JSONObject executePhrase(Context context, String phrase) throws Exception {
