@@ -26,24 +26,49 @@ export default {
     console.log('[RE:Vision] startup page shown');
   },
 
+  lastListenStartAt: 0,
+
+  startListening(source, event) {
+    const now = Date.now();
+    // Rokid may report one temple tap as both GlobalHook and clickAiAssist.
+    // Start only one recognition session for that physical tap.
+    if (now - this.lastListenStartAt < 1200) return;
+    this.lastListenStartAt = now;
+
+    try {
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      if (!wx || !wx.speech || typeof wx.speech.startRecognition !== 'function') {
+        throw new Error('wx.speech.startRecognition is unavailable');
+      }
+      const sessionId = wx.speech.startRecognition();
+      console.log('[RE:Vision] native speech recognition started', { source, sessionId });
+      this.setData({
+        statusText: 'Слушаю…',
+        detailText: 'Говори команду. Используется штатное распознавание Rokid.'
+      });
+    } catch (error) {
+      console.error('[RE:Vision] could not start speech recognition', error);
+      this.setData({
+        statusText: 'Не удалось включить прослушивание.',
+        detailText: String(error && error.message || error)
+      });
+    }
+  },
+
+  onKeyUp(event) {
+    const code = String(event && event.code || '');
+    console.log('[RE:Vision] temple key up', { code });
+    if (code === 'GlobalHook') {
+      this.startListening('GlobalHook', event);
+    }
+  },
+
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice wakeup received', { keyword });
-    if (keyword === 'clickAiAssist') {
-      // Keep Rokid's normal voice interaction active after the user taps RE:Vision.
-      // Do not cancel the AI Shortcut event: the tap must open the agent and leave
-      // the standard speech flow available for the next spoken command.
-      this.setData({
-        statusText: 'Ревижн вызван касанием.',
-        detailText: 'Голосовой канал Rokid активен. Готов принять команду.'
-      });
-      return;
-    }
-    this.setData({
-      statusText: 'Ревижн активен. Готов принять команду.',
-      detailText: keyword ? 'Источник пробуждения: ' + keyword : 'Получено событие голосового пробуждения.'
-    });
-    // Do not call preventDefault(): Rokid must retain its normal voice interaction flow.
+    console.log('[RE:Vision] voice/touch wakeup received', { keyword });
+    this.startListening(keyword || 'voicewakeup', event);
   }
 };
 </script>
