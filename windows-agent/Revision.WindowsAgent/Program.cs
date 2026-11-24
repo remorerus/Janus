@@ -165,7 +165,7 @@ static bool LaunchCatalogCommand(AgentCommand command)
             string.Equals(Path.GetExtension(target), ".bat", StringComparison.OrdinalIgnoreCase))
         {
             application = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-            commandLine = "cmd.exe /d /c call \\"" + target + "\\\"" +
+            commandLine = "cmd.exe /d /c call \"" + target + "\"" +
                 (string.IsNullOrWhiteSpace(command.Arguments) ? "" : " " + command.Arguments);
         }
         else return false;
