@@ -1,7 +1,7 @@
 name: Build RE:Vision Windows Agent
 on:
   push:
-    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test, revision-windows-agent-apk-retry]
+    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test, revision-windows-agent-apk-retry, revision-voicebridge-502-diagnostics]
     paths:
       - 'windows-agent/**'
       - '.github/workflows/windows-agent.yml'
