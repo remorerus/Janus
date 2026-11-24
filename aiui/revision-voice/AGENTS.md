@@ -58,7 +58,9 @@
 
 ## Capabilities
 - `network.http`: запросы к локальному Android Voice Bridge по адресу `http://127.0.0.1:38761`.
-- Голосовой ввод через штатный голосовой канал Rokid AIUI; агент не запускает самостоятельное распознавание микрофона.
+- Основной вход: штатная маршрутизация Rokid AIUI по описаниям страниц и schema.data.
+- Дополнительный вход: короткий локальный цикл распознавания русской речи через SpeechRecognition после onVoiceWakeup; распознанная фраза переводится в тот же контракт action/deviceName/networkName страницы device-action.
+- Для локального распознавания используется уже объявленное разрешение RECORD_AUDIO. Android Voice Bridge и его PIN-контракт не меняются.
 
 ## Configuration
 - **Android bridge**: `http://127.0.0.1:38761`
