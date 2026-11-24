@@ -2,6 +2,7 @@ name: Build RE:Vision AIUI Agent
 # Agent bridge diagnostics rebuild
 # AIX artifact packaging retry
 # Wi-Fi location diagnostics rebuild
+# Build current isolated Russian SpeechRecognition experiment
 
 on:
   push:
