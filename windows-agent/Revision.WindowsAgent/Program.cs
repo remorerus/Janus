@@ -268,7 +268,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
 <button onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
-<div class="note">Тестовый этап: панель сохраняет каталог команд. Сам запуск пользовательских программ и BAT пока не включён — сначала проверяем редактор и затем подключаем безопасное выполнение через отдельный пользовательский процесс.</div>
+<div class="note">Команды запускаются только из этого локального каталога и только в активной пользовательской сессии Windows. Добавляй только проверенные EXE и BAT-файлы.</div>
 </section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section></main>
 <script>
 let commands=[];
