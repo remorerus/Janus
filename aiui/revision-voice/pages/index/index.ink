@@ -26,49 +26,21 @@ export default {
     console.log('[RE:Vision] startup page shown');
   },
 
-  lastListenStartAt: 0,
-
-  startListening(source, event) {
-    const now = Date.now();
-    // Rokid may report one temple tap as both GlobalHook and clickAiAssist.
-    // Start only one recognition session for that physical tap.
-    if (now - this.lastListenStartAt < 1200) return;
-    this.lastListenStartAt = now;
-
-    try {
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      if (!wx || !wx.speech || typeof wx.speech.startRecognition !== 'function') {
-        throw new Error('wx.speech.startRecognition is unavailable');
-      }
-      const sessionId = wx.speech.startRecognition();
-      console.log('[RE:Vision] native speech recognition started', { source, sessionId });
-      this.setData({
-        statusText: 'Слушаю…',
-        detailText: 'Говори команду. Используется штатное распознавание Rokid.'
-      });
-    } catch (error) {
-      console.error('[RE:Vision] could not start speech recognition', error);
-      this.setData({
-        statusText: 'Не удалось включить прослушивание.',
-        detailText: String(error && error.message || error)
-      });
-    }
-  },
-
   onKeyUp(event) {
     const code = String(event && event.code || '');
     console.log('[RE:Vision] temple key up', { code });
-    if (code === 'GlobalHook') {
-      this.startListening('GlobalHook', event);
-    }
+    // Do not intercept GlobalHook: Rokid must continue its native touch-wakeup flow.
   },
 
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice/touch wakeup received', { keyword });
-    this.startListening(keyword || 'voicewakeup', event);
+    console.log('[RE:Vision] voice/touch wakeup received; keeping Rokid default behavior', { keyword });
+    // Do not call preventDefault() and do not start a second wx.speech session.
+    // The host owns microphone capture, ASR results and intent delivery.
+    this.setData({
+      statusText: 'Касание принято. Ожидаю голосовую команду…',
+      detailText: 'Штатное распознавание Rokid продолжает работу.'
+    });
   }
 };
 </script>
