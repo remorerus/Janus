@@ -180,13 +180,14 @@ static bool LaunchCatalogCommand(AgentCommand command)
         if (sessionId == InvalidSessionId) return false;
         if (string.Equals(command.Kind, "close", StringComparison.OrdinalIgnoreCase))
             return StopCatalogProcess(target, sessionId);
-        if (string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase) &&
-            !StopCatalogProcess(target, sessionId)) return false;
+        if (string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase))
+            StopCatalogProcess(target, sessionId);
 
         string application;
         string commandLine;
         string workingDirectory = Path.GetDirectoryName(target) ?? Environment.SystemDirectory;
-        if (string.Equals(command.Kind, "app", StringComparison.OrdinalIgnoreCase) &&
+        if ((string.Equals(command.Kind, "app", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase)) &&
             string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase))
         {
             application = target;
