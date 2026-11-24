@@ -52,6 +52,15 @@ public final class WindowsAgentClient {
         JSONObject response = request(base, "POST", "/v1/pair", body.toString(), null);
         String secret = response.optString("clientSecret", "");
         if (secret.isEmpty()) throw new IllegalStateException("Windows Agent не вернул ключ сопряжения.");
+        final byte[] decodedSecret;
+        try {
+            decodedSecret = Base64.decode(secret, Base64.DEFAULT);
+        } catch (IllegalArgumentException invalidBase64) {
+            throw new IllegalStateException("Windows Agent вернул ключ сопряжения в неверном формате.");
+        }
+        if (decodedSecret.length != 32) {
+            throw new IllegalStateException("Windows Agent вернул ключ неверной длины: ожидалось 32 байта.");
+        }
         SharedPreferences.Editor editor = prefs(context).edit();
         editor.putString(KEY_BASE, base);
         editor.putString(KEY_SECRET, secret);
