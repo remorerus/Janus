@@ -20,6 +20,7 @@ jobs:
           dotnet publish windows-agent/Revision.WindowsAgent/Revision.WindowsAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o windows-agent/publish
           Copy-Item windows-agent/install-agent.ps1 windows-agent/publish/
           Copy-Item windows-agent/uninstall-agent.ps1 windows-agent/publish/
+          Copy-Item windows-agent/reset-pairing.ps1 windows-agent/publish/
           Copy-Item windows-agent/README.md windows-agent/publish/
           Compress-Archive -Path windows-agent/publish/* -DestinationPath windows-agent/Revision.WindowsAgent-win-x64.zip -Force
       - uses: actions/upload-artifact@v4
