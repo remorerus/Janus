@@ -59,7 +59,16 @@ public final class WindowsAgentClient {
         return response;
     }
 
-    public static boolean isConfigured(Context context) {\n        try { return prefs(context).getString(KEY_BASE, null) != null && prefs(context).getString(KEY_SECRET, null) != null; }\n        catch (Exception e) { return false; }\n    }\n\n    public static JSONObject status(Context context) throws Exception {
+    public static boolean isConfigured(Context context) {
+        try {
+            SharedPreferences p = prefs(context);
+            return p.getString(KEY_BASE, null) != null && p.getString(KEY_SECRET, null) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static JSONObject status(Context context) throws Exception {
         String base = prefs(context).getString(KEY_BASE, null);
         if (base == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
         return request(base, "GET", "/v1/status", "", null);
