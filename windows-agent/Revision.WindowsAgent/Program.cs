@@ -60,6 +60,18 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
     return Results.Json(new { saved = true, count = normalized.Count });
 });
 
+app.MapPost("/v1/manager/pairing/regenerate", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    config.ClientSecret = null;
+    config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+    config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+    config.Save(configPath);
+    File.WriteAllText(Path.ChangeExtension(configPath, ".pairing-code.txt"),
+        $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Run this file locally on STUDIO and keep the code private.");
+    return Results.Json(new { code = config.PairingCode, expiresUtc = config.PairingExpiresUtc, paired = false });
+});
+
 app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
 
 app.MapPost("/v1/pair", async (HttpContext context) =>
@@ -351,7 +363,12 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 @media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
 <header><div><h1>RE:Vision Windows Agent</h1><div class="muted">Панель управления STUDIO PC · тестовая версия</div></div><span class="pill">Локальная панель</span></header>
-<main><section class="panel"><h2>Добавить команду в каталог</h2>
+<main><section class="panel"><h2>Сопряжение RE:Vision</h2>
+<div class="muted">Создай новый код, если старый не подходит или сопряжение нужно выполнить заново.</div>
+<button class="danger" onclick="regeneratePairing()">Сгенерировать новый код</button>
+<div id="pairingResult" class="status" aria-live="polite"></div>
+<div class="note">После генерации старое сопряжение будет сброшено. Введи показанный код в RE:Vision на очках в течение 24 часов.</div>
+</section><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
 <label>Тип</label><select id="kind"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option></select>
@@ -364,6 +381,19 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <script>
 let commands=[];
 function el(id){return document.getElementById(id)}
+async function regeneratePairing(){
+ if(!confirm('Сбросить текущее сопряжение и создать новый код? Старое подключение перестанет работать.'))return;
+ const box=el('pairingResult');box.textContent='Создаю новый код…';
+ try{
+  const r=await fetch('/v1/manager/pairing/regenerate',{method:'POST'});
+  const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось создать код');
+  box.innerHTML='';
+  const line=document.createElement('div');line.textContent='НОВЫЙ КОД: '+data.code;line.style.cssText='font-size:26px;font-weight:700;letter-spacing:3px;margin:12px 0;color:#a7f3d0';
+  const expiry=document.createElement('div');expiry.textContent='Действует 24 часа. Теперь введи этот код в RE:Vision на очках.';
+  const copy=document.createElement('button');copy.className='secondary';copy.textContent='Скопировать код';copy.onclick=()=>navigator.clipboard.writeText(data.code);
+  box.append(line,expiry,copy);
+ }catch(e){box.textContent=e.message}
+}
 function msg(t){el('status').textContent=t}
 function clearForm(){['name','phrase','target','args'].forEach(x=>el(x).value='');el('kind').value='app'}
 function addCommand(){const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),kind:el('kind').value,target:el('target').value.trim(),arguments:el('args').value.trim()};
