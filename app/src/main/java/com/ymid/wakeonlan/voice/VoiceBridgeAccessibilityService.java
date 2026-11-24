@@ -499,7 +499,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path) || "/wifi/toggle".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path) || "/windows/status".equals(path))) ||
                 ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path))) ||
-                ("POST".equals(method) && path.startsWith("/windows/command/"));
+                ("POST".equals(method) && (path.startsWith("/windows/command/") || "/windows/execute".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             Log.w(TAG, "HTTP 401 for " + path);
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
@@ -543,6 +543,18 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 catch (Exception e) { response.addProperty("reachable", false); response.addProperty("error", safeError(e)); }
             } else { response.addProperty("reachable", false); response.addProperty("error", "windows_agent_not_paired"); }
             writeResponse(socket.getOutputStream(), 200, response);
+        } else if ("POST".equals(method) && "/windows/execute".equals(path)) {
+            try {
+                JsonObject requestBody = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
+                String phrase = requestBody.has("phrase") ? requestBody.get("phrase").getAsString() : "";
+                JsonObject response = JsonParser.parseString(WindowsAgentClient.executePhrase(this, phrase).toString()).getAsJsonObject();
+                response.addProperty("ok", true);
+                writeResponse(socket.getOutputStream(), 200, response);
+            } catch (Exception e) {
+                JsonObject response = error("windows_agent_execute_failed");
+                response.addProperty("detail", safeError(e));
+                writeResponse(socket.getOutputStream(), 502, response);
+            }
         } else if ("POST".equals(method) && path.startsWith("/windows/command/")) {
             String action = path.substring("/windows/command/".length());
             try {
