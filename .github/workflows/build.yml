@@ -8,6 +8,7 @@ on:
       - revision-r08-stability
       - revision-1.9.20-integrated
       - revision-windows-agent-integration-test
+      - revision-windows-agent-apk-retry
     paths:
       - "app/**"
       - "*.gradle"
