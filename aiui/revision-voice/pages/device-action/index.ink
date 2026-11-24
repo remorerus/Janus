@@ -203,7 +203,7 @@ function finishCommand(page, message) {
   setTimeout(() => {
     if (typeof wx !== 'undefined' && typeof wx.navigateBack === 'function') {
       wx.navigateBack({
-        delta: 1,
+        delta: 2,
         fail() {
           if (typeof wx.redirectTo === 'function') wx.redirectTo({ url: '/pages/index/index' });
         }
