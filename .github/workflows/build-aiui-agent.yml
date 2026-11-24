@@ -52,3 +52,4 @@ jobs:
           retention-days: 14
 
 # Rebuild after command-return helper correction
+# Rebuild after returning two navigation levels to the native assistant
