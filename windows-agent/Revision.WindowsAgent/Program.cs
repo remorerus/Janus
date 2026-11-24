@@ -120,7 +120,7 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
     if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
 
     ExecuteRequest? request;
-    try { request = JsonSerializer.Deserialize<ExecuteRequest>(body); }
+    try { request = JsonSerializer.Deserialize<ExecuteRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
     catch { return Results.BadRequest(new { error = "Invalid command request" }); }
     var phrase = (request?.Phrase ?? "").Trim();
     if (phrase.Length is < 1 or > 160) return Results.BadRequest(new { error = "Voice phrase is required" });
