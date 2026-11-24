@@ -68,6 +68,15 @@ public final class WindowsAgentClient {
         return response;
     }
 
+    /** Returns the last successfully paired base URL without exposing the secret. */
+    public static String getConfiguredBase(Context context) {
+        try {
+            return prefs(context).getString(KEY_BASE, null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public static boolean isConfigured(Context context) {
         try {
             SharedPreferences p = prefs(context);
