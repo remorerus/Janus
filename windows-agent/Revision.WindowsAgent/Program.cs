@@ -124,50 +124,12 @@ static bool Authenticate(string secretBase64, string method, string path, string
     try
     {
         var key = Convert.FromBase64String(secretBase64);
-        var payload = $"{method}\\n{path}\\n{timestamp}\\n{nonce}\\n{body}";
+        var payload = $"{method}\n{path}\n{timestamp}\n{nonce}\n{body}";
         var expected = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
         var supplied = Convert.FromBase64String(signature);
         return CryptographicOperations.FixedTimeEquals(expected, supplied);
     }
     catch { return false; }
-}
-
-sealed record PairRequest(string Code);
-sealed record PairResponse(string ClientSecret, string Authentication, int Port);
-sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
-sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments);
-sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, string Target, string Arguments);
-
-sealed class CommandCatalog
-{
-    public static List<AgentCommand> Load(string path)
-    {
-        if (!File.Exists(path)) return new List<AgentCommand>();
-        try { return JsonSerializer.Deserialize<List<AgentCommand>>(File.ReadAllText(path)) ?? new(); }
-        catch { return new(); }
-    }
-    public static void Save(string path, List<AgentCommand> commands)
-    {
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(commands, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, path, true);
-    }
-}
-
-sealed class AgentConfig
-{
-    public string PairingCode { get; set; } = "";
-    public DateTimeOffset PairingExpiresUtc { get; set; }
-    public string? ClientSecret { get; set; }
-    public static AgentConfig LoadOrCreate(string path)
-    {
-        if (File.Exists(path)) return JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path)) ?? new AgentConfig();
-        var c = new AgentConfig { PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24) };
-        c.Save(path);
-        File.WriteAllText(Path.ChangeExtension(path, ".pairing-code.txt"), $"RE:Vision pairing code (valid 24h): {c.PairingCode}{Environment.NewLine}Run this file locally on STUDIO and keep the code private.");
-        return c;
-    }
-    public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
 }
 
 const string ManagerHtml = """
@@ -209,3 +171,43 @@ async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:
 loadCommands();
 </script></body></html>
 """;
+
+sealed record PairRequest(string Code);
+sealed record PairResponse(string ClientSecret, string Authentication, int Port);
+sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
+sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments);
+sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, string Target, string Arguments);
+
+sealed class CommandCatalog
+{
+    public static List<AgentCommand> Load(string path)
+    {
+        if (!File.Exists(path)) return new List<AgentCommand>();
+        try { return JsonSerializer.Deserialize<List<AgentCommand>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+    public static void Save(string path, List<AgentCommand> commands)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(commands, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temp, path, true);
+    }
+}
+
+sealed class AgentConfig
+{
+    public string PairingCode { get; set; } = "";
+    public DateTimeOffset PairingExpiresUtc { get; set; }
+    public string? ClientSecret { get; set; }
+    public static AgentConfig LoadOrCreate(string path)
+    {
+        if (File.Exists(path)) return JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path)) ?? new AgentConfig();
+        var c = new AgentConfig { PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24) };
+        c.Save(path);
+        File.WriteAllText(Path.ChangeExtension(path, ".pairing-code.txt"), $"RE:Vision pairing code (valid 24h): {c.PairingCode}{Environment.NewLine}Run this file locally on STUDIO and keep the code private.");
+        return c;
+    }
+    public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+}
+
+
