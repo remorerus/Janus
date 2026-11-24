@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Стартовая страница голосового агента Ревижн. При запуске без параметров показывает готовность агента. При голосовом или сенсорном пробуждении принимает событие Rokid AIUI и не блокирует стандартную обработку голосового взаимодействия."
+  "description": "Стартовая страница голосового агента Ревижн. При голосовом пробуждении запускает собственный короткий цикл распознавания русской речи и направляет распознанные команды в существующую страницу управления устройствами и Wi-Fi. Также остаётся точкой входа для обычного запуска агента."
 }
 </script>
 
@@ -24,23 +24,182 @@ export default {
 
   onShow() {
     console.log('[RE:Vision] startup page shown');
-  },
-
-  onKeyUp(event) {
-    const code = String(event && event.code || '');
-    console.log('[RE:Vision] temple key up', { code });
-    // Do not intercept GlobalHook: Rokid must continue its native touch-wakeup flow.
+    this.setData({
+      statusText: 'Ревижн готов. Одно касание дужки — слушаю команду.',
+      detailText: 'После выполнения команды вернулся на начальный экран.'
+    });
   },
 
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice/touch wakeup received; keeping Rokid default behavior', { keyword });
-    // Do not call preventDefault() and do not start a second wx.speech session.
-    // The host owns microphone capture, ASR results and intent delivery.
+    console.log('[RE:Vision] voice/touch wakeup received', { keyword });
+    // Take over the wakeup event so Rokid does not continue its default
+    // launch/confirmation flow and wait for a second interaction.
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
+    this.startListening();
+  },
+
+  onKeyUp(event) {
+    const code = String(event && event.code || '');
+    if (code === 'GlobalHook') {
+      console.log('[RE:Vision] temple touch received');
+      if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      this.startListening();
+    }
+  },
+
+  onUnload() {
+    if (this.recognition && typeof this.recognition.abort === 'function') {
+      try { this.recognition.abort(); } catch (e) {}
+    }
+    this.recognition = null;
+    this.voiceListening = false;
+  },
+
+  startListening() {
+    if (this.voiceListening) return;
+    if (typeof SpeechRecognition === 'undefined') {
+      this.setData({
+        statusText: 'Распознавание речи недоступно.',
+        detailText: 'Штатный голосовой канал Rokid остаётся доступен.'
+      });
+      return;
+    }
+
+    this.voiceListening = true;
     this.setData({
-      statusText: 'Касание принято. Ожидаю голосовую команду…',
-      detailText: 'Штатное распознавание Rokid продолжает работу.'
+      statusText: 'Слушаю команду…',
+      detailText: 'Скажи команду по-русски.'
     });
+
+    let recognition;
+    try {
+      recognition = new SpeechRecognition();
+      this.recognition = recognition;
+      recognition.lang = 'ru-RU';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (resultEvent) => {
+        const result = resultEvent && resultEvent.results &&
+          resultEvent.results[resultEvent.resultIndex || 0];
+        const alternative = result && result[0];
+        const transcript = String(alternative && alternative.transcript || '').trim();
+        this.voiceListening = false;
+        this.recognition = null;
+        if (typeof recognition.abort === 'function') {
+          try { recognition.abort(); } catch (e) {}
+        }
+        if (!transcript) {
+          this.setData({ statusText: 'Не расслышал команду.', detailText: 'Повтори после пробуждения Ревижн.' });
+          return;
+        }
+        console.log('[RE:Vision] local speech recognized', transcript);
+        this.routeVoiceCommand(transcript);
+      };
+
+      recognition.onerror = (error) => {
+        console.warn('[RE:Vision] speech recognition error', error);
+        this.voiceListening = false;
+        this.recognition = null;
+        this.setData({
+          statusText: 'Не удалось распознать речь.',
+          detailText: 'Ошибка микрофона/распознавания. Штатный канал Rokid не изменён.'
+        });
+      };
+
+      recognition.onend = () => {
+        this.voiceListening = false;
+        if (this.recognition === recognition) this.recognition = null;
+      };
+
+      recognition.start();
+    } catch (error) {
+      this.voiceListening = false;
+      this.recognition = null;
+      console.warn('[RE:Vision] could not start SpeechRecognition', error);
+      this.setData({
+        statusText: 'Не удалось запустить распознавание.',
+        detailText: String(error && error.message || error)
+      });
+    }
+  },
+
+  routeVoiceCommand(transcript) {
+    const text = String(transcript || '').toLowerCase().replace(/ё/g, 'е').trim();
+    const compact = text.replace(/[^a-zа-я0-9]+/g, ' ').trim();
+    let params = null;
+
+    const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
+    const isStudioPc = /(studio\\s*pc|студио\\s*писи|студи\\s*писи|студия|студийный\\s*пк)/i.test(compact);
+    if (isStudioPc && /(выключи|выключить|отключи|заверши)/i.test(compact)) {
+      params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
+    } else if (isStudioPc && /(перезагрузи|перезагрузить|рестарт)/i.test(compact)) {
+      params = { action: 'windows_restart', deviceName: 'STUDIO PC' };
+    } else if (isStudioPc && /(заблокируй|заблокировать|блокируй)/i.test(compact)) {
+      params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
+    } else if (/(отмени|отменить).*(выключени|перезагрузк)/i.test(compact)) {
+      params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
+    } else if (/(проверь|статус|состояние).*(windows\\s*agent|виндовс|студио\\s*писи|студия)/i.test(compact)) {
+      params = { action: 'windows_status', deviceName: 'STUDIO PC' };
+    } else if (/(запусти|закрой|перезапусти|открой).*(mixxx|\\.exe|\\.bat)/i.test(compact)) {
+      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+    }
+    if (/(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн)/i.test(compact)) {
+      params = { action: 'bridge_settings' };
+    } else if (hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
+      params = { action: 'wifi_disable' };
+    } else if (hasWifi && /(включи|включить|активируй)/i.test(compact)) {
+      params = { action: 'wifi_enable' };
+    } else if (hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
+      params = { action: 'wifi' };
+    } else if (hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
+      params = { action: 'wifi_list' };
+    } else if (hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни)/i.test(compact)) {
+      params = { action: 'wifi_status' };
+    } else if (/(подключись|переключись|соединись)/i.test(compact) &&
+               /(сеть|wi\s*fi|вай\s*фай|вайфай|локал\s*нетворк|local\s*network|студио|studio)/i.test(compact)) {
+      let networkName = '';
+      if (/(локал\s*нетворк|local\s*network)/i.test(compact)) networkName = 'Local_Network_5G';
+      else if (/(студио|studio)/i.test(compact)) networkName = 'Studio';
+      params = { action: 'wifi_connect', networkName };
+    } else if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
+      params = { action: 'list' };
+    } else {
+      const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
+        : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
+        : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
+      if (verb) {
+        let deviceName = compact
+          .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
+          .replace(/^(компьютер|устройство|пк)\s+/i, '')
+          .replace(/\s+(пожалуйста|сейчас)$/i, '')
+          .trim();
+        params = { action: verb, deviceName };
+      }
+    }
+
+    if (!params) {
+      this.setData({
+        statusText: 'Команду не удалось определить.',
+        detailText: 'Распознано: «' + transcript + '». Повтори команду или используй штатный голосовой канал Rokid.'
+      });
+      return;
+    }
+
+    const query = Object.keys(params)
+      .filter((key) => params[key] !== undefined && params[key] !== '')
+      .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])))
+      .join('&');
+    this.setData({
+      statusText: 'Команда распознана.',
+      detailText: transcript
+    });
+    wx.navigateTo({ url: '/pages/device-action/index?' + query });
   }
 };
 </script>
