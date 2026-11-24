@@ -135,42 +135,52 @@ export default {
     let params = null;
 
     const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
-    const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк)/i.test(compact);
+    const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк|компьютер|комп|пк)/i.test(compact);
+    const bridgePhrase = /(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн|проверь службу ревижн|служб\w* ревижн|дай доступ к voice bridge|подключись к voice bridge|восстанови voice bridge|почему не работает voice bridge|настройк\w* голосов\w* мост)/i.test(compact);
 
-    if (isStudioPc && /(выключи|выключить|отключи|заверши)/i.test(compact)) {
-      params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
-    } else if (isStudioPc && /(перезагрузи|перезагрузить|рестарт)/i.test(compact)) {
-      params = { action: 'windows_restart', deviceName: 'STUDIO PC' };
-    } else if (isStudioPc && /(заблокируй|заблокировать|блокируй)/i.test(compact)) {
-      params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
-    } else if (/(отмени|отменить).*(выключени|перезагрузк)/i.test(compact)) {
+    // Voice Bridge maintenance commands take priority over generic device routing.
+    if (bridgePhrase) {
+      params = { action: 'bridge_settings' };
+    }
+
+    // Wi-Fi radio controls are explicit independent actions, never Settings or a toggle intent.
+    if (!params && hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
+      params = { action: 'wifi_disable' };
+    } else if (!params && hasWifi && /(включи|включить|активируй|подними)/i.test(compact)) {
+      params = { action: 'wifi_enable' };
+    } else if (!params && hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни|назови)/i.test(compact)) {
+      params = { action: 'wifi_status' };
+    } else if (!params && hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
+      params = { action: 'wifi_list' };
+    } else if (!params && hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
+      params = { action: 'wifi' };
+    }
+
+    // Named network shortcuts: the user commonly says only "подключись к Студио".
+    if (!params && /(подключись|переключись|соединись|подключи|перейди)/i.test(compact) &&
+        /(локал\s*нетворк|local\s*network|local\s*network\s*5g|студио|studio)/i.test(compact)) {
+      const networkName = /(локал\s*нетворк|local\s*network)/i.test(compact)
+        ? 'Local_Network_5G' : 'Studio';
+      params = { action: 'wifi_connect', networkName };
+    }
+
+    // Windows STUDIO PC commands. Bare "компьютер" refers to the paired STUDIO PC.
+    if (!params && /(отмени|отменить|сними отмену).*(выключени|перезагрузк)|отмени выключение|отмени перезагрузку/i.test(compact)) {
       params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
-    } else if (/(проверь|статус|состояние).*(windows\s*agent|виндовс|студио\s*писи|студия)/i.test(compact)) {
+    } else if (!params && isStudioPc && /(заблокируй|заблокировать|блокируй|заблокируй экран)/i.test(compact)) {
+      params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
+    } else if (!params && isStudioPc && /(перезагрузи|перезагрузить|рестарт|перезапусти компьютер)/i.test(compact)) {
+      params = { action: 'windows_restart', deviceName: 'STUDIO PC' };
+    } else if (!params && isStudioPc && /(выключи|выключить|отключи|заверши|завершить работу)/i.test(compact)) {
+      params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
+    } else if (!params && /(проверь|статус|состояние).*(windows\s*agent|виндовс|студио\s*писи|студия|компьютер|комп)/i.test(compact)) {
       params = { action: 'windows_status', deviceName: 'STUDIO PC' };
-    } else if (/(запусти|закрой|перезапусти|открой).*(mixxx|\.exe|\.bat)/i.test(compact)) {
+    } else if (!params && /(запусти|открой|закрой|закрыть|перезапусти|перезапуск).*(mixxx|\.exe|\.bat)/i.test(compact)) {
       params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
     }
 
     if (!params) {
-      if (/(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн)/i.test(compact)) {
-        params = { action: 'bridge_settings' };
-      } else if (hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
-        params = { action: 'wifi_disable' };
-      } else if (hasWifi && /(включи|включить|активируй)/i.test(compact)) {
-        params = { action: 'wifi_enable' };
-      } else if (hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
-        params = { action: 'wifi' };
-      } else if (hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
-        params = { action: 'wifi_list' };
-      } else if (hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни)/i.test(compact)) {
-        params = { action: 'wifi_status' };
-      } else if (/(подключись|переключись|соединись)/i.test(compact) &&
-                 /(сеть|wi\s*fi|вай\s*фай|вайфай|локал\s*нетворк|local\s*network|студио|studio)/i.test(compact)) {
-        let networkName = '';
-        if (/(локал\s*нетворк|local\s*network)/i.test(compact)) networkName = 'Local_Network_5G';
-        else if (/(студио|studio)/i.test(compact)) networkName = 'Studio';
-        params = { action: 'wifi_connect', networkName };
-      } else if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
+      if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
         params = { action: 'list' };
       } else {
         const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
@@ -195,6 +205,7 @@ export default {
       return;
     }
 
+    console.log('[RE:Vision] voice command routed', { transcript, action: params.action, deviceName: params.deviceName || '', networkName: params.networkName || '' });
     const query = Object.keys(params)
       .filter((key) => params[key] !== undefined && params[key] !== '')
       .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])))
