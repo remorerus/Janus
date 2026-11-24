@@ -143,8 +143,14 @@ app.MapPost("/v1/command/{action}", async (HttpContext context, string action) =
 
     if (action == "lock")
     {
-        var locked = LockActiveConsoleSession();
-        return Results.Json(new { accepted = locked, action, error = locked ? null : "active_user_session_unavailable" });
+        var lockResult = LockActiveConsoleSession();
+        return Results.Json(new
+        {
+            accepted = lockResult.Accepted,
+            action,
+            error = lockResult.Error,
+            win32Error = lockResult.Win32Error
+        });
     }
     if (action == "shutdown" || action == "restart")
     {
@@ -293,19 +299,22 @@ static bool LaunchCatalogCommand(AgentCommand command)
     catch { return false; }
 }
 
-static bool LockActiveConsoleSession()
+static LockResult LockActiveConsoleSession()
 {
     const uint InvalidSessionId = 0xFFFFFFFF;
     uint sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
-    if (sessionId == InvalidSessionId || !NativeMethods.WTSQueryUserToken(sessionId, out var userToken))
-        return false;
+    if (sessionId == InvalidSessionId)
+        return new LockResult(false, "no_active_console_session", null);
+
+    if (!NativeMethods.WTSQueryUserToken(sessionId, out var userToken))
+        return new LockResult(false, "wts_query_user_token_failed", Marshal.GetLastWin32Error());
 
     IntPtr primaryToken = IntPtr.Zero;
     try
     {
         const uint TokenAllAccess = 0x000F01FF;
         if (!NativeMethods.DuplicateTokenEx(userToken, TokenAllAccess, IntPtr.Zero, 2, 1, out primaryToken))
-            return false;
+            return new LockResult(false, "duplicate_token_failed", Marshal.GetLastWin32Error());
 
         var startup = new NativeMethods.STARTUPINFO
         {
@@ -316,11 +325,11 @@ static bool LockActiveConsoleSession()
         if (!NativeMethods.CreateProcessAsUser(primaryToken, Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
                 commandLine, IntPtr.Zero, IntPtr.Zero, false, 0x00000400,
                 IntPtr.Zero, Environment.SystemDirectory, ref startup, out var process))
-            return false;
+            return new LockResult(false, "create_process_as_user_failed", Marshal.GetLastWin32Error());
 
         NativeMethods.CloseHandle(process.hThread);
         NativeMethods.CloseHandle(process.hProcess);
-        return true;
+        return new LockResult(true, null, null);
     }
     finally
     {
@@ -456,6 +465,7 @@ static class NativeMethods
     public static extern bool CloseHandle(IntPtr handle);
 }
 
+sealed record LockResult(bool Accepted, string? Error, int? Win32Error);
 sealed record ExecuteRequest(string? Phrase);
 sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
