@@ -17,7 +17,7 @@
 - Проверить устройство: `status`, требуется `deviceName`.
 - Включить устройство: `wake`, требуется `deviceName`.
 - Выключить устройство: `shutdown`, требуется `deviceName`.
-- Windows STUDIO PC: `windows_status` — проверить сопряжение и доступность Windows Agent; `windows_lock` — заблокировать активную сессию Windows; `windows_shutdown` — выключить STUDIO PC; `windows_restart` — перезагрузить; `windows_cancel_shutdown` — отменить запланированное выключение.
+- Windows STUDIO PC: `windows_status` — проверить сопряжение и доступность Windows Agent; `windows_lock` — заблокировать активную сессию Windows; `windows_launch` — запустить запись из локального каталога EXE/BAT по точной сохранённой фразе (передавай исходную команду в `commandPhrase`); `windows_shutdown` — выключить STUDIO PC; `windows_restart` — перезагрузить; `windows_cancel_shutdown` — отменить запланированное выключение.
 - Включить Wi-Fi: `wifi_enable`. Фразы «включи Wi-Fi», «включи вай-фай», «подними Wi-Fi» должны сразу вызывать это действие.
 - Выключить Wi-Fi: `wifi_disable`. Фразы «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай», «отключи вайфай» должны сразу вызывать это действие. Не задавай вопрос «включить или выключить?», если пользователь прямо сказал «выключи/отключи».
 - Проверить состояние Wi-Fi и текущую сеть: `wifi_status`.
