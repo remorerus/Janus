@@ -22,6 +22,9 @@ import android.os.PowerManager;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.text.InputType;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -158,6 +161,54 @@ public class SettingsActivity extends AppCompatActivity {
             }
             updateVoiceBridgeStatus();
             updateSystemAccessStatuses();
+
+            Preference windowsAgentPreference = new Preference(requireContext());
+            windowsAgentPreference.setTitle("Windows Agent — STUDIO PC");
+            windowsAgentPreference.setSummary("Сопряжение с компьютером по локальной сети");
+            getPreferenceScreen().addPreference(windowsAgentPreference);
+            windowsAgentPreference.setOnPreferenceClickListener(preference -> {
+                LinearLayout fields = new LinearLayout(requireContext());
+                fields.setOrientation(LinearLayout.VERTICAL);
+                int pad = (int) (20 * getResources().getDisplayMetrics().density);
+                fields.setPadding(pad, pad / 2, pad, 0);
+                EditText host = new EditText(requireContext());
+                host.setSingleLine(true);
+                host.setHint("http://192.168.1.10:47821");
+                host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                EditText code = new EditText(requireContext());
+                code.setSingleLine(true);
+                code.setHint("8-значный код сопряжения");
+                code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+                fields.addView(host);
+                fields.addView(code);
+                new AlertDialog.Builder(requireContext())
+                        .setTitle("Подключить Windows Agent")
+                        .setMessage("На STUDIO PC открой файл agent.pairing-code.txt и введи адрес компьютера и код. Используй только доверенную частную Wi-Fi сеть.")
+                        .setView(fields)
+                        .setPositiveButton("Сопрячь", (dialog, which) -> {
+                            String address = host.getText().toString().trim();
+                            String pairingCode = code.getText().toString().trim();
+                            windowsAgentPreference.setSummary("Выполняется сопряжение…");
+                            new Thread(() -> {
+                                try {
+                                    com.ymid.wakeonlan.voice.WindowsAgentClient.pair(requireContext(), address, pairingCode);
+                                    handler.post(() -> {
+                                        windowsAgentPreference.setSummary("Windows Agent сопряжён. Нажми для повторного сопряжения.");
+                                        Toast.makeText(requireContext(), "Windows Agent подключён", Toast.LENGTH_LONG).show();
+                                    });
+                                } catch (Exception e) {
+                                    String message = e.getMessage() == null ? "Не удалось выполнить сопряжение" : e.getMessage();
+                                    handler.post(() -> {
+                                        windowsAgentPreference.setSummary("Ошибка сопряжения: " + message);
+                                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show();
+                                    });
+                                }
+                            }, "revision-windows-pair").start();
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return true;
+            });
 
             Preference wifiScanPermission = findPreference(PREF_WIFI_SCAN_PERMISSION);
             if (wifiScanPermission != null) {
