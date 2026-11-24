@@ -1,35 +1,49 @@
-# RE:Vision Windows Agent (prototype)
+# RE:Vision Windows Agent — integration test
 
-A Windows service prototype for RE:Vision with a local Russian-language command catalog editor. It deliberately exposes only a narrow remote command set:
-- `shutdown` — immediate Windows shutdown
-- `restart` — immediate Windows restart
-- `cancel-shutdown` — cancel a pending shutdown
+Тестовый Windows-сервис для управления STUDIO PC через Android-приложение RE:Vision и голосовой агент Rokid.
 
-It does not expose arbitrary shell/PowerShell execution.\n\n## Local manager (test build)\nAfter installing and starting the service, open `http://127.0.0.1:47821/manager` in a browser on STUDIO PC. The page is restricted to loopback connections. It can add and remove catalog entries for application EXE files and BAT files, including a display name, voice phrase, target path, and arguments. The catalog is saved to `%ProgramData%\\RevisionWindowsAgent\\commands.json`.\n\nImportant: this test panel currently edits and saves the catalog only. It does not execute these custom entries or connect their phrases to RE:Vision yet. That requires the next user-session execution bridge and Android protocol integration. The existing shutdown/restart commands remain a separate limited prototype.
+## Что реализовано в этой ветке
 
-## Build
-Requires .NET 8 SDK on Windows:
-```powershell
-dotnet publish .\Revision.WindowsAgent\Revision.WindowsAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
-Compress-Archive .\publish\* .\Revision.WindowsAgent-win-x64.zip -Force
-```
+- Сопряжение Android-клиента по одноразовому коду из `%ProgramData%\RevisionWindowsAgent\agent.pairing-code.txt`.
+- HMAC-SHA256 для команд после сопряжения, временная метка и одноразовый nonce против повторного воспроизведения.
+- `lock` — блокировка активной консольной сессии Windows через штатный LockWorkStation.
+- `shutdown`, `restart`, `cancel-shutdown`.
+- Локальный редактор каталога приложений и BAT-файлов; удалённое выполнение допускается только по точной сохранённой голосовой фразе.
+- EXE/BAT запускаются в активной пользовательской сессии, а не в Session 0.
 
-## Install
-1. Copy this folder and the publish ZIP to the target Windows PC.
-2. Open PowerShell as Administrator.
-3. Run `Set-ExecutionPolicy -Scope Process Bypass` and then `./install-agent.ps1`.
-4. Retrieve the one-time pairing code locally from `%ProgramData%\RevisionWindowsAgent\agent.pairing-code.txt`.
+## Android / Rokid
 
-The service listens on TCP 47821. The installer creates a Private-profile-only inbound firewall rule.
+В RE:Vision → Настройки → Windows Agent — STUDIO PC укажи адрес вида `http://192.168.1.10:47821` и одноразовый код с компьютера. Секрет сопряжения сохраняется в Android EncryptedSharedPreferences.
 
-## Security status — prototype
-Pairing is one-time and subsequent requests use HMAC-SHA256, a 60-second timestamp window, and replay-resistant nonces. The agent is currently HTTP, not TLS. Pair only on a trusted private LAN; never expose this port to the Internet or a public Wi-Fi network. Before production use, add TLS with certificate pinning (or an equivalent authenticated encrypted transport), persistent device identity management, and explicit user confirmation UX in RE:Vision. Do not treat this prototype as production-secure.
+Голосовые действия AIUI:
+- `windows_status`
+- `windows_lock`
+- `windows_shutdown`
+- `windows_restart`
+- `windows_cancel_shutdown`
+- `windows_launch` — требует точную фразу, сохранённую в каталоге.
 
-## Pairing protocol
+## Панель команд на STUDIO PC
+
+После установки открой на самом компьютере `http://127.0.0.1:47821/manager`. Панель доступна только с loopback. Добавляй только проверенные EXE и BAT, указывай точную голосовую фразу. Каталог хранится в `%ProgramData%\RevisionWindowsAgent\commands.json`.
+
+## Сборка и установка
+
+GitHub Actions собирает self-contained ZIP для Windows x64. Для установки распакуй архив, открой PowerShell от имени администратора и запусти `install-agent.ps1`. Сервис устанавливается как LocalSystem; это необходимо для получения токена активной пользовательской сессии и запуска процессов на её рабочем столе.
+
+## Важное ограничение безопасности
+
+Это интеграционная тестовая сборка. Транспорт Windows Agent пока HTTP без TLS. HMAC защищает целостность команд после сопряжения, но не шифрует трафик и не защищает одноразовый код от перехвата в сети. Используй только доверенную частную локальную сеть, не подключайся через публичный Wi-Fi и не открывай TCP 47821 в Интернет. Перед постоянным использованием нужен TLS с проверкой сертификата/закреплением ключа и тест на реальном STUDIO PC.
+
+## Протокол
+
 - `GET /v1/status`
-- `POST /v1/pair` JSON: `{"code":"ONE_TIME_CODE"}`; returns `clientSecret` (base64).
-- Authenticated command: `POST /v1/command/shutdown`, `/restart`, or `/cancel-shutdown`.
-- HMAC payload: `METHOD\nPATH\nUNIX_TIMESTAMP\nNONCE\nBODY`; send base64 HMAC in `X-Revision-Signature`, timestamp in `X-Revision-Time`, nonce in `X-Revision-Nonce`.
-- `POST /v1/unpair` removes the paired secret.
+- `POST /v1/pair` с JSON `{"code":"ONE_TIME_CODE"}`
+- `POST /v1/command/lock`
+- `POST /v1/command/shutdown`
+- `POST /v1/command/restart`
+- `POST /v1/command/cancel-shutdown`
+- `POST /v1/command/execute` с JSON `{"phrase":"точная фраза из каталога"}`
+- `POST /v1/unpair`
 
-The pairing code is generated on first service start and expires after 24 hours. Pairing can be reset by stopping the service and removing `agent.json`, then starting it again.
+Подписываемая строка: `METHOD\nPATH\nUNIX_TIMESTAMP\nNONCE\nBODY`. Заголовки: `X-Revision-Time`, `X-Revision-Nonce`, `X-Revision-Signature`.
