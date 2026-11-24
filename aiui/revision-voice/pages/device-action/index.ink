@@ -1,14 +1,14 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC: windows_status — проверить Windows Agent; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для этих команд требуется предварительное сопряжение Windows Agent в настройках Android-приложения RE:Vision.",
+  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC: windows_status — проверить Windows Agent; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_launch — запустить приложение или BAT по сохранённой голосовой фразе; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для этих команд требуется предварительное сопряжение Windows Agent в настройках Android-приложения RE:Vision.",
   "schema": {
     "data": {
       "type": "object",
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list", "bridge_settings", "windows_status", "windows_lock", "windows_shutdown", "windows_restart", "windows_cancel_shutdown"],
+          "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list", "bridge_settings", "windows_status", "windows_lock", "windows_launch", "windows_shutdown", "windows_restart", "windows_cancel_shutdown"],
           "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; bridge_settings — открыть меню восстановления Voice Bridge и системные настройки специальных возможностей RE:Vision. Фразы «открой настройки Ревижн», «открой меню Voice Bridge», «зайди в Voice Bridge», «перейди напрямую в Voice Bridge», «открой страницу Voice Bridge», «войс бридж», «проверь службу Ревижн», «дай доступ к Voice Bridge», «подключись к Voice Bridge», «восстанови Voice Bridge», «почему не работает Voice Bridge», «открой настройки голосового моста», «включи службу Ревижн» должны выбирать bridge_settings. При любом явном запросе пользователя перейти непосредственно к Voice Bridge выбирай bridge_settings, а не обычные настройки приложения и не действие Wi-Fi. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
@@ -22,6 +22,10 @@
         "deviceName": {
           "type": "string",
           "description": "Имя или разговорное название сохранённого устройства. Например STUDIO / студия или Odyssey Ark / Одиссей Арк. Не придумывай имя."
+        },
+        "commandPhrase": {
+          "type": "string",
+          "description": "Точная голосовая фраза, сохранённая в каталоге Windows Agent, например «Запусти Mixxx». Передавай исходную команду пользователя без перефразирования."
         }
       },
       "required": ["action"]
@@ -217,7 +221,7 @@ export default {
       : (query && typeof query.enabled === 'boolean' ? query.enabled : undefined);
     const action = (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
       ? 'wifi_toggle' : requestedAction;
-    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list', 'windows_status', 'windows_lock', 'windows_shutdown', 'windows_restart', 'windows_cancel_shutdown'];
+    const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list', 'windows_status', 'windows_lock', 'windows_launch', 'windows_shutdown', 'windows_restart', 'windows_cancel_shutdown'];
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
       this.setData({ statusText: message, detailText: 'Не получено корректное значение action. Команды микрофона выполняются средствами Rokid и не относятся к RE:Vision.', busy: false });
@@ -266,14 +270,16 @@ export default {
         try {
           const result = windowsAction === 'status'
             ? await request('/windows/status', 'GET', token, null)
-            : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
+            : windowsAction === 'launch'
+              ? await request('/windows/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim() })
+              : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
           if (windowsAction === 'status') {
             const reachable = result.configured && result.agent && result.agent.paired === true;
             message = reachable ? 'Windows Agent STUDIO PC доступен и сопряжён.' : 'Windows Agent не настроен или недоступен. Проверь сопряжение и сеть.';
           } else {
-            message = result.accepted === true ? 'Команда Windows передана компьютеру.' : 'Windows Agent не подтвердил выполнение команды.';
+            message = result.accepted === true ? (windowsAction === 'launch' ? 'Команда запуска передана STUDIO PC.' : 'Команда Windows передана компьютеру.') : 'Windows Agent не подтвердил выполнение команды.';
           }
           this.setData({ statusText: message, detailText: 'STUDIO PC · Windows Agent', resultText: message, busy: false });
           speak(message);
