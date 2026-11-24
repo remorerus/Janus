@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Стартовая страница голосового агента Ревижн. При голосовом пробуждении запускает собственный короткий цикл распознавания русской речи и направляет распознанные команды в существующую страницу управления устройствами и Wi-Fi. Также остаётся точкой входа для обычного запуска агента."
+  "description": "Стартовая страница голосового агента Ревижн. При голосовом или сенсорном пробуждении не перехватывает событие: штатный голосовой интерфейс Rokid должен сразу перейти к распознаванию команды."
 }
 </script>
 
@@ -32,23 +32,17 @@ export default {
 
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice/touch wakeup received', { keyword });
-    // Take over the wakeup event so Rokid does not continue its default
-    // launch/confirmation flow and wait for a second interaction.
-    if (event && typeof event.preventDefault === 'function') {
-      event.preventDefault();
-    }
-    this.startListening();
+    console.log('[RE:Vision] voice/touch wakeup received; allowing Rokid host voice input', { keyword });
+    // Intentionally do not call preventDefault() and do not start a second
+    // in-agent recognizer. Let Rokid's native assistant handle this wakeup
+    // and open its voice-input flow immediately.
   },
 
   onKeyUp(event) {
     const code = String(event && event.code || '');
     if (code === 'GlobalHook') {
-      console.log('[RE:Vision] temple touch received');
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      this.startListening();
+      console.log('[RE:Vision] temple touch received; leaving host default behavior enabled');
+      // Do not intercept GlobalHook: Rokid owns the native assistant gesture.
     }
   },
 
