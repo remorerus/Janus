@@ -220,7 +220,7 @@ export default {
     const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
     // STUDIO PC is controlled by the paired Windows Agent, never by the legacy SSH route.
     const normalizedDeviceName = normalize(requestedName);
-    const isStudioPc = ['studiopc', 'studio', 'студия', 'студиписи', 'студиописи', 'студийныйпк'].includes(normalizedDeviceName);
+    const isStudioPc = ['studiopc', 'студиписи', 'студиописи', 'студийныйпк', 'студия'].some(alias => normalizedDeviceName.includes(alias));
     // Use direction-specific intents so AIUI cannot drop the boolean enabled field.
     const toggleEnabled = requestedAction === 'wifi_enable' ? true
       : requestedAction === 'wifi_disable' ? false
