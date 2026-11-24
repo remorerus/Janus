@@ -130,7 +130,7 @@ export default {
     } else if (hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни)/i.test(compact)) {
       params = { action: 'wifi_status' };
     } else if (/(подключись|переключись|соединись)/i.test(compact) &&
-               /(сеть|wi\s*fi|вай\s*фай|вайфай)/i.test(compact)) {
+               /(сеть|wi\s*fi|вай\s*фай|вайфай|локал\s*нетворк|local\s*network|студио|studio)/i.test(compact)) {
       let networkName = '';
       if (/(локал\s*нетворк|local\s*network)/i.test(compact)) networkName = 'Local_Network_5G';
       else if (/(студио|studio)/i.test(compact)) networkName = 'Studio';
