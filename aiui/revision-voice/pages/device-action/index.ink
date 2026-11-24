@@ -191,6 +191,29 @@ function readBridgeToken() {
   return token;
 }
 
+
+function finishCommand(page, message) {
+  // Speak the result first, then return to the agent's start page.
+  // Keep the result visible briefly so Rokid TTS can finish.
+  finishCommand(this, message);
+  if (page._returnScheduled) return;
+  page._returnScheduled = true;
+  const text = String(message || '');
+  const waitMs = Math.min(12000, Math.max(2800, 1100 + text.length * 82));
+  setTimeout(() => {
+    if (typeof wx !== 'undefined' && typeof wx.navigateBack === 'function') {
+      wx.navigateBack({
+        delta: 1,
+        fail() {
+          if (typeof wx.redirectTo === 'function') wx.redirectTo({ url: '/pages/index/index' });
+        }
+      });
+    } else if (typeof wx !== 'undefined' && typeof wx.redirectTo === 'function') {
+      wx.redirectTo({ url: '/pages/index/index' });
+    }
+  }, waitMs);
+}
+
 export default {
   data: {
     title: 'Ревижн',
@@ -221,7 +244,7 @@ export default {
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
       this.setData({ statusText: message, detailText: 'Не получено корректное значение action. Команды микрофона выполняются средствами Rokid и не относятся к RE:Vision.', busy: false });
-      speak(message);
+      finishCommand(this, message);
       return;
     }
     const rawRequestedName = query && (query.deviceName ?? query.device) || '';
@@ -249,7 +272,7 @@ export default {
       if (['wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list'].includes(action) && health.wifiRoute !== true) {
         const message = 'Установленная версия RE:Vision на очках устарела и не поддерживает открытие Wi-Fi. AIUI уже обновлён, но нужно обновить само Android-приложение RE:Vision.';
         this.setData({ statusText: message, detailText: 'Сохранённые устройства и настройки не трогай и не удаляй.', busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -257,7 +280,7 @@ export default {
       if (!token) {
         const message = 'Связь с RE:Vision обнаружена, но ключ доступа ещё не настроен. Открой настройки агента и введи ключ из приложения RE:Vision.';
         this.setData({ statusText: message, detailText: 'Команды пока заблокированы до настройки защиты.', showSettingsButton: true, busy: false });
-        speak('Связь с RE:Vision есть. Нужно настроить ключ доступа.');
+        finishCommand(this, 'Связь с RE:Vision есть. Нужно настроить ключ доступа.');
         return;
       }
 
@@ -265,7 +288,7 @@ export default {
         if (typeof toggleEnabled !== 'boolean') {
           const message = 'Уточни действие: включить или выключить Wi-Fi?';
           this.setData({ statusText: message, detailText: 'Не получил параметр enabled=true или enabled=false. Настройки не открывал.', busy: false });
-          speak(message);
+          finishCommand(this, message);
           return;
         }
         const requestedEnabled = toggleEnabled;
@@ -294,7 +317,7 @@ export default {
         if (result.verified === true && result.enabled === requestedEnabled) {
           const message = requestedEnabled ? 'Wi-Fi включён. Состояние проверено.' : 'Wi-Fi выключен. Состояние проверено.';
           this.setData({ statusText: message, detailText: result.ssid ? 'Сеть: ' + result.ssid : '', resultText: message, busy: false });
-          speak(message);
+          finishCommand(this, message);
           return;
         }
         if (result.requiresUserAction === true) {
@@ -302,12 +325,12 @@ export default {
             ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — включи переключатель вручную.'
             : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — выключи переключатель вручную.';
           this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системных настройках.', resultText: message, busy: false });
-          speak(message);
+          finishCommand(this, message);
           return;
         }
         const message = 'Запрос на изменение Wi-Fi отправлен, но новое состояние не подтверждено.';
         this.setData({ statusText: message, detailText: JSON.stringify(result), resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -342,14 +365,14 @@ export default {
               ? 'Ты уже подключён к сети ' + (result.targetSsid || targetNetwork) + '.'
               : 'Подключение к сети ' + (result.targetSsid || targetNetwork) + ' подтверждено.';
             this.setData({ statusText: message, detailText: 'Текущая сеть проверена через Android.', resultText: message, busy: false });
-            speak(message);
+            finishCommand(this, message);
             return;
           }
           const message = result.selectionClicked === true
             ? 'Сеть ' + (result.targetSsid || targetNetwork) + ' выбрана. Если Android запросит подтверждение, подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
             : 'Открыл список Wi-Fi. Найди сеть ' + (result.targetSsid || targetNetwork) + ' и выбери её. Затем скажи: Ревижн, проверь Wi-Fi.';
           this.setData({ statusText: message, detailText: 'Подключение ещё не подтверждено Android.', resultText: message, busy: false });
-          speak(message);
+          finishCommand(this, message);
           return;
         }
 
@@ -357,7 +380,7 @@ export default {
           ? 'Открыл список доступных сетей Wi-Fi. Выбери нужную точку на экране очков и подтверди подключение. Затем скажи: Ревижн, проверь Wi-Fi.'
           : 'Открыл список сетей Wi-Fi на очках. Выбери нужную точку доступа.';
         this.setData({ statusText: message, detailText: result.mode === 'panel' ? 'Системная панель Wi-Fi.' : 'Открыта системная страница выбора сети.', resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -383,7 +406,7 @@ export default {
           ? 'Android ограничил доступ к имени сети.'
           : (ssid ? 'Текущая сеть: ' + ssid : 'SSID не получен от Android.');
         this.setData({ statusText: message, detailText: detail, resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -400,7 +423,7 @@ export default {
         const names = (scan.networks || []).map(item => item.ssid);
         const message = names.length ? 'Вижу сети: ' + names.join(', ') : 'Список сетей пока пуст. Повтори запрос через несколько секунд.';
         this.setData({ statusText: message, detailText: 'Сканирование запрошено: ' + (scan.scanStarted ? 'да' : 'нет'), resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -413,7 +436,7 @@ export default {
         const names = list.devices.map(item => item.name).filter(Boolean);
         const message = names.length ? 'Сохранённые устройства: ' + names.join(', ') : 'В RE:Vision пока нет сохранённых устройств.';
         this.setData({ statusText: message, detailText: '', resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -421,20 +444,20 @@ export default {
       if (resolved.error === 'device_name_required') {
         const message = 'Не расслышал название устройства. Назови его ещё раз.';
         this.setData({ statusText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
       if (resolved.error === 'device_ambiguous') {
         const names = resolved.matches.map(item => item.name).join(', ');
         const message = 'Нашёл несколько устройств: ' + names + '. Уточни, какое именно.';
         this.setData({ statusText: message, detailText: '', busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
       if (!resolved.device) {
         const message = 'Устройство «' + requestedName + '» не найдено в RE:Vision.';
         this.setData({ statusText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -448,7 +471,7 @@ export default {
           ? device.name + ' доступен в сети.'
           : device.name + ' сейчас не отвечает по сети.';
         this.setData({ statusText: message, detailText: state.checkedHost || '', resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -458,13 +481,13 @@ export default {
       if (action === 'wake' && device.canWake !== true) {
         const message = 'Для ' + device.name + ' в RE:Vision не настроено включение Wake-on-LAN.';
         this.setData({ statusText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
       if (action === 'shutdown' && device.canShutdown !== true) {
         const message = 'Для ' + device.name + ' в RE:Vision не настроено удалённое выключение SSH.';
         this.setData({ statusText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -484,13 +507,13 @@ export default {
           if (state && state.ok === true && state.online === true) {
             const message = device.name + ' отвечает в сети. Компьютер доступен.';
             this.setData({ statusText: message, detailText: 'Доступность подтверждена проверкой сети.', resultText: message, busy: false });
-            speak(message);
+            finishCommand(this, message);
             return;
           }
         }
         const message = 'Команда включения отправлена, но ' + device.name + ' пока не ответил. Включение ещё не подтверждено.';
         this.setData({ statusText: message, detailText: 'Проверял доступность до 12 секунд.', resultText: message, busy: false });
-        speak(message);
+        finishCommand(this, message);
         return;
       }
 
@@ -501,7 +524,7 @@ export default {
         ? 'Команда выключения отправлена, но ' + device.name + ' всё ещё отвечает в сети. Выключение не подтверждено.'
         : 'После команды ' + device.name + ' перестал отвечать по сети. Это не является абсолютным подтверждением выключения.';
       this.setData({ statusText: message, detailText: 'Состояние питания не подтверждено напрямую.', resultText: message, busy: false });
-      speak(message);
+      finishCommand(this, message);
     } catch (error) {
       const raw = error && error.message ? String(error.message) : String(error);
       const lower = raw.toLowerCase();
@@ -518,7 +541,7 @@ export default {
         detail += ' Точная ошибка AIUI: ' + raw;
       }
       this.setData({ statusText: message, detailText: detail, busy: false });
-      speak(message);
+      finishCommand(this, message);
       console.error('RE:Vision action failed', { message: raw, stage: error && error.stage, statusCode: error && error.statusCode });
     }
   }
