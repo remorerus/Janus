@@ -165,8 +165,8 @@ static bool LaunchCatalogCommand(AgentCommand command)
             string.Equals(Path.GetExtension(target), ".bat", StringComparison.OrdinalIgnoreCase))
         {
             application = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-            commandLine = "cmd.exe /d /s /c \\"\"" + target + "\"" +
-                (string.IsNullOrWhiteSpace(command.Arguments) ? "" : " " + command.Arguments) + "\"";
+            commandLine = "cmd.exe /d /c call \\"" + target + "\\\"" +
+                (string.IsNullOrWhiteSpace(command.Arguments) ? "" : " " + command.Arguments);
         }
         else return false;
 
@@ -177,7 +177,7 @@ static bool LaunchCatalogCommand(AgentCommand command)
         try
         {
             if (!DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
-            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\\default" };
+            var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = "winsta0\\\\default" };
             var args = new System.Text.StringBuilder(commandLine);
             if (!CreateProcessAsUser(primaryToken, application, args, IntPtr.Zero, IntPtr.Zero,
                     false, 0x00000400, IntPtr.Zero, workingDirectory, ref startup, out var process)) return false;
