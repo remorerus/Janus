@@ -62,12 +62,51 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 
 app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
 
-app.MapPost("/v1/pair", (PairRequest request) =>
+app.MapPost("/v1/pair", async (HttpContext context) =>
 {
-    if (config.ClientSecret is not null) return Results.Conflict(new { error = "Already paired. Reset pairing locally to pair again." });
-    if (DateTimeOffset.UtcNow > config.PairingExpiresUtc || string.IsNullOrWhiteSpace(request.Code) ||
-        !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(request.Code), Encoding.UTF8.GetBytes(config.PairingCode)))
+    // Read the small pairing payload explicitly instead of relying on minimal-API
+    // record binding. This keeps Android JSON casing/body handling predictable and
+    // returns a useful diagnostic if the incoming payload is malformed.
+    string rawBody;
+    using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+        rawBody = await reader.ReadToEndAsync();
+
+    if (rawBody.Length > 4096)
+        return Results.BadRequest(new { error = "Pairing request is too large." });
+
+    string? suppliedCode = null;
+    try
+    {
+        using var document = JsonDocument.Parse(rawBody);
+        if (document.RootElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "code", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String)
+                {
+                    suppliedCode = property.Value.GetString();
+                    break;
+                }
+            }
+        }
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid JSON in pairing request." });
+    }
+
+    if (config.ClientSecret is not null)
+        return Results.Conflict(new { error = "Already paired. Reset pairing locally to pair again." });
+
+    suppliedCode = suppliedCode?.Trim().ToUpperInvariant();
+    if (DateTimeOffset.UtcNow > config.PairingExpiresUtc ||
+        string.IsNullOrEmpty(suppliedCode) ||
+        !CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(suppliedCode),
+            Encoding.UTF8.GetBytes(config.PairingCode)))
         return Results.Unauthorized();
+
     config.ClientSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
     config.PairingCode = "";
     config.Save(configPath);
