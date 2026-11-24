@@ -33,8 +33,15 @@ export default {
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice/touch wakeup received', { keyword });
-    // Take over the wakeup event so Rokid does not continue its default
-    // launch/confirmation flow and wait for a second interaction.
+
+    // A temple double-touch is the native Rokid AI Assistant shortcut.
+    // Let the host handle clickAiAssist so its own voice UI starts immediately.
+    if (keyword === 'clickAiAssist') {
+      console.log('[RE:Vision] native AI Assistant wakeup passed through');
+      return;
+    }
+
+    // Keep the existing local recognition path for non-touch wake words.
     if (event && typeof event.preventDefault === 'function') {
       event.preventDefault();
     }
@@ -44,11 +51,8 @@ export default {
   onKeyUp(event) {
     const code = String(event && event.code || '');
     if (code === 'GlobalHook') {
-      console.log('[RE:Vision] temple touch received');
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      this.startListening();
+      // Observe the temple event, but do not cancel the host's native action.
+      console.log('[RE:Vision] temple touch received; native action passed through');
     }
   },
 
