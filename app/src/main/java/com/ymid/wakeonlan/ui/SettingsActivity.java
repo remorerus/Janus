@@ -175,6 +175,8 @@ public class SettingsActivity extends AppCompatActivity {
                 host.setSingleLine(true);
                 host.setHint("http://192.168.1.10:47821");
                 host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                String savedAgentBase = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBase(requireContext());
+                if (savedAgentBase != null) host.setText(savedAgentBase);
                 EditText code = new EditText(requireContext());
                 code.setSingleLine(true);
                 code.setHint("8-значный код сопряжения");
@@ -185,6 +187,35 @@ public class SettingsActivity extends AppCompatActivity {
                         .setTitle("Подключить Windows Agent")
                         .setMessage("На STUDIO PC открой файл agent.pairing-code.txt и введи адрес компьютера и код. Используй только доверенную частную Wi-Fi сеть.")
                         .setView(fields)
+                        .setNeutralButton("Проверить связь", (dialog, which) -> {
+                            String address = host.getText().toString().trim();
+                            if (address.isEmpty()) {
+                                Toast.makeText(requireContext(), "Сначала укажи адрес STUDIO PC.", Toast.LENGTH_LONG).show();
+                                return;
+                            }
+                            windowsAgentPreference.setSummary("Проверяем Windows Agent…");
+                            new Thread(() -> {
+                                try {
+                                    org.json.JSONObject status = com.ymid.wakeonlan.voice.WindowsAgentClient.status(requireContext());
+                                    boolean paired = status.optBoolean("paired", false);
+                                    handler.post(() -> {
+                                        windowsAgentPreference.setSummary(paired
+                                                ? "Сопряжён · " + address
+                                                : "Агент доступен, но не сопряжён · " + address);
+                                        Toast.makeText(requireContext(), paired
+                                                ? "Windows Agent доступен, сопряжение сохранено."
+                                                : "Windows Agent доступен, требуется сопряжение.",
+                                                Toast.LENGTH_LONG).show();
+                                    });
+                                } catch (Exception e) {
+                                    String message = e.getMessage() == null ? "Нет ответа от Windows Agent" : e.getMessage();
+                                    handler.post(() -> {
+                                        windowsAgentPreference.setSummary("Нет связи · " + address);
+                                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show();
+                                    });
+                                }
+                            }, "revision-windows-status").start();
+                        })
                         .setPositiveButton("Сопрячь", (dialog, which) -> {
                             String address = host.getText().toString().trim();
                             String pairingCode = code.getText().toString().trim();
