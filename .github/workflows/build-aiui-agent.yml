@@ -11,6 +11,7 @@ on:
       - revision-r08-stability
       - revision-1.9.20-integrated
       - revision-kavi-voice-experiment
+      - revision-voice-single-event-test
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
