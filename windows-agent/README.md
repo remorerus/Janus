@@ -42,7 +42,7 @@ GitHub Actions собирает self-contained ZIP для Windows x64. Для у
 ## Протокол
 
 - `GET /v1/status`
-- `POST /v1/pair` с JSON `{"code":"ONE_TIME_CODE"}`
+- `POST /v1/pair` с JSON `{"code":"ONE_TIME_CODE","clientSecret":"BASE64_32_BYTE_KEY"}`. Android создаёт и сохраняет ключ до запроса; повтор с тем же ключом идемпотентен.
 - `POST /v1/command/lock`
 - `POST /v1/command/shutdown`
 - `POST /v1/command/restart`
