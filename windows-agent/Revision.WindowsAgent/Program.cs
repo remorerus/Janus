@@ -157,6 +157,41 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 });
 
 
+app.MapPost("/v1/manager/voice-corrections", async (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var request = await context.Request.ReadFromJsonAsync<VoiceCorrectionRequest>();
+    var heard = (request?.HeardPhrase ?? "").Trim();
+    var commandId = (request?.CommandId ?? "").Trim();
+    if (heard.Length is < 2 or > 160 || string.IsNullOrEmpty(commandId))
+        return Results.BadRequest(new { error = "Укажи распознанную фразу (2–160 символов) и команду, которую ты действительно имел в виду." });
+
+    var catalog = CommandCatalog.Load(commandsPath);
+    var target = catalog.FirstOrDefault(x => string.Equals(x.Id, commandId, StringComparison.Ordinal));
+    if (target is null) return Results.NotFound(new { error = "Выбранная команда больше не существует. Обнови каталог." });
+
+    var normalizedHeard = NormalizeVoicePhrase(heard);
+    if (normalizedHeard.Length == 0)
+        return Results.BadRequest(new { error = "В распознанной фразе нет подходящих слов." });
+
+    var collision = catalog.Where(x => !string.Equals(x.Id, target.Id, StringComparison.Ordinal))
+        .Any(x => GetCommandPhrases(x).Any(p => string.Equals(NormalizeVoicePhrase(p), normalizedHeard, StringComparison.Ordinal)));
+    if (collision)
+        return Results.Conflict(new { error = "Эта фраза уже закреплена за другой командой. Ничего не изменено." });
+
+    var aliases = target.Aliases ?? new List<string>();
+    if (GetCommandPhrases(target).Any(p => string.Equals(NormalizeVoicePhrase(p), normalizedHeard, StringComparison.Ordinal)))
+        return Results.Json(new { saved = true, alreadyKnown = true, command = target.Name, aliasCount = aliases.Count });
+
+    if (aliases.Count >= 12)
+        return Results.Conflict(new { error = "У команды уже 12 вариантов. Удали ненужный вариант в редакторе команды." });
+
+    aliases.Add(heard);
+    var updated = catalog.Select(x => x.Id == target.Id ? x with { Aliases = aliases } : x).ToList();
+    CommandCatalog.Save(commandsPath, updated);
+    return Results.Json(new { saved = true, alreadyKnown = false, command = target.Name, aliasCount = aliases.Count });
+});
+
 app.MapGet("/v1/status", () => Results.Json(new {
     name = config.DeviceName,
     deviceId = config.DeviceId,
@@ -963,7 +998,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <button id="addCommandButton" onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
 <div class="note">Команды запускаются только из этого локального каталога и только в активной пользовательской сессии Windows. Добавляй только проверенные EXE и BAT-файлы.</div>
-</section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section></main>
+</section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section><section class="panel"><h2>Обучить распознавание</h2><div class="muted">Если Ревижн услышал фразу неправильно, выбери правильную команду. После подтверждения ошибочный вариант сохранится как её дополнительный голосовой псевдоним.</div><label>Какую фразу услышал агент</label><input id="correctionPhrase" maxlength="160" placeholder="Например: открой а имп"><label>Какую команду ты имел в виду</label><select id="correctionCommand"><option value="">Сначала загрузи каталог команд</option></select><button type="button" onclick="saveCorrection()">Запомнить исправление</button><div class="status" id="correctionStatus"></div><div class="note">Исправление сохраняется только после твоего подтверждения. Оно не запускает команду и не меняет основную голосовую фразу.</div></section></main>
 <script>
 let commands=[],editingIndex=-1;
 function el(id){return document.getElementById(id)}
@@ -1025,10 +1060,11 @@ function addCommand(){
 }
 function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(i){commands.splice(i,1);if(editingIndex===i)clearForm();else if(editingIndex>i)editingIndex--;render();msg('Команда удалена из списка. Сохрани изменения.')}
-function render(){const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
+function render(){const select=el('correctionCommand');if(select){const chosen=select.value;select.innerHTML='';const empty=document.createElement('option');empty.value='';empty.textContent='Выбери команду';select.append(empty);commands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name+' — '+c.phrase;select.append(o)});if(commands.some(c=>c.id===chosen))select.value=chosen}const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
 root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
+async function saveCorrection(){const status=el('correctionStatus');try{const heardPhrase=el('correctionPhrase').value.trim(),commandId=el('correctionCommand').value;if(!heardPhrase||!commandId)throw Error('Заполни фразу и выбери правильную команду.');const r=await fetch('/v1/manager/voice-corrections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({heardPhrase,commandId})});const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось сохранить исправление');el('correctionPhrase').value='';await loadCommands();status.textContent=data.alreadyKnown?'Этот вариант уже известен.':'Запомнил вариант для команды «'+data.command+'». Теперь его можно произнести.'}catch(e){status.textContent=e.message}}
 loadCommands();
 loadIdentity();
 loadPairing();
@@ -1162,5 +1198,6 @@ sealed class AgentConfig
 }
 
 sealed record AgentIdentityRequest(string Name);
+sealed record VoiceCorrectionRequest(string? HeardPhrase, string? CommandId);
 
 
