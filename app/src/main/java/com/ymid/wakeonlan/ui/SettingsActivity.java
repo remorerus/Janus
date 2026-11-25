@@ -290,7 +290,7 @@ public class SettingsActivity extends AppCompatActivity {
                 });
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Подключить Windows Agent")
-                        .setMessage("Адрес STUDIO PC подставляется из сохранённого сопряжения. Одноразовый код берётся из agent.pairing-code.txt только при новом сопряжении и не сохраняется в приложении. Используй только доверенную частную Wi-Fi сеть.")
+                        .setMessage("Найди компьютер в локальной сети или введи его адрес. Одноразовый код берётся из agent.pairing-code.txt только при первом сопряжении и не сохраняется в приложении. Существующее сопряжение не будет заменено привязкой к другому компьютеру. Используй только доверенную частную Wi-Fi сеть.")
                         .setView(fields)
                         .setNeutralButton("Проверить связь", (dialog, which) -> {
                             String address = host.getText().toString().trim();
