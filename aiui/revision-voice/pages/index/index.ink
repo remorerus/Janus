@@ -33,7 +33,7 @@ export default {
       statusText: keyword === 'clickAiAssist'
         ? 'Касание получено. Ожидаю голосовой ввод Rokid.'
         : 'Голосовое пробуждение получено. Слушаю.',
-      detailText: keyword ? 'Источник: ' + keyword + '. Штатный голосовой канал Rokid не перехватывается.' : 'Штатный голосовой канал Rokid не перехватывается.'
+      detailText: keyword ? 'Источник: ' + keyword + '. Голосовой ввод Rokid открыт — скажи команду для Ревижн.' : 'Голосовой ввод Rokid открыт — скажи команду для Ревижн.'
     });
     // Intentionally do not call preventDefault(): Rokid must open its native
     // voice-input flow after either a wake word or a temple tap.
@@ -47,7 +47,7 @@ export default {
       console.log('[RE:Vision] temple tap received through GlobalHook');
       this.setData({
         statusText: 'Касание получено. Ожидаю голосовой ввод Rokid.',
-        detailText: 'Событие GlobalHook принято. Штатный голосовой канал не перехватывается.'
+        detailText: 'Касание кнопки принято. Для голосовой команды дождись запуска голосового ввода Rokid.'
       });
     }
   }
