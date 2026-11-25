@@ -13,6 +13,7 @@ on:
       - revision-ssh-key-only-2026-11-25
       - revision-voicebridge-tap-ssh-manager-2026-11-25
       - revision-win-ssh-web-manager-2026-11-25
+      - revision-voice-windows-controls-2026-11-25
     paths:
       - "app/**"
       - "*.gradle"
