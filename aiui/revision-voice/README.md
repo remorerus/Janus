@@ -16,7 +16,7 @@ The GitHub Actions workflow packages this directory and publishes the resulting 
 ## Import to AIUI Studio
 Import the GitHub subdirectory:
 - Repository: `remorerus/Janus`
-- Branch: `revision-1.9.20-integrated`
+- Branch: `revision-voicebridge-tap-ssh-manager-2026-11-25`
 - Directory: `aiui/revision-voice`
 
 Bind the imported project to a new AIUI Agent named RE:Vision, then package/upload it in AIUI Studio. Update the glasses resource package through the Rokid app.
