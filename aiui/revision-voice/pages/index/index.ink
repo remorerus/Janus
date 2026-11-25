@@ -334,6 +334,10 @@ export default {
       params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
     }
 
+    if (!params && /(chrome|хром|браузер|aimp|аимп|аип|плеер|музык|окно|приложен|скриншот|ctrl|control|alt|shift|win|клавиш)/i.test(compact)) {
+      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+    }
+
     if (!params) {
       if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
         params = { action: 'list' };
@@ -348,6 +352,9 @@ export default {
             .replace(/\s+(пожалуйста|сейчас)$/i, '')
             .trim();
           params = { action: verb, deviceName };
+        } else {
+          // Any other phrase is a user-defined Windows Agent command candidate.
+          params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
         }
       }
     }
