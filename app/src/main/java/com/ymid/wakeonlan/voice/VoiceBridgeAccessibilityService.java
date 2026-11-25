@@ -564,7 +564,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             response.addProperty("recoveryPort", 38762);
             writeResponse(socket.getOutputStream(), 200, response);
         } else if ("POST".equals(method) && "/accessibility/settings".equals(path)) {
-            writeResponse(socket.getOutputStream(), 200, openAccessibilitySettings());
+            // Opening Android Settings must be an explicit, user-confirmed action.
+            // Older AIUI pages posted here automatically on every page load.
+            if (!target.contains("userInitiated=1")) {
+                writeResponse(socket.getOutputStream(), 409, error("confirmation_required"));
+            } else {
+                writeResponse(socket.getOutputStream(), 200, openAccessibilitySettings());
+            }
         } else if ("GET".equals(method) && "/devices".equals(path)) {
             writeResponse(socket.getOutputStream(), 200, listDevices());
         } else if ("GET".equals(method) && "/status".equals(path)) {
