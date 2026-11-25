@@ -82,6 +82,7 @@ public final class WindowsAgentClient {
                     agentPaired = status.optBoolean("paired", false);
                 } catch (Exception ignored) { }
                 if (agentPaired) {
+                    saveRegistryPair(context, targetIdentity, base, existingSecret);
                     SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
                     if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
                     if (!keep.commit()) throw new IllegalStateException("Не удалось обновить адрес существующего устройства.");
@@ -93,7 +94,7 @@ public final class WindowsAgentClient {
                 // The same physical PC is reachable but has been locally unpaired.
                 // Allow an explicit new one-time code to renew its secret.
             } else {
-                throw new IllegalStateException("В RE:Vision уже сохранено сопряжение с другим Windows Agent. Существующий ключ сохранён и не будет заменён. Поддержка нескольких одновременно привязанных Windows Agent будет добавлена отдельным этапом.");
+                // Keep the legacy pairing intact; the newly paired PC is stored separately in the registry.
             }
         }
 
@@ -118,14 +119,19 @@ public final class WindowsAgentClient {
         if (secretBytes.length != 32) {
             throw new IllegalStateException("Windows Agent вернул ключ неверной длины.");
         }
-        SharedPreferences.Editor editor = prefs(context).edit();
-        editor.putString(KEY_BASE, base);
-        editor.putString(KEY_SECRET, secret);
-        if (targetIdentity != null) {
-            String deviceId = targetIdentity.optString("deviceId", "");
-            if (!deviceId.isEmpty()) editor.putString(KEY_DEVICE_ID, deviceId);
+        saveRegistryPair(context, targetIdentity, base, secret);
+        // Keep backward compatibility with the original STUDIO PC profile. Never replace it
+        // when pairing an additional computer.
+        if (existingBase == null || existingBase.isEmpty()) {
+            SharedPreferences.Editor editor = prefs(context).edit();
+            editor.putString(KEY_BASE, base);
+            editor.putString(KEY_SECRET, secret);
+            if (targetIdentity != null) {
+                String deviceId = targetIdentity.optString("deviceId", "");
+                if (!deviceId.isEmpty()) editor.putString(KEY_DEVICE_ID, deviceId);
+            }
+            if (!editor.commit()) throw new IllegalStateException("Не удалось сохранить защищённые данные сопряжения.");
         }
-        if (!editor.commit()) throw new IllegalStateException("Не удалось сохранить защищённые данные сопряжения.");
         return response;
     }
 
@@ -243,6 +249,34 @@ public final class WindowsAgentClient {
             throw new IllegalStateException("Windows Agent не принял команду.");
         }
         return result;
+    }
+
+    private static void saveRegistryPair(Context context, JSONObject identity, String base, String secret)
+            throws Exception {
+        if (identity == null) throw new IllegalStateException("Windows Agent не сообщил постоянный ID устройства.");
+        String deviceId = identity.optString("deviceId", "").trim();
+        if (deviceId.isEmpty()) throw new IllegalStateException("Windows Agent не сообщил постоянный ID устройства.");
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                new com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity();
+        device.deviceId = deviceId;
+        device.displayName = identity.optString("name", "Windows PC").trim();
+        device.baseUrl = base;
+        device.clientSecret = secret;
+        device.createdAt = System.currentTimeMillis();
+        device.lastSeenAt = device.createdAt;
+        device.voiceAliasesJson = "[]";
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity previous = registry.get(deviceId);
+        if (previous != null) {
+            device.createdAt = previous.createdAt;
+            device.voiceAliasesJson = previous.voiceAliasesJson;
+            device.isDefault = previous.isDefault;
+            device.enabled = previous.enabled;
+        } else {
+            device.isDefault = registry.getDefault() == null;
+        }
+        registry.addPairedDevice(device, device.isDefault);
     }
 
     /** Executes an allow-listed command on a specifically selected paired computer. */
