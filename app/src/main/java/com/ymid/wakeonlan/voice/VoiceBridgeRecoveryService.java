@@ -202,7 +202,7 @@ public final class VoiceBridgeRecoveryService extends Service {
             // Only the dedicated button sends this explicit confirmation marker.
             if (!request[1].contains("userInitiated=1")) {
                 writeResponse(socket.getOutputStream(), 409,
-                        "{\\"ok\\":false,\\"error\\":\\"confirmation_required\\"}");
+                        "{\"ok\":false,\"error\":\"confirmation_required\"}");
                 return;
             }
             // This endpoint only opens Android's user-controlled settings screen.
