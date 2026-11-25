@@ -333,7 +333,6 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
 
         final String target = pendingWifiTarget;
         if (target == null) return;
-        long now = System.currentTimeMillis();
         if (now > pendingWifiSelectionUntilMs) {
             pendingWifiTarget = null;
             return;
