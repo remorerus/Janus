@@ -71,9 +71,7 @@ public class ShutdownRunnable implements Runnable {
         boolean commandSent = false;
 
         DefaultConfig config = new DefaultConfig();
-        if (shutdownModel.isKeyAuth()) {
-            config.setKeyAlgorithms(KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
-        }
+        config.setKeyAlgorithms(KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
 
         try (SSHClient sshClient = new SSHClient(config)) {
             if (hostKeyVerifier == null) {
@@ -84,12 +82,8 @@ public class ShutdownRunnable implements Runnable {
             connect(sshClient);
             shutdownExecutorListener.onTargetHostReached();
 
-            if (shutdownModel.isKeyAuth()) {
-                sshClient.authPublickey(shutdownModel.getUsername(),
-                        new AndroidKeyStoreKeyProvider(shutdownModel.getSshKeyAlias()));
-            } else {
-                sshClient.authPassword(shutdownModel.getUsername(), shutdownModel.getPassword());
-            }
+            sshClient.authPublickey(shutdownModel.getUsername(),
+                    new AndroidKeyStoreKeyProvider(shutdownModel.getSshKeyAlias()));
             shutdownExecutorListener.onLoginSuccessful();
 
             Session session = sshClient.startSession();
