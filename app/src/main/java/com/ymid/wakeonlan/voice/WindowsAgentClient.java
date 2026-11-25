@@ -318,6 +318,68 @@ public final class WindowsAgentClient {
                 "/v1/command/execute", body.toString());
     }
 
+    /** Resolves a saved Windows Agent by exact display name or exact voice alias. */
+    private static com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity resolveRegisteredDevice(
+            Context context, String requestedName) throws Exception {
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        String wanted = normalizeDeviceName(requestedName);
+        if (wanted.isEmpty()) return registry.getDefault();
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices = registry.getAll();
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> matches = new java.util.ArrayList<>();
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : devices) {
+            if (!device.enabled) continue;
+            boolean match = wanted.equals(normalizeDeviceName(device.displayName));
+            try {
+                org.json.JSONArray aliases = new org.json.JSONArray(device.voiceAliasesJson);
+                for (int i = 0; !match && i < aliases.length(); i++)
+                    match = wanted.equals(normalizeDeviceName(aliases.optString(i, "")));
+            } catch (Exception ignored) { }
+            if (match) matches.add(device);
+        }
+        if (matches.size() > 1)
+            throw new IllegalStateException("Имя компьютера неоднозначно. Уточни голосовое имя устройства.");
+        if (matches.isEmpty())
+            throw new IllegalStateException("Компьютер «" + requestedName + "» не найден среди сопряжённых Windows Agent.");
+        return matches.get(0);
+    }
+
+    private static String normalizeDeviceName(String value) {
+        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT)
+                .replace('ё', 'е').replaceAll("[^a-zа-я0-9]", "");
+    }
+
+    public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase) throws Exception {
+        if (deviceName == null || deviceName.trim().isEmpty()) return executePhraseOnDefault(context, phrase);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                resolveRegisteredDevice(context, deviceName);
+        if (device == null) throw new IllegalStateException("Компьютер по умолчанию не настроен.");
+        return executePhrase(context, device.deviceId, phrase);
+    }
+
+    public static JSONObject commandForDeviceName(Context context, String deviceName, String action) throws Exception {
+        if (deviceName == null || deviceName.trim().isEmpty()) {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            if (defaultDevice != null) return command(context, defaultDevice.deviceId, action);
+            return command(context, action);
+        }
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                resolveRegisteredDevice(context, deviceName);
+        return command(context, device.deviceId, action);
+    }
+
+    public static JSONObject statusForDeviceName(Context context, String deviceName) throws Exception {
+        if (deviceName == null || deviceName.trim().isEmpty()) {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            return defaultDevice == null ? status(context) : status(context, defaultDevice.baseUrl);
+        }
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                resolveRegisteredDevice(context, deviceName);
+        return status(context, device.baseUrl);
+    }
+
     /** Executes on the configured default paired device; legacy STUDIO pairing remains supported. */
     public static JSONObject executePhraseOnDefault(Context context, String phrase) throws Exception {
         com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
