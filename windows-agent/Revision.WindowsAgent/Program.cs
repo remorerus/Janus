@@ -347,7 +347,7 @@ static bool TryNormalizeHotkey(string value, out string normalized)
 {
     normalized = "";
     var raw = (value ?? "").Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-    if (raw.Length is < 2 or > 4) return false;
+    if (raw.Length is < 1 or > 4) return false;
     var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["CONTROL"] = "CTRL", ["CTRL"] = "CTRL", ["ALT"] = "ALT",
