@@ -12,7 +12,7 @@ if (firebaseConfigured) {
 
 android {
     defaultConfig {
-        versionCode 127 // Windows Agent pairing secret fix, release 1.9.21
+        versionCode 128 // SSH key-only authentication, release 1.9.22
         buildConfigField 'boolean', 'FIREBASE_CONFIGURED', firebaseConfigured.toString()
     }
     buildFeatures {
