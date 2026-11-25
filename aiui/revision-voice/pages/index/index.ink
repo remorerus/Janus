@@ -230,7 +230,7 @@ export default {
           if (!this.voiceHandled && this.recognition === recognition) {
             try { recognition.stop(); } catch (e) {}
           }
-        }, 1800);
+        }, 2200);
       };
 
       recognition.onresult = (resultEvent) => {
@@ -308,12 +308,12 @@ export default {
         if (!this.voiceSpeechStarted && !this.voiceHandled) {
           this.finishListening('Время ожидания истекло.', 'Ничего не услышал. Прослушивание закрыто.', recognition);
         }
-      }, 8000);
+      }, 10000);
       this.hardStopTimer = setTimeout(() => {
         if (!this.voiceHandled) {
           this.finishListening('Время прослушивания завершено.', 'Сеанс закрыт. Для новой команды снова удерживай сенсор двумя пальцами.', recognition);
         }
-      }, 25000);
+      }, 30000);
 
       recognition.start();
     } catch (error) {
