@@ -811,7 +811,6 @@ function render(){const root=el('commands');root.replaceChildren();if(!commands.
 commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.shell==='cmd'?'CMD':'PowerShell')+' · '+c.command;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
-updateKindFields();
 loadCommands();
 </script></body></html>
 """;
