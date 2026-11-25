@@ -230,8 +230,64 @@ public class SettingsActivity extends AppCompatActivity {
                 code.setSingleLine(true);
                 code.setHint("8-значный код сопряжения");
                 code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+                android.widget.Button discoverButton = new android.widget.Button(requireContext());
+                discoverButton.setText("Найти компьютеры в локальной сети");
+                fields.addView(discoverButton);
                 fields.addView(host);
                 fields.addView(code);
+                discoverButton.setOnClickListener(view -> {
+                    discoverButton.setEnabled(false);
+                    discoverButton.setText("Поиск в локальной сети…");
+                    windowsAgentPreference.setSummary("Ищу Windows Agent в локальной сети…");
+                    Context appContext = requireContext().getApplicationContext();
+                    new Thread(() -> {
+                        try {
+                            java.util.List<org.json.JSONObject> candidates =
+                                    com.ymid.wakeonlan.voice.WindowsAgentClient.discover(appContext);
+                            handler.post(() -> {
+                                if (!isAdded()) return;
+                                discoverButton.setEnabled(true);
+                                discoverButton.setText("Найти компьютеры в локальной сети");
+                                if (candidates.isEmpty()) {
+                                    windowsAgentPreference.setSummary("Устройства RE:Vision в сети не найдены.");
+                                    Toast.makeText(appContext,
+                                            "Не найдено ни одного Windows Agent. Проверь, что ПК и очки находятся в одной частной Wi-Fi сети и служба запущена.",
+                                            Toast.LENGTH_LONG).show();
+                                    return;
+                                }
+                                String[] labels = new String[candidates.size()];
+                                for (int i = 0; i < candidates.size(); i++) {
+                                    org.json.JSONObject item = candidates.get(i);
+                                    String id = item.optString("deviceId", "");
+                                    labels[i] = item.optString("name", "Windows PC") + " · "
+                                            + item.optString("address", "") + " · ID "
+                                            + (id.length() > 8 ? id.substring(0, 8) : id);
+                                }
+                                new AlertDialog.Builder(requireContext())
+                                        .setTitle("Найдены компьютеры")
+                                        .setItems(labels, (dialog, index) -> {
+                                            org.json.JSONObject selected = candidates.get(index);
+                                            host.setText(selected.optString("baseUrl", ""));
+                                            windowsAgentPreference.setSummary("Найдено: "
+                                                    + selected.optString("name", "Windows PC")
+                                                    + " · " + selected.optString("baseUrl", ""));
+                                        })
+                                        .setNegativeButton(android.R.string.cancel, null)
+                                        .show();
+                            });
+                        } catch (Exception error) {
+                            String message = error.getMessage() == null
+                                    ? "Ошибка поиска устройств" : error.getMessage();
+                            handler.post(() -> {
+                                if (!isAdded()) return;
+                                discoverButton.setEnabled(true);
+                                discoverButton.setText("Найти компьютеры в локальной сети");
+                                windowsAgentPreference.setSummary("Ошибка поиска устройств.");
+                                Toast.makeText(appContext, message, Toast.LENGTH_LONG).show();
+                            });
+                        }
+                    }, "revision-agent-discovery").start();
+                });
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Подключить Windows Agent")
                         .setMessage("Адрес STUDIO PC подставляется из сохранённого сопряжения. Одноразовый код берётся из agent.pairing-code.txt только при новом сопряжении и не сохраняется в приложении. Используй только доверенную частную Wi-Fi сеть.")
