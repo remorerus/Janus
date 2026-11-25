@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $installDir = Join-Path $env:ProgramFiles 'REVision SSH Agent'
 $dataDir = Join-Path $env:ProgramData 'REVisionSshAgent'
 New-Item -ItemType Directory -Force -Path $installDir, $dataDir | Out-Null
-& icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+$installUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+& icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "$($installUser):(OI)(CI)M" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not set permissions on the SSH command catalog.' }
 $catalogPath = Join-Path $dataDir 'commands.json'
 $legacyCatalog = Join-Path $env:ProgramData 'WinSshAgent\commands.json'
