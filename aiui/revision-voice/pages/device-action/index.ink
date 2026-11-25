@@ -62,6 +62,15 @@ function decodeQueryValue(value) {
   return decoded;
 }
 
+function parseCommandAlternatives(value) {
+  try {
+    const parsed = JSON.parse(decodeQueryValue(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => String(item || '').trim())
+      .filter(item => item.length > 0 && item.length <= 160).slice(0, 5);
+  } catch (e) { return []; }
+}
+
 function request(path, method, token, data, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
@@ -504,7 +513,8 @@ export default {
             : windowsAction === 'launch'
               ? await request('/windows/execute', 'POST', token, {
                   phrase: decodeQueryValue(query && query.commandPhrase || '').trim(),
-                  deviceName: requestedName
+                  deviceName: requestedName,
+                  alternatives: parseCommandAlternatives(query && query.commandAlternatives)
                 })
               : windowsAction === 'ssh_launch'
                 ? await request('/windows/ssh/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
