@@ -91,6 +91,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
         return Results.BadRequest(new { error = "Некорректный список команд (максимум 100)." });
 
     var normalized = new List<AgentCommand>();
+    var registeredVoicePhrases = new HashSet<string>(StringComparer.Ordinal);
     foreach (var item in request.Commands)
     {
         var name = (item.Name ?? "").Trim();
@@ -98,10 +99,25 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
         var kind = (item.Kind ?? "").Trim().ToLowerInvariant();
         var target = (item.Target ?? "").Trim();
         var arguments = item.Arguments ?? "";
+        var aliases = (item.Aliases ?? new List<string>())
+            .Select(x => (x ?? "").Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
+            aliases.Count > 12 || aliases.Any(x => x.Length > 160) ||
             target.Length > 500 || arguments.Length > 500 ||
             kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
-            return Results.BadRequest(new { error = "Проверь название, голосовую фразу, тип команды и параметры." });
+            return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты распознавания (максимум 12), тип команды и параметры." });
+        var localVoicePhrases = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var spokenPhrase in new[] { phrase }.Concat(aliases))
+        {
+            var normalizedPhrase = NormalizeVoicePhrase(spokenPhrase);
+            if (normalizedPhrase.Length == 0) continue;
+            if (!localVoicePhrases.Add(normalizedPhrase)) continue;
+            if (registeredVoicePhrases.Contains(normalizedPhrase))
+                return Results.BadRequest(new { error = $"Голосовая фраза или её вариант уже используется другой командой: {spokenPhrase}" });
+        }
         if ((kind is "app" or "bat" or "close" or "restart") && target.Length == 0)
             return Results.BadRequest(new { error = "Для этой команды укажи полный путь к файлу." });
         if (kind == "media")
@@ -128,9 +144,12 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             else if (target.Length is < 1 or > 200)
                 return Results.BadRequest(new { error = "Для управления окном укажи имя процесса или часть заголовка окна." });
         }
-        if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
-            return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
-        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments));
+        foreach (var spokenPhrase in new[] { phrase }.Concat(aliases))
+        {
+            var normalizedPhrase = NormalizeVoicePhrase(spokenPhrase);
+            if (normalizedPhrase.Length > 0) registeredVoicePhrases.Add(normalizedPhrase);
+        }
+        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments, aliases));
     }
 
     CommandCatalog.Save(commandsPath, normalized);
