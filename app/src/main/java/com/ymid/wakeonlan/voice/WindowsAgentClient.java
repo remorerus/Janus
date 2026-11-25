@@ -72,8 +72,9 @@ public final class WindowsAgentClient {
                 } catch (Exception ignored) { }
             }
             String targetId = targetIdentity == null ? null : targetIdentity.optString("deviceId", null);
-            boolean sameDevice = existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
-                    && existingId.equals(targetId));
+            boolean sameDevice = existingId != null && !existingId.isEmpty()
+                    ? existingId.equals(targetId)
+                    : existingBase.equals(base);
             if (sameDevice) {
                 boolean agentPaired = false;
                 try {
