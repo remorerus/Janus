@@ -81,7 +81,7 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
         device.sshAddress = getDeviceSshAddress();
         device.sshPort = getDeviceSshPort();
         device.sshUsername = getDeviceSshUsername();
-        device.sshPassword = getDeviceSshPassword();
+        device.sshPassword = null;
         device.sshCommand = getDeviceSshCommand();
         device.shutdownOs = getSelectedOs(deviceSshOsSpinner);
         device.sshAuthType = getDeviceSshAuthType();
@@ -100,8 +100,8 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
                 && getDeviceWanAddressText().isEmpty() && getDeviceWanPort() == null
                 && getDeviceSecureOnPassword().isEmpty() && !getDeviceRemoteShutdownEnabled() &&
                 getDeviceSshAddress().isEmpty() && getDeviceSshPort() == -1 && getDeviceSshUsername().isEmpty() &&
-                getDeviceSshPassword().isEmpty() && getDeviceSshCommand().isEmpty() &&
-                "password".equals(getDeviceSshAuthType()) && getDeviceSshKeyAlias() == null
+                getDeviceSshCommand().isEmpty() &&
+                "key".equals(getDeviceSshAuthType()) && getDeviceSshKeyAlias() == null
                 && getDeviceGroupInputText().isEmpty();
     }
 }
