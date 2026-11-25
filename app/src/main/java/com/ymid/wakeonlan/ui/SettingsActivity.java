@@ -255,23 +255,85 @@ public class SettingsActivity extends AppCompatActivity {
                                 new AlertDialog.Builder(requireContext())
                                         .setTitle("Подключённые компьютеры · выбери по умолчанию")
                                         .setItems(labels, (dialog, index) -> {
-                                            String selectedId = devices.get(index).deviceId;
-                                            new Thread(() -> {
-                                                try {
-                                                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext)
-                                                            .setDefault(selectedId);
-                                                    handler.post(() -> {
-                                                        if (!isAdded()) return;
-                                                        windowsAgentPreference.setSummary("Компьютер по умолчанию: "
-                                                                + devices.get(index).displayName);
-                                                        Toast.makeText(appContext, "Компьютер по умолчанию изменён.", Toast.LENGTH_SHORT).show();
-                                                    });
-                                                } catch (Exception error) {
-                                                    handler.post(() -> Toast.makeText(appContext,
-                                                            error.getMessage() == null ? "Не удалось выбрать компьютер." : error.getMessage(),
-                                                            Toast.LENGTH_LONG).show());
-                                                }
-                                            }, "revision-device-default").start();
+                                            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity selectedDevice = devices.get(index);
+                                            new AlertDialog.Builder(requireContext())
+                                                    .setTitle(selectedDevice.displayName)
+                                                    .setItems(new String[]{"Сделать компьютером по умолчанию", "Изменить имя и голосовые имена"}, (actionDialog, actionIndex) -> {
+                                                        if (actionIndex == 0) {
+                                                            new Thread(() -> {
+                                                                try {
+                                                                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext)
+                                                                            .setDefault(selectedDevice.deviceId);
+                                                                    handler.post(() -> {
+                                                                        if (!isAdded()) return;
+                                                                        windowsAgentPreference.setSummary("Компьютер по умолчанию: " + selectedDevice.displayName);
+                                                                        Toast.makeText(appContext, "Компьютер по умолчанию изменён.", Toast.LENGTH_SHORT).show();
+                                                                    });
+                                                                } catch (Exception error) {
+                                                                    handler.post(() -> Toast.makeText(appContext,
+                                                                            error.getMessage() == null ? "Не удалось выбрать компьютер." : error.getMessage(),
+                                                                            Toast.LENGTH_LONG).show());
+                                                                }
+                                                            }, "revision-device-default").start();
+                                                        } else {
+                                                            LinearLayout editFields = new LinearLayout(requireContext());
+                                                            editFields.setOrientation(LinearLayout.VERTICAL);
+                                                            int editPad = (int) (20 * getResources().getDisplayMetrics().density);
+                                                            editFields.setPadding(editPad, editPad / 2, editPad, 0);
+                                                            EditText displayName = new EditText(requireContext());
+                                                            displayName.setSingleLine(true);
+                                                            displayName.setHint("Имя компьютера");
+                                                            displayName.setText(selectedDevice.displayName);
+                                                            EditText aliases = new EditText(requireContext());
+                                                            aliases.setSingleLine(false);
+                                                            aliases.setMinLines(2);
+                                                            aliases.setHint("Голосовые имена через запятую");
+                                                            try {
+                                                                org.json.JSONArray savedAliases = new org.json.JSONArray(selectedDevice.voiceAliasesJson);
+                                                                java.util.ArrayList<String> aliasValues = new java.util.ArrayList<>();
+                                                                for (int i = 0; i < savedAliases.length(); i++) aliasValues.add(savedAliases.optString(i));
+                                                                aliases.setText(android.text.TextUtils.join(", ", aliasValues));
+                                                            } catch (Exception ignored) { }
+                                                            editFields.addView(displayName);
+                                                            editFields.addView(aliases);
+                                                            new AlertDialog.Builder(requireContext())
+                                                                    .setTitle("Имя и голосовые псевдонимы")
+                                                                    .setView(editFields)
+                                                                    .setPositiveButton("Сохранить", (saveDialog, which) -> {
+                                                                        String newName = displayName.getText().toString().trim();
+                                                                        if (newName.isEmpty()) {
+                                                                            Toast.makeText(appContext, "Имя компьютера не может быть пустым.", Toast.LENGTH_LONG).show();
+                                                                            return;
+                                                                        }
+                                                                        org.json.JSONArray aliasJson = new org.json.JSONArray();
+                                                                        for (String alias : aliases.getText().toString().split(",")) {
+                                                                            String value = alias.trim();
+                                                                            if (!value.isEmpty()) aliasJson.put(value);
+                                                                        }
+                                                                        selectedDevice.displayName = newName;
+                                                                        selectedDevice.voiceAliasesJson = aliasJson.toString();
+                                                                        new Thread(() -> {
+                                                                            try {
+                                                                                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext).update(selectedDevice);
+                                                                                handler.post(() -> {
+                                                                                    if (isAdded()) {
+                                                                                        windowsAgentPreference.setSummary("Компьютер: " + newName);
+                                                                                        Toast.makeText(appContext, "Имя и голосовые псевдонимы сохранены.", Toast.LENGTH_SHORT).show();
+                                                                                    }
+                                                                                });
+                                                                            } catch (Exception error) {
+                                                                                handler.post(() -> Toast.makeText(appContext,
+                                                                                        error.getMessage() == null ? "Не удалось сохранить имя устройства." : error.getMessage(),
+                                                                                        Toast.LENGTH_LONG).show());
+                                                                            }
+                                                                        }, "revision-device-rename").start();
+                                                                    })
+                                                                    .setNegativeButton(android.R.string.cancel, null)
+                                                                    .show();
+                                                        }
+                                                    })
+                                                    .setNegativeButton(android.R.string.cancel, null)
+                                                    .show();
                                         })
                                         .setNegativeButton(android.R.string.cancel, null)
                                         .show();
