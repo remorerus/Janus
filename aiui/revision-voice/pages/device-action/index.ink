@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC: windows_status — проверить Windows Agent; windows_ssh_launch — выполнить команду из каталога Win SSH Agent через SSH-ключ; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_launch — запустить приложение или BAT по сохранённой голосовой фразе; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для команд Windows Agent требуется предварительное сопряжение Windows Agent в настройках RE:Vision. Для windows_ssh_launch требуется сохранённый SSH-ключ RE:Vision, включённый OpenSSH Server на STUDIO PC и установленный RE:Vision SSH Agent (отдельное приложение; не Windows Agent и не фоновая служба).",
+  "description": "Голосовое управление устройствами RE:Vision и Wi-Fi на очках Rokid. Для Wi-Fi строго различай команды: узнать текущую подключённую сеть или проверить Wi-Fi — wifi_status; перечислить видимые сети — wifi_list; открыть системные настройки Wi-Fi — wifi; подключиться или переключиться на названную сеть — wifi_connect. Никогда не открывай настройки Wi-Fi в ответ на вопрос о текущей сети или её статусе. Для устройств показывай сохранённые устройства, проверяй доступность, включай и выключай настроенные устройства. Команды STUDIO PC: windows_status — проверить Windows Agent; windows_ssh_launch — выполнить команду из каталога Win SSH Agent через SSH-ключ; windows_lock — заблокировать STUDIO PC штатной блокировкой Windows; windows_launch — запустить приложение или BAT по сохранённой голосовой фразе. Для windows_launch и windows_ssh_launch ОБЯЗАТЕЛЬНО передавай commandPhrase: точный исходный текст команды пользователя целиком, включая обращение «Ревижн», без перефразирования. Пример: пользователь сказал «Ревижн, открой АИМП» — commandPhrase должен быть «ревижн открой аимп»; windows_shutdown — выключить Windows; windows_restart — перезагрузить Windows; windows_cancel_shutdown — отменить запланированное выключение. Для команд Windows Agent требуется предварительное сопряжение Windows Agent в настройках RE:Vision. Для windows_ssh_launch требуется сохранённый SSH-ключ RE:Vision, включённый OpenSSH Server на STUDIO PC и установленный RE:Vision SSH Agent (отдельное приложение; не Windows Agent и не фоновая служба).",
   "schema": {
     "data": {
       "type": "object",
@@ -9,7 +9,7 @@
         "action": {
           "type": "string",
           "enum": ["list", "status", "wake", "shutdown", "wifi_enable", "wifi_disable", "wifi", "wifi_connect", "wifi_status", "wifi_list", "bridge_settings", "windows_status", "windows_lock", "windows_launch", "windows_ssh_launch", "windows_shutdown", "windows_restart", "windows_cancel_shutdown"],
-          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; bridge_settings — открыть меню восстановления Voice Bridge и системные настройки специальных возможностей RE:Vision. Фразы «открой настройки Ревижн», «открой меню Voice Bridge», «зайди в Voice Bridge», «перейди напрямую в Voice Bridge», «открой страницу Voice Bridge», «войс бридж», «проверь службу Ревижн», «дай доступ к Voice Bridge», «подключись к Voice Bridge», «восстанови Voice Bridge», «почему не работает Voice Bridge», «открой настройки голосового моста», «включи службу Ревижн» должны выбирать bridge_settings. При любом явном запросе пользователя перейти непосредственно к Voice Bridge выбирай bridge_settings, а не обычные настройки приложения и не действие Wi-Fi. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
+          "description": "Операция: list — показать устройства; status — проверить доступность устройства; wake — включить устройство; shutdown — выключить устройство; wifi_status — узнать, включён ли Wi-Fi и к какой сети подключены (в том числе вопросы «проверь Wi-Fi», «какая сеть подключена», «назови сеть»); wifi_list — перечислить видимые сети («покажи доступные сети»); wifi — только открыть системные настройки Wi-Fi по прямой просьбе «открой настройки Wi-Fi»; wifi_connect — подключиться или переключиться на сеть по имени (Студио = Studio, Локал нетворк = Local_Network_5G). wifi_enable — включить Wi-Fi; wifi_disable — выключить Wi-Fi; bridge_settings — открыть меню восстановления Voice Bridge и системные настройки специальных возможностей RE:Vision. Фразы «открой настройки Ревижн», «открой меню Voice Bridge», «зайди в Voice Bridge», «перейди напрямую в Voice Bridge», «открой страницу Voice Bridge», «войс бридж», «проверь службу Ревижн», «дай доступ к Voice Bridge», «подключись к Voice Bridge», «восстанови Voice Bridge», «почему не работает Voice Bridge», «открой настройки голосового моста», «включи службу Ревижн» должны выбирать bridge_settings. При любом явном запросе пользователя перейти непосредственно к Voice Bridge выбирай bridge_settings, а не обычные настройки приложения и не действие Wi-Fi. Для windows_launch и windows_ssh_launch ВСЕГДА передавай commandPhrase как точную исходную голосовую фразу целиком, включая «Ревижн», совпадающую с фразой из каталога; пример: «ревижн открой аимп». Не пропускай commandPhrase и не заменяй его названием приложения. Для включения/выключения обязательно выбирай отдельное действие wifi_enable или wifi_disable по смыслу фразы. Не используй wifi_toggle, если AIUI не передал enabled. Команды включения/выключения Wi-Fi никогда не направляй в wifi и не открывай настройки. Если пользователь явно говорит «выключи Wi-Fi», «отключи Wi-Fi», «выруби вай-фай» или «отключи вайфай», всегда выбирай wifi_disable и не задавай уточняющий вопрос. Если пользователь говорит «включи Wi-Fi» или «подключи Wi-Fi», всегда выбирай wifi_enable. Не выбирай wifi_toggle: это внутренний режим совместимости, он не является голосовым действием. Не используй wifi для проверки статуса. Для wifi_connect Android открывает системный выбор, где пользователь подтверждает сеть. Не утверждай, что подключение завершено, пока wifi_status не подтвердит SSID."
         },
         "networkName": {
           "type": "string",
@@ -25,7 +25,7 @@
         },
         "commandPhrase": {
           "type": "string",
-          "description": "Точная голосовая фраза из каталога Windows Agent или Win SSH Agent. Передавай исходную команду пользователя без перефразирования."
+          "description": "ОБЯЗАТЕЛЬНО для windows_launch и windows_ssh_launch. Полная исходная голосовая фраза пользователя, включая обращение «Ревижн», должна точно совпадать с фразой каталога Windows Agent или Win SSH Agent. Не сокращай до имени приложения, не перефразируй и не оставляй пустой. Пример: «Ревижн, открой АИМП» → «ревижн открой аимп»."
         }
       },
       "required": ["action"]
@@ -71,9 +71,21 @@ function request(path, method, token, data, timeoutMs) {
           }
           resolve(body);
         } else {
-          const error = new Error('HTTP ' + status);
+          let errorBody = res && res.data;
+          if (typeof errorBody === 'string') {
+            try { errorBody = JSON.parse(errorBody); } catch (e) {}
+          }
+          let errorDetail = '';
+          try {
+            errorDetail = errorBody == null ? '' :
+              (typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody));
+          } catch (e) {
+            errorDetail = String(errorBody || '');
+          }
+          const error = new Error('HTTP ' + status + (errorDetail ? ' — ' + errorDetail : ''));
           error.statusCode = status;
           error.stage = path;
+          error.responseBody = errorBody;
           reject(error);
         }
       },
@@ -435,13 +447,25 @@ export default {
 
       if (action.startsWith('windows_')) {
         const windowsAction = action.substring('windows_'.length);
+        const commandPhrase = String(query && query.commandPhrase || '').trim();
+        if ((windowsAction === 'launch' || windowsAction === 'ssh_launch') && !commandPhrase) {
+          const message = 'Не получил точную голосовую фразу для запуска приложения. Повтори команду полностью: «Ревижн, открой АИМП».';
+          const receivedFields = query && typeof query === 'object' ? Object.keys(query).join(', ') : 'параметры не переданы';
+          this.setData({
+            statusText: message,
+            detailText: 'AIUI не передал обязательный commandPhrase. Полученные поля: ' + (receivedFields || 'нет'),
+            busy: false
+          });
+          speakAndReturn(this, message);
+          return;
+        }
         try {
           const result = windowsAction === 'status'
             ? await request('/windows/status', 'GET', token, null)
             : windowsAction === 'launch'
-              ? await request('/windows/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim() })
+              ? await request('/windows/execute', 'POST', token, { phrase: commandPhrase })
               : windowsAction === 'ssh_launch'
-                ? await request('/windows/ssh/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
+                ? await request('/windows/ssh/execute', 'POST', token, { phrase: commandPhrase, deviceName: requestedName || 'STUDIO' })
                 : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
@@ -455,7 +479,11 @@ export default {
           speakAndReturn(this, message);
         } catch (error) {
           const message = windowsAction === 'ssh_launch' ? 'Не удалось выполнить команду через Win SSH Agent.' : 'Не удалось связаться с Windows Agent STUDIO PC.';
-          this.setData({ statusText: message, detailText: String(error && error.message || error), busy: false });
+          const errorDetail = String(error && error.message || error);
+          const phraseDetail = (windowsAction === 'launch' || windowsAction === 'ssh_launch')
+            ? 'Переданная фраза: «' + commandPhrase + '». '
+            : '';
+          this.setData({ statusText: message, detailText: phraseDetail + errorDetail, busy: false });
           speakAndReturn(this, message);
         }
         return;
