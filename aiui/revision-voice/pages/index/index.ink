@@ -29,20 +29,27 @@ export default {
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice wakeup received', { keyword });
-    if (keyword === 'clickAiAssist') {
-      // This is the glasses' temple-tap wakeup. Do not call preventDefault():
-      // Rokid's host must continue its built-in voice-input interaction.
-      this.setData({
-        statusText: 'Ревижн вызван касанием. Перехожу к голосовому вводу.',
-        detailText: 'Слушаю команду через штатный голосовой канал Rokid.'
-      });
-      return;
-    }
     this.setData({
-      statusText: 'Ревижн активен. Готов принять команду.',
-      detailText: keyword ? 'Источник пробуждения: ' + keyword : 'Получено событие голосового пробуждения.'
+      statusText: keyword === 'clickAiAssist'
+        ? 'Касание получено. Ожидаю голосовой ввод Rokid.'
+        : 'Голосовое пробуждение получено. Слушаю.',
+      detailText: keyword ? 'Источник: ' + keyword + '. Штатный голосовой канал Rokid не перехватывается.' : 'Штатный голосовой канал Rokid не перехватывается.'
     });
-    // Do not call preventDefault(): Rokid must retain its normal voice interaction flow.
+    // Intentionally do not call preventDefault(): Rokid must open its native
+    // voice-input flow after either a wake word or a temple tap.
+  },
+
+  onKeyUp(event) {
+    // Some Rokid firmware versions expose the temple tap as GlobalHook instead
+    // of clickAiAssist. Observe it as a compatibility fallback without blocking
+    // the host's normal voice interaction.
+    if (event && event.code === 'GlobalHook') {
+      console.log('[RE:Vision] temple tap received through GlobalHook');
+      this.setData({
+        statusText: 'Касание получено. Ожидаю голосовой ввод Rokid.',
+        detailText: 'Событие GlobalHook принято. Штатный голосовой канал не перехватывается.'
+      });
+    }
   }
 };
 </script>
