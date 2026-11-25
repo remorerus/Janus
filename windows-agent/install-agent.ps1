@@ -4,7 +4,6 @@ $serviceName = 'REVisionWindowsAgent'
 $installDir = Join-Path $env:ProgramFiles 'REVision Windows Agent'
 $dataDir = Join-Path $env:ProgramData 'RevisionWindowsAgent'
 $zip = Join-Path $PSScriptRoot 'Revision.WindowsAgent-win-x64.zip'
-if (-not (Test-Path $zip)) { throw "Publish archive not found: $zip" }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 $sshDataDir = Join-Path $env:ProgramData 'WinSshAgent'
@@ -14,7 +13,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not secure Win SSH Agent command directo
 # Only LocalSystem (service identity) and local Administrators may read agent secrets.
 & icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not secure agent data directory ACL.' }
-Expand-Archive -Path $zip -DestinationPath $installDir -Force
+if (Test-Path $zip) {
+    Expand-Archive -Path $zip -DestinationPath $installDir -Force
+} elseif (Test-Path (Join-Path $PSScriptRoot 'Revision.WindowsAgent.exe')) {
+    # The GitHub Actions artifact is already an archive of the publish folder.
+    # When users extract it, the executable is beside this installer, so copy
+    # the extracted publish files directly instead of requiring a second ZIP.
+    Get-ChildItem -Path $PSScriptRoot -File |
+        Where-Object { $_.Name -ne 'Revision.WindowsAgent-win-x64.zip' } |
+        Copy-Item -Destination $installDir -Force
+} else {
+    throw "Publish archive or extracted agent executable not found in $PSScriptRoot"
+}
 Copy-Item (Join-Path $PSScriptRoot 'run-ssh-command.ps1') (Join-Path $installDir 'run-ssh-command.ps1') -Force
 $exe = Join-Path $installDir 'Revision.WindowsAgent.exe'
 if (-not (Test-Path $exe)) { throw "Agent executable missing: $exe" }
