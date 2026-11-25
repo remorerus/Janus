@@ -11,6 +11,7 @@ on:
       - revision-windows-agent-apk-retry
       - revision-stability-polish-2026-11-24b
       - revision-ssh-key-only-2026-11-25
+      - revision-voicebridge-tap-ssh-manager-2026-11-25
     paths:
       - "app/**"
       - "*.gradle"
