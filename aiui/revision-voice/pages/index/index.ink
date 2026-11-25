@@ -318,12 +318,19 @@ export default {
     const compact = text.replace(/[^a-zа-я0-9]+/g, ' ').trim();
     let params = null;
 
+    // Device-list intent must win before generic Windows/SSH command fallbacks.
+    // A list request never carries a deviceName.
+    const listIntent = /(?:список|перечень) устройств|покажи(?:\s+мне)?\s+(?:все\s+)?устройства|какие\s+устройства|мои\s+устройства|какие\s+устройства\s+сохранены/i.test(compact);
+    if (listIntent) {
+      params = { action: 'list' };
+    }
+
     const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
     const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк|компьютер|комп|пк)/i.test(compact);
     const bridgePhrase = /(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн|проверь службу ревижн|служб\w* ревижн|дай доступ к voice bridge|подключись к voice bridge|восстанови voice bridge|почему не работает voice bridge|настройк\w* голосов\w* мост)/i.test(compact);
 
     // Voice Bridge maintenance commands take priority over generic device routing.
-    if (bridgePhrase) {
+    if (!params && bridgePhrase) {
       params = { action: 'bridge_settings' };
     }
 
@@ -374,6 +381,23 @@ export default {
       }
     }
 
+
+    // Explicit Windows Agent transport marker: remove it before matching the
+    // saved command phrase so "... AIMP через виндовс агент" uses the PC catalog.
+    if (!params && /(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/i.test(compact)) {
+      const marker = /(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/i;
+      const commandPhrase = transcript
+        .replace(marker, ' ')
+        .replace(/^\s*ревижн[\s,.:;-]*/i, '')
+        .replace(/^\s*выполни[\s,.:;-]*(?:команду[\s,.:;-]*)?/i, '')
+        .replace(/[.!?]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (commandPhrase) {
+        params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase };
+      }
+    }
+
     // Windows STUDIO PC commands. Bare "компьютер" refers to the paired STUDIO PC.
     if (!params && /(отмени|отменить|сними отмену).*(выключени|перезагрузк)|отмени выключение|отмени перезагрузку/i.test(compact)) {
       params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
@@ -400,26 +424,21 @@ export default {
     }
 
     if (!params) {
-      if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
-        params = { action: 'list' };
+      const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
+        : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
+        : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
+      if (verb) {
+        let deviceName = compact
+          .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
+          .replace(/^(компьютер|устройство|пк)\s+/i, '')
+          .replace(/\s+(пожалуйста|сейчас)$/i, '')
+          .trim();
+        params = { action: verb, deviceName };
       } else {
-        const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
-          : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
-          : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
-        if (verb) {
-          let deviceName = compact
-            .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
-            .replace(/^(компьютер|устройство|пк)\s+/i, '')
-            .replace(/\s+(пожалуйста|сейчас)$/i, '')
-            .trim();
-          params = { action: verb, deviceName };
-        } else {
-          // Any other phrase is a user-defined Windows Agent command candidate.
-          params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
-        }
+        // Any other phrase is a user-defined Windows Agent command candidate.
+        params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
       }
     }
-
     if (!params) {
       this.setData({
         statusText: 'Команду не удалось определить.',
