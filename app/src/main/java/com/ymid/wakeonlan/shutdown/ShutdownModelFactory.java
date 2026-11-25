@@ -17,27 +17,22 @@ public class ShutdownModelFactory {
         String address = getValueOrFallback(device.sshAddress, device.statusIp);
         int port = getSshPortOrFallback(device.sshPort);
         String username = getValueOrFallback(device.sshUsername, null);
-        String password = getValueOrFallback(device.sshPassword, null);
         String command = getValueOrFallback(device.sshCommand, null);
-        String authType = device.sshAuthType == null ? "password" : device.sshAuthType;
+        String authType = "key";
         String keyAlias = device.sshKeyAlias;
 
-        boolean keyAuth = "key".equalsIgnoreCase(authType);
 
-        if (allRequiredFieldsSet(shutdownEnabled, address, username, password, command, keyAuth, keyAlias)) {
-            return Optional.of(new ShutdownModel(address, port, username, password, command, authType, keyAlias));
+        if (allRequiredFieldsSet(shutdownEnabled, address, username, command, keyAlias)) {
+            return Optional.of(new ShutdownModel(address, port, username, null, command, authType, keyAlias));
         }
 
         return Optional.empty();
     }
 
     private static boolean allRequiredFieldsSet(boolean shutdownEnabled, String address, String username,
-                                                 String password, String command, boolean keyAuth, String keyAlias) {
-        if (!shutdownEnabled || address == null || username == null || command == null) return false;
-        if (keyAuth) {
-            return keyAlias != null && !keyAlias.isEmpty();
-        }
-        return password != null;
+                                                 String command, String keyAlias) {
+        return shutdownEnabled && address != null && username != null && command != null
+                && keyAlias != null && !keyAlias.isEmpty();
     }
 
     @Nullable
