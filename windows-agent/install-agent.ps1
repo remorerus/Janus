@@ -12,6 +12,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not secure Windows Agent data directory 
 # SSH catalog is written by the LocalSystem-hosted local manager and read by the SSH login user.
 & icacls.exe $sshDataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-11:(OI)(CI)RX' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not set Win SSH Agent catalog permissions.' }
+$legacyCatalog = Join-Path $env:ProgramData 'REVisionSshAgent\commands.json'
+$newCatalog = Join-Path $sshDataDir 'commands.json'
+if (-not (Test-Path $newCatalog) -and (Test-Path $legacyCatalog)) {
+    Copy-Item -LiteralPath $legacyCatalog -Destination $newCatalog
+    Write-Host 'Imported existing SSH command catalog into Win SSH Agent.' -ForegroundColor Green
+}
 if (Test-Path $zip) {
     Expand-Archive -Path $zip -DestinationPath $installDir -Force
 } elseif (Test-Path (Join-Path $PSScriptRoot 'Revision.WindowsAgent.exe')) {
