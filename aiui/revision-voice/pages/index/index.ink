@@ -30,12 +30,11 @@ export default {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice wakeup received', { keyword });
     if (keyword === 'clickAiAssist') {
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
+      // This is the glasses' temple-tap wakeup. Do not call preventDefault():
+      // Rokid's host must continue its built-in voice-input interaction.
       this.setData({
-        statusText: 'Ревижн вызван через AI Shortcut.',
-        detailText: 'Готов принять следующую команду.'
+        statusText: 'Ревижн вызван касанием. Перехожу к голосовому вводу.',
+        detailText: 'Слушаю команду через штатный голосовой канал Rokid.'
       });
       return;
     }
