@@ -20,6 +20,7 @@ jobs:
         run: |
           dotnet publish windows-agent/Revision.WindowsAgent/Revision.WindowsAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o windows-agent/publish
           Copy-Item windows-agent/install-agent.ps1 windows-agent/publish/
+          Copy-Item windows-agent/install-ssh-public-key.ps1 windows-agent/publish/
           Copy-Item windows-agent/uninstall-agent.ps1 windows-agent/publish/
           Copy-Item windows-agent/README.md windows-agent/publish/
           Copy-Item ssh-agent/run-ssh-command.ps1 windows-agent/publish/
