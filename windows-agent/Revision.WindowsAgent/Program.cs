@@ -507,6 +507,39 @@ static string NormalizeVoicePhrase(string value)
         .Where(t => t is not ("ревижн" or "ревижен" or "ревижин" or "ревиж" or "пожалуйста" or "агент"))
         .ToArray();
 
+    // Explicit spelling fallback: only decode letter names after the user says
+    // "по буквам"/"буквами". This avoids concatenating ordinary conversational words.
+    var spellingMarker = Array.FindIndex(rawTokens, t => t is "буквам" or "буквами" or "посимвольно");
+    if (spellingMarker >= 0)
+    {
+        var start = spellingMarker;
+        if (start > 0 && rawTokens[start - 1] == "по") start--;
+        var letterNames = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["а"]="а", ["бэ"]="б", ["вэ"]="в", ["гэ"]="г", ["дэ"]="д",
+            ["е"]="е", ["ё"]="е", ["же"]="ж", ["зэ"]="з", ["и"]="и",
+            ["й"]="й", ["и краткое"]="й", ["ка"]="к", ["эль"]="л", ["эм"]="м",
+            ["эн"]="н", ["о"]="о", ["пэ"]="п", ["эр"]="р", ["эс"]="с",
+            ["тэ"]="т", ["у"]="у", ["эф"]="ф", ["ха"]="х", ["цэ"]="ц",
+            ["че"]="ч", ["ша"]="ш", ["ща"]="щ", ["ы"]="ы", ["э"]="э",
+            ["ю"]="ю", ["я"]="я"
+        };
+        var spelled = rawTokens.Skip(spellingMarker + 1).ToArray();
+        var decoded = new StringBuilder();
+        var validSpelling = spelled.Length >= 2;
+        foreach (var letter in spelled)
+        {
+            if (!letterNames.TryGetValue(letter, out var decodedLetter))
+            {
+                validSpelling = false;
+                break;
+            }
+            decoded.Append(decodedLetter);
+        }
+        if (validSpelling)
+            rawTokens = rawTokens.Take(start).Append(decoded.ToString()).ToArray();
+    }
+
     var tokens = new List<string>();
     for (var i = 0; i < rawTokens.Length; i++)
     {
