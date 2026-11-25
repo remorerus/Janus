@@ -5,6 +5,12 @@ $dataDir = Join-Path $env:ProgramData 'REVisionSshAgent'
 New-Item -ItemType Directory -Force -Path $installDir, $dataDir | Out-Null
 & icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not set permissions on the SSH command catalog.' }
+$catalogPath = Join-Path $dataDir 'commands.json'
+$legacyCatalog = Join-Path $env:ProgramData 'WinSshAgent\commands.json'
+if (-not (Test-Path $catalogPath) -and (Test-Path $legacyCatalog)) {
+    Copy-Item $legacyCatalog $catalogPath
+    Write-Host 'Imported the existing Win SSH Agent command catalog.' -ForegroundColor Green
+}
 $exe = Join-Path $PSScriptRoot 'Revision.SshAgent.exe'
 $runner = Join-Path $PSScriptRoot 'run-ssh-command.ps1'
 if (-not (Test-Path $exe)) { throw "SSH Agent executable not found: $exe" }
