@@ -24,7 +24,7 @@ $wsh = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = Join-Path $installDir 'Revision.SshAgent.exe'
 $shortcut.WorkingDirectory = $installDir
-$shortcut.Description = 'Настройка пользовательских SSH-команд RE:Vision'
+$shortcut.Description = 'RE:Vision SSH command manager'
 $shortcut.Save()
 Write-Host 'RE:Vision SSH Agent installed.' -ForegroundColor Green
 Write-Host "Start Menu shortcut: $shortcutPath"
