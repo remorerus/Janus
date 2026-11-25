@@ -232,6 +232,11 @@ export default {
     busy: true
   },
 
+  onUnload() {
+    if (this.returnHomeTimer) clearTimeout(this.returnHomeTimer);
+    this.returnHomeTimer = null;
+  },
+
   openSettings() {
     wx.navigateTo({ url: '/pages/settings/index' });
   },
