@@ -48,11 +48,9 @@ export default {
   onKeyUp(event) {
     const code = String(event && event.code || '');
     if (code === 'GlobalHook') {
-      console.log('[RE:Vision] temple touch received');
-      if (event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      this.startListening();
+      // #95 behavior: observe the temple gesture without cancelling Rokid's
+      // native AI Assistant or starting a competing recognition session.
+      console.log('[RE:Vision] temple touch received; native action passed through');
     }
   },
 
