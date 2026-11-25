@@ -387,6 +387,21 @@ public final class WindowsAgentClient {
         return executePhrase(context, device.deviceId, phrase);
     }
 
+    public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase,
+            java.util.List<String> alternatives) throws Exception {
+        if (deviceName == null || deviceName.trim().isEmpty())
+            return executePhraseOnDefault(context, phrase, alternatives);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
+        try {
+            device = resolveRegisteredDevice(context, deviceName);
+        } catch (IllegalStateException notFound) {
+            if ("studio".equals(normalizeDeviceName(deviceName)) && isConfigured(context))
+                return executeLegacyPhrase(context, phrase, alternatives);
+            throw notFound;
+        }
+        return executePhrase(context, device.deviceId, phrase, alternatives);
+    }
+
     public static JSONObject commandForDeviceName(Context context, String deviceName, String action) throws Exception {
         if (deviceName == null || deviceName.trim().isEmpty()) {
             com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
