@@ -38,6 +38,7 @@ public final class WindowsAgentClient {
     private static final String PREFS = "revision_windows_agent";
     private static final String KEY_BASE = "base_url";
     private static final String KEY_SECRET = "client_secret";
+    private static final String KEY_DEVICE_ID = "device_id";
     private static final int TIMEOUT_MS = 5000;
 
     private WindowsAgentClient() {}
@@ -53,6 +54,37 @@ public final class WindowsAgentClient {
 
     public static JSONObject pair(Context context, String host, String code) throws Exception {
         String base = normalizeBase(host);
+        SharedPreferences existing = prefs(context);
+        String existingBase = existing.getString(KEY_BASE, null);
+        String existingSecret = existing.getString(KEY_SECRET, null);
+        JSONObject targetIdentity = null;
+        try { targetIdentity = request(base, "GET", "/v1/discovery", "", null); }
+        catch (Exception ignored) { }
+
+        // Preserve the current pairing. If the same physical PC received a new IP,
+        // its stable discovery ID lets us update only the endpoint without pairing again.
+        if (existingBase != null && existingSecret != null) {
+            String existingId = existing.getString(KEY_DEVICE_ID, null);
+            if (existingId == null) {
+                try {
+                    JSONObject oldIdentity = request(existingBase, "GET", "/v1/discovery", "", null);
+                    existingId = oldIdentity.optString("deviceId", null);
+                } catch (Exception ignored) { }
+            }
+            String targetId = targetIdentity == null ? null : targetIdentity.optString("deviceId", null);
+            if (existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
+                    && existingId.equals(targetId))) {
+                SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
+                if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
+                if (!keep.commit()) throw new IllegalStateException("Не удалось обновить адрес существующего устройства.");
+                JSONObject alreadyPaired = targetIdentity == null ? new JSONObject() : targetIdentity;
+                alreadyPaired.put("paired", true);
+                alreadyPaired.put("alreadyPaired", true);
+                return alreadyPaired;
+            }
+            throw new IllegalStateException("В RE:Vision уже сохранено сопряжение с другим Windows Agent. Существующий ключ сохранён и не будет заменён. Поддержка нескольких одновременно привязанных Windows Agent будет добавлена отдельным этапом.");
+        }
+
         if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
             throw new IllegalArgumentException("Код сопряжения должен содержать 8 шестнадцатеричных символов.");
         }
@@ -77,6 +109,10 @@ public final class WindowsAgentClient {
         SharedPreferences.Editor editor = prefs(context).edit();
         editor.putString(KEY_BASE, base);
         editor.putString(KEY_SECRET, secret);
+        if (targetIdentity != null) {
+            String deviceId = targetIdentity.optString("deviceId", "");
+            if (!deviceId.isEmpty()) editor.putString(KEY_DEVICE_ID, deviceId);
+        }
         if (!editor.commit()) throw new IllegalStateException("Не удалось сохранить защищённые данные сопряжения.");
         return response;
     }
