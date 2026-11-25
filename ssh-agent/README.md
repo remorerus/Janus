@@ -14,7 +14,7 @@
 
 1. RE:Vision на Android получает голосовую фразу.
 2. Android подключается напрямую к STUDIO по SSH с ключом из Android Keystore.
-3. SSH запускает `C:\Program Files\RE:Vision SSH Agent\run-ssh-command.ps1`.
+3. SSH запускает `C:\Program Files\REVision SSH Agent\run-ssh-command.ps1`.
 4. Runner находит точное совпадение фразы в локальном каталоге и исполняет сохранённую команду от имени SSH-пользователя.
 5. Процесс завершается. Отдельный сервер или постоянно работающий процесс RE:Vision SSH Agent не нужен.
 
