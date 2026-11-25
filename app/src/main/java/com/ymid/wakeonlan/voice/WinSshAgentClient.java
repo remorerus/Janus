@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 public final class WinSshAgentClient {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int COMMAND_TIMEOUT_MS = 15000;
-    private static final String RUNNER = "C:\\Program Files\\REVision Windows Agent\\run-ssh-command.ps1";
+    private static final String RUNNER = "C:\\Program Files\\RE:Vision SSH Agent\\run-ssh-command.ps1";
 
     private WinSshAgentClient() {}
 
