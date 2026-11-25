@@ -25,7 +25,7 @@
         },
         "commandPhrase": {
           "type": "string",
-          "description": "Точная голосовая фраза, сохранённая в каталоге Windows Agent, например «Запусти Mixxx». Передавай исходную команду пользователя без перефразирования."
+          "description": "Точная голосовая фраза из каталога Windows Agent или Win SSH Agent. Передавай исходную команду пользователя без перефразирования."
         }
       },
       "required": ["action"]
@@ -272,7 +272,9 @@ export default {
             ? await request('/windows/status', 'GET', token, null)
             : windowsAction === 'launch'
               ? await request('/windows/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim() })
-              : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
+              : windowsAction === 'ssh_launch'
+                ? await request('/windows/ssh/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
+                : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
           if (windowsAction === 'status') {
@@ -284,7 +286,7 @@ export default {
           this.setData({ statusText: message, detailText: windowsAction === 'ssh_launch' ? 'STUDIO PC · Win SSH Agent' : 'STUDIO PC · Windows Agent', resultText: message, busy: false });
           speak(message);
         } catch (error) {
-          const message = 'Не удалось связаться с Windows Agent STUDIO PC.';
+          const message = windowsAction === 'ssh_launch' ? 'Не удалось выполнить команду через Win SSH Agent.' : 'Не удалось связаться с Windows Agent STUDIO PC.';
           this.setData({ statusText: message, detailText: String(error && error.message || error), busy: false });
           speak(message);
         }
