@@ -53,10 +53,8 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
             deviceSshAddressInput.setRealText(device.sshAddress);
             deviceSshPortInput.setText(getSshPortFallback());
             deviceSshUsernameInput.setText(device.sshUsername);
-            deviceSshPasswordInput.setText(device.sshPassword);
             deviceSshCommandInput.setText(device.sshCommand);
             sshKeyAlias = device.sshKeyAlias;
-            setSshAuthType(device.sshAuthType);
             updateSshAuthUi();
             // set spinner to saved OS
             if (device.shutdownOs != null) {
@@ -121,7 +119,6 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
                 Strings.nullToEmpty(device.sshAddress).equals(getDeviceSshAddress()) &&
                 Objects.equals(device.sshPort == null ? -1 : device.sshPort, getDeviceSshPort()) &&
                 Strings.nullToEmpty(device.sshUsername).equals(getDeviceSshUsername()) &&
-                Strings.nullToEmpty(device.sshPassword).equals(getDeviceSshPassword()) &&
                 Strings.nullToEmpty(device.sshCommand).equals(getDeviceSshCommand()) &&
                 Strings.nullToEmpty(device.sshAuthType == null ? "password" : device.sshAuthType).equals(getDeviceSshAuthType()) &&
                 Strings.nullToEmpty(device.sshKeyAlias).equals(Strings.nullToEmpty(getDeviceSshKeyAlias())) &&
@@ -156,7 +153,7 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
         device.sshAddress = getDeviceSshAddress();
         device.sshPort = getDeviceSshPort();
         device.sshUsername = getDeviceSshUsername();
-        device.sshPassword = getDeviceSshPassword();
+        device.sshPassword = null;
         device.sshCommand = getDeviceSshCommand();
         device.shutdownOs = getSelectedOs(deviceSshOsSpinner);
         device.sshAuthType = getDeviceSshAuthType();
