@@ -130,19 +130,12 @@ function speak(text) {
 }
 
 
-function speakAndReturn(page, text) {
-  speak(text);
-  if (!page || page.keepActionPageOpen === true) return;
-
-  // The AIUI TTS API has no completion callback. Keep the response visible
-  // and audible, then return two navigation levels to the main voice screen.
-  const spokenText = String(text || '');
-  const delayMs = Math.max(2600, Math.min(9000, 1200 + spokenText.length * 105));
+function returnToMainVoicePage(page) {
+  if (!page || page.keepActionPageOpen === true || page.returningHome === true) return;
   if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
-  page.returnHomeTimer = setTimeout(() => {
-    page.returnHomeTimer = null;
-    if (page.keepActionPageOpen === true || page.returningHome === true) return;
-    page.returningHome = true;
+  page.returnHomeTimer = null;
+  page.returningHome = true;
+  try {
     wx.navigateBack({
       delta: 2,
       success() {
@@ -153,7 +146,114 @@ function speakAndReturn(page, text) {
         console.warn('[RE:Vision] could not return two steps to main voice input page', error);
       }
     });
+  } catch (error) {
+    page.returningHome = false;
+    console.warn('[RE:Vision] two-step return failed', error);
+  }
+}
+
+function scheduleFallbackReturn(page, spokenText) {
+  if (!page || page.keepActionPageOpen === true || page.returnHomeCancelled === true) return;
+  // Older AIUI runtimes expose playTTS() without an end event. Use a deliberately
+  // generous fallback delay there; current runtimes use the actual audio onEnded event.
+  const delayMs = Math.max(4000, Math.min(20000, 2200 + spokenText.length * 130));
+  if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
+  page.returnHomeTimer = setTimeout(() => {
+    page.returnHomeTimer = null;
+    returnToMainVoicePage(page);
   }, delayMs);
+}
+
+function speakAndReturn(page, text) {
+  const spokenText = String(text || '');
+  if (!page || page.keepActionPageOpen === true) {
+    speak(spokenText);
+    return;
+  }
+
+  if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
+  page.returnHomeTimer = null;
+  page.returnHomeCancelled = false;
+  page.returningHome = false;
+
+  // Prefer a task-backed player when the Rokid runtime exposes it. Unlike
+  // wx.speech.playTTS(), this gives us a real playback-ended event, so navigation
+  // cannot cut off a long spoken answer just because a guessed timer expired.
+  try {
+    if (typeof speechSynthesis !== 'undefined'
+        && typeof speechSynthesis.synthesize === 'function'
+        && typeof SpeechSynthesisUtterance !== 'undefined'
+        && typeof SpeechAudioPlayer === 'function') {
+      const taskPromise = speechSynthesis.synthesize(new SpeechSynthesisUtterance(spokenText));
+      Promise.resolve(taskPromise).then(task => {
+        if (page.returnHomeCancelled === true || page.keepActionPageOpen === true) {
+          try { task.abort(); } catch (ignored) { }
+          return;
+        }
+
+        let player;
+        try {
+          player = new SpeechAudioPlayer(task, { trackMode: 'hidden' });
+          if (!player.audioPlayer || typeof player.audioPlayer.onEnded !== 'function'
+              || typeof player.audioPlayer.onError !== 'function') {
+            throw new Error('SpeechAudioPlayer completion events are unavailable');
+          }
+        } catch (error) {
+          try { task.abort(); } catch (ignored) { }
+          console.warn('[RE:Vision] precise TTS playback unavailable; using compatibility playback', error);
+          speak(spokenText);
+          scheduleFallbackReturn(page, spokenText);
+          return;
+        }
+
+        page.returnHomeTask = task;
+        page.returnHomePlayer = player;
+        let settled = false;
+        const releasePlayer = () => {
+          if (page.returnHomePlayer === player) page.returnHomePlayer = null;
+          if (page.returnHomeTask === task) page.returnHomeTask = null;
+          try { player.destroy(); } catch (ignored) { }
+        };
+        player.audioPlayer.onEnded(() => {
+          if (settled) return;
+          settled = true;
+          releasePlayer();
+          returnToMainVoicePage(page);
+        });
+        player.audioPlayer.onError(error => {
+          if (settled) return;
+          settled = true;
+          releasePlayer();
+          if (page.returnHomeCancelled === true) return;
+          console.warn('[RE:Vision] TTS playback failed; using compatibility playback', error);
+          speak(spokenText);
+          scheduleFallbackReturn(page, spokenText);
+        });
+        task.finished.catch(error => {
+          if (settled) return;
+          settled = true;
+          releasePlayer();
+          if (page.returnHomeCancelled === true) return;
+          console.warn('[RE:Vision] TTS generation failed; using compatibility playback', error);
+          speak(spokenText);
+          scheduleFallbackReturn(page, spokenText);
+        });
+        player.play();
+      }).catch(error => {
+        if (page.returnHomeCancelled === true) return;
+        console.warn('[RE:Vision] TTS task creation failed; using compatibility playback', error);
+        speak(spokenText);
+        scheduleFallbackReturn(page, spokenText);
+      });
+      return;
+    }
+  } catch (error) {
+    console.warn('[RE:Vision] precise TTS setup failed; using compatibility playback', error);
+  }
+
+  // Compatibility path for older glasses firmware / AIUI runtimes.
+  speak(spokenText);
+  scheduleFallbackReturn(page, spokenText);
 }
 
 function resolveDevice(devices, requested) {
@@ -233,8 +333,17 @@ export default {
   },
 
   onUnload() {
+    this.returnHomeCancelled = true;
     if (this.returnHomeTimer) clearTimeout(this.returnHomeTimer);
     this.returnHomeTimer = null;
+    if (this.returnHomeTask && typeof this.returnHomeTask.abort === 'function') {
+      try { this.returnHomeTask.abort(); } catch (ignored) { }
+    }
+    this.returnHomeTask = null;
+    if (this.returnHomePlayer && typeof this.returnHomePlayer.destroy === 'function') {
+      try { this.returnHomePlayer.destroy(); } catch (ignored) { }
+    }
+    this.returnHomePlayer = null;
   },
 
   openSettings() {
