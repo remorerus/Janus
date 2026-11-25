@@ -1,6 +1,8 @@
 buildscript {
     repositories {
         google()
+        // Prefer Google's Maven Central mirror in CI to reduce Maven Central 429 throttling.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
     }
     dependencies {
@@ -13,6 +15,8 @@ buildscript {
 
 allprojects {
     repositories {
+        // Keep Maven Central as fallback if the mirror has not synced a newly published artifact.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
         google()
     }
