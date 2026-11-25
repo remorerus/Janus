@@ -595,8 +595,21 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 JsonObject requestBody = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
                 String phrase = requestBody.has("phrase") ? requestBody.get("phrase").getAsString() : "";
                 String deviceName = requestBody.has("deviceName") ? requestBody.get("deviceName").getAsString() : "";
+                java.util.ArrayList<String> alternatives = new java.util.ArrayList<>();
+                if (requestBody.has("alternatives") && requestBody.get("alternatives").isJsonArray()) {
+                    for (com.google.gson.JsonElement item : requestBody.getAsJsonArray("alternatives")) {
+                        if (item != null && item.isJsonPrimitive()) {
+                            String candidate = item.getAsString().trim();
+                            if (!candidate.isEmpty() && candidate.length() <= 160
+                                    && !candidate.equalsIgnoreCase(phrase) && alternatives.size() < 4
+                                    && !alternatives.contains(candidate)) {
+                                alternatives.add(candidate);
+                            }
+                        }
+                    }
+                }
                 JsonObject response = JsonParser.parseString(
-                        WindowsAgentClient.executePhraseForDeviceName(this, deviceName, phrase).toString()).getAsJsonObject();
+                        WindowsAgentClient.executePhraseForDeviceName(this, deviceName, phrase, alternatives).toString()).getAsJsonObject();
                 response.addProperty("ok", true);
                 writeResponse(socket.getOutputStream(), 200, response);
             } catch (Exception e) {
