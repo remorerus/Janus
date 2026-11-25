@@ -26,6 +26,12 @@ builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Pro
 var app = builder.Build();
 var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
 
+app.MapGet("/", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    return Results.Redirect("/manager");
+});
+
 app.MapGet("/manager", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
@@ -132,7 +138,12 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 });
 
 
-app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
+app.MapGet("/v1/status", () => Results.Json(new {
+    name = config.DeviceName,
+    deviceId = config.DeviceId,
+    version = "0.2.0-test",
+    paired = config.ClientSecret is not null
+}));
 
 // Read-only LAN discovery. This endpoint and UDP advertisement expose no secrets.
 app.MapGet("/v1/discovery", () => Results.Json(new {
