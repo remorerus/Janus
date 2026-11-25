@@ -314,29 +314,83 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
     catch { return Results.BadRequest(new { error = "Invalid command request" }); }
     var phrase = (request?.Phrase ?? "").Trim();
     if (phrase.Length is < 1 or > 160) return Results.BadRequest(new { error = "Voice phrase is required" });
+    var hypotheses = new List<string> { phrase };
+    if (request?.Alternatives is not null)
+    {
+        foreach (var candidate in request.Alternatives)
+        {
+            var value = (candidate ?? "").Trim();
+            if (value.Length is < 1 or > 160 || hypotheses.Count >= 5) continue;
+            if (!hypotheses.Contains(value, StringComparer.OrdinalIgnoreCase)) hypotheses.Add(value);
+        }
+    }
+
     var catalog = CommandCatalog.Load(commandsPath);
-    var command = catalog.FirstOrDefault(x =>
-        string.Equals(NormalizeVoicePhrase(x.Phrase), NormalizeVoicePhrase(phrase), StringComparison.Ordinal));
+    AgentCommand? command = null;
     var matchedBy = "exact";
+    var matchedHeard = phrase;
+
+    // Try every ASR hypothesis against every saved phrase and its explicit aliases.
+    // A primary exact match wins; ASR alternatives are considered in ranked order.
+    for (var hypothesisIndex = 0; hypothesisIndex < hypotheses.Count; hypothesisIndex++)
+    {
+        var heard = hypotheses[hypothesisIndex];
+        var exactMatches = catalog.Where(x => GetCommandPhrases(x).Any(saved =>
+            string.Equals(NormalizeVoicePhrase(saved), NormalizeVoicePhrase(heard), StringComparison.Ordinal)))
+            .ToList();
+        if (exactMatches.Count > 1)
+            return Results.Conflict(new { error = "Несколько команд совпали с распознанной фразой; ничего не выполнено.",
+                heard, candidates = exactMatches.Select(x => x.Name).ToArray() });
+        if (exactMatches.Count == 1)
+        {
+            command = exactMatches[0];
+            matchedHeard = heard;
+            var canonicalMatch = string.Equals(NormalizeVoicePhrase(command.Phrase),
+                NormalizeVoicePhrase(heard), StringComparison.Ordinal);
+            matchedBy = hypothesisIndex > 0 ? "alternative-exact" : (canonicalMatch ? "exact" : "alias");
+            break;
+        }
+    }
+
+    // When no exact match exists, use a conservative distance check over all
+    // hypotheses and aliases. Ambiguous results are never executed automatically.
     if (command is null)
     {
-        var candidates = catalog
-            .Select(x => new { Command = x, Score = VoicePhraseDistance(x.Phrase, phrase) })
-            .Where(x => x.Score < 1000)
-            .OrderBy(x => x.Score)
-            .ToList();
+        var candidates = catalog.Select(item =>
+        {
+            var best = GetCommandPhrases(item)
+                .SelectMany(saved => hypotheses.Select((heard, index) => new
+                {
+                    Heard = heard,
+                    HypothesisIndex = index,
+                    Score = VoicePhraseDistance(saved, heard)
+                }))
+                .OrderBy(x => x.Score)
+                .ThenBy(x => x.HypothesisIndex)
+                .FirstOrDefault();
+            return new { Command = item, Best = best };
+        })
+        .Where(x => x.Best is not null && x.Best.Score < 1000)
+        .OrderBy(x => x.Best!.Score)
+        .ThenBy(x => x.Best!.HypothesisIndex)
+        .ToList();
+
         if (candidates.Count == 0)
-            return Results.NotFound(new { error = "No matching command in the local catalog", heard = phrase });
-        var bestScore = candidates[0].Score;
-        var best = candidates.Where(x => x.Score == bestScore).ToList();
+            return Results.NotFound(new { error = "No matching command in the local catalog", heard = phrase,
+                alternatives = hypotheses.Skip(1).ToArray() });
+        var bestScore = candidates[0].Best!.Score;
+        var best = candidates.Where(x => x.Best!.Score == bestScore).ToList();
         if (best.Count != 1)
             return Results.Conflict(new { error = "Several commands sound similar; no action was executed.", heard = phrase,
                 candidates = best.Select(x => x.Command.Name).ToArray() });
         command = best[0].Command;
-        matchedBy = "tolerant";
+        matchedHeard = best[0].Best!.Heard;
+        matchedBy = best[0].Best!.HypothesisIndex > 0 ? "alternative-tolerant" : "tolerant";
     }
+
     var launched = LaunchCatalogCommand(command);
-    return Results.Json(new { accepted = launched, command = command.Name, kind = command.Kind, matchedBy });
+    return Results.Json(new { accepted = launched, command = command.Name, kind = command.Kind,
+        matchedBy, matchedHeard, alternativesConsidered = hypotheses.Count });
 });
 
 app.MapPost("/v1/unpair", (HttpContext context) =>
@@ -444,6 +498,14 @@ static string NormalizeVoicePhrase(string value)
     }
 
     return string.Join(" ", tokens);
+}
+
+static IEnumerable<string> GetCommandPhrases(AgentCommand command)
+{
+    yield return command.Phrase;
+    if (command.Aliases is not null)
+        foreach (var alias in command.Aliases)
+            if (!string.IsNullOrWhiteSpace(alias)) yield return alias;
 }
 
 static int VoicePhraseDistance(string expected, string heard)
@@ -1038,12 +1100,14 @@ sealed class SshCommandCatalog
     }
 }
 
-sealed record ExecuteRequest(string? Phrase);
+sealed record ExecuteRequest(string? Phrase, List<string>? Alternatives = null);
 sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
-sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments);
-sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, string Target, string Arguments);
+sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments,
+    List<string>? Aliases = null);
+sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, string Target, string Arguments,
+    List<string>? Aliases = null);
 
 sealed class CommandCatalog
 {
