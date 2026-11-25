@@ -33,14 +33,15 @@ export default {
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice/touch wakeup received', { keyword });
-    // Preserve the native AI Assistant on the temple tap. This is the #95
-    // behavior: clickAiAssist belongs to Rokid's host voice UI, not a second
-    // competing microphone session inside the agent.
+    // A single temple tap is the agent's push-to-talk trigger. Intercept the
+    // host shortcut so Rokid does not require a press-and-hold gesture.
     if (keyword === 'clickAiAssist') {
-      console.log('[RE:Vision] native AI Assistant wakeup passed through');
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      console.log('[RE:Vision] single-tap AI Assistant shortcut intercepted; starting Russian recognition');
+      this.startListening();
       return;
     }
-    // For explicit non-touch wake words, use the local Russian recognition route.
+    // Explicit non-touch wake words use the same local Russian recognition route.
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
     this.startListening();
   },
@@ -48,9 +49,11 @@ export default {
   onKeyUp(event) {
     const code = String(event && event.code || '');
     if (code === 'GlobalHook') {
-      // #95 behavior: observe the temple gesture without cancelling Rokid's
-      // native AI Assistant or starting a competing recognition session.
-      console.log('[RE:Vision] temple touch received; native action passed through');
+      // Some firmware versions report the same single tap as GlobalHook.
+      // Prevent the native long-press assistant and start recognition once.
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      console.log('[RE:Vision] single temple tap received through GlobalHook');
+      this.startListening();
     }
   },
 
