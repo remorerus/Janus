@@ -328,7 +328,7 @@ export default {
       params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
     }
 
-    } else if (!params && /(запусти|запустить|открой|открыть|закрой|закрыть|перезапусти|перезапустить|переключись|переключить|сверни|свернуть|разверни|развернуть|восстанови|восстановить)/i.test(compact)) {
+    if (!params && /(запусти|запустить|открой|открыть|закрой|закрыть|перезапусти|перезапустить|переключись|переключить|сверни|свернуть|разверни|развернуть|восстанови|восстановить)/i.test(compact)) {
       // User-defined commands live in the Windows Agent catalog. Forward the
       // recognized phrase unchanged so the Windows Agent can match it safely.
       params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
