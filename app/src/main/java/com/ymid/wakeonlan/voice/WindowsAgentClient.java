@@ -245,6 +245,58 @@ public final class WindowsAgentClient {
         return result;
     }
 
+    /** Executes an allow-listed command on a specifically selected paired computer. */
+    public static JSONObject command(Context context, String deviceId, String action) throws Exception {
+        if (deviceId == null || deviceId.trim().isEmpty())
+            throw new IllegalArgumentException("Не указан ID компьютера.");
+        if (!action.matches("shutdown|restart|cancel-shutdown|lock"))
+            throw new IllegalArgumentException("Недопустимая команда Windows Agent.");
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).get(deviceId);
+        if (device == null || !device.enabled)
+            throw new IllegalStateException("Компьютер не найден или отключён в списке устройств.");
+        return authenticatedRequest(device.baseUrl, device.clientSecret,
+                "/v1/command/" + action, "");
+    }
+
+    /** Executes a voice phrase on the selected paired computer, never on an arbitrary LAN host. */
+    public static JSONObject executePhrase(Context context, String deviceId, String phrase) throws Exception {
+        if (deviceId == null || deviceId.trim().isEmpty())
+            throw new IllegalArgumentException("Не указан ID компьютера.");
+        if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160)
+            throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).get(deviceId);
+        if (device == null || !device.enabled)
+            throw new IllegalStateException("Компьютер не найден или отключён в списке устройств.");
+        JSONObject body = new JSONObject();
+        body.put("phrase", phrase.trim());
+        return authenticatedRequest(device.baseUrl, device.clientSecret,
+                "/v1/command/execute", body.toString());
+    }
+
+    /** Executes on the configured default paired device; legacy STUDIO pairing remains supported. */
+    public static JSONObject executePhraseOnDefault(Context context, String phrase) throws Exception {
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+        if (device != null) return executePhrase(context, device.deviceId, phrase);
+        return executePhrase(context, phrase);
+    }
+
+    private static JSONObject authenticatedRequest(String base, String secret, String path, String body)
+            throws Exception {
+        long timestamp = System.currentTimeMillis() / 1000L;
+        byte[] nonceBytes = new byte[16];
+        new SecureRandom().nextBytes(nonceBytes);
+        String nonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP | Base64.URL_SAFE);
+        String payload = "POST\\n" + path + "\\n" + timestamp + "\\n" + nonce + "\\n" + body;
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
+        String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
+        return request(base, "POST", path, body,
+                new String[]{Long.toString(timestamp), nonce, signature});
+    }
+
     public static JSONObject executePhrase(Context context, String phrase) throws Exception {
         if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160) {
             throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
