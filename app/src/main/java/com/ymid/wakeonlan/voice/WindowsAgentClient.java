@@ -72,8 +72,8 @@ public final class WindowsAgentClient {
                 } catch (Exception ignored) { }
             }
             String targetId = targetIdentity == null ? null : targetIdentity.optString("deviceId", null);
-            if (existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
-                    && existingId.equals(targetId))) {
+            if (targetIdentity != null && (existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
+                    && existingId.equals(targetId)))) {
                 SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
                 if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
                 if (!keep.commit()) throw new IllegalStateException("Не удалось обновить адрес существующего устройства.");
