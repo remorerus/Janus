@@ -18,11 +18,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-/** Executes a saved phrase through Windows OpenSSH and the standalone RE:Vision SSH Agent runner. */
+/** Executes a saved phrase through Windows OpenSSH and the Win SSH Agent command runner. */
 public final class WinSshAgentClient {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int COMMAND_TIMEOUT_MS = 15000;
-    private static final String RUNNER = "C:\\Program Files\\REVision SSH Agent\\run-ssh-command.ps1";
+    private static final String RUNNER = "C:\\Program Files\\REVision Windows Agent\\run-ssh-command.ps1";
 
     private WinSshAgentClient() {}
 
