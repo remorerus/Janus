@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн",
-  "description": "Стартовая страница голосового агента Ревижн. При запуске без параметров показывает готовность агента. При голосовом или сенсорном пробуждении принимает событие Rokid AIUI и не блокирует стандартную обработку голосового взаимодействия."
+  "description": "Стартовая страница голосового агента Ревижн. При голосовом пробуждении запускает собственный короткий цикл распознавания русской речи и направляет распознанные команды в существующую страницу управления устройствами и Wi-Fi. Также остаётся точкой входа для обычного запуска агента."
 }
 </script>
 
@@ -9,47 +9,367 @@
 export default {
   data: {
     title: 'Ревижн',
-    statusText: 'Ревижн готов. Скажи команду.',
-    detailText: 'Голосовое управление устройствами и Wi-Fi.'
+    statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
+    detailText: 'После удержания начнётся одноразовое прослушивание.',
+    transcript: ''
   },
 
   onLoad(query) {
+    this.pageLoadedAt = Date.now();
+    this.voiceListening = false;
+    this.voiceHandled = false;
+    this.voiceSpeechStarted = false;
+    this.commandNavigating = false;
     const keys = query && typeof query === 'object' ? Object.keys(query) : [];
     console.log('[RE:Vision] startup page loaded', { queryKeys: keys });
     this.setData({
-      statusText: 'Ревижн активен. Готов принять команду.',
-      detailText: 'Ожидаю команду через штатный голосовой канал Rokid.'
+      statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
+      detailText: 'Короткое касание не запускает команды.',
+      transcript: ''
     });
   },
 
   onShow() {
-    console.log('[RE:Vision] startup page shown');
+    if (!this.voiceListening) {
+      this.setData({
+        statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
+        detailText: 'После одной команды Ревижн вернётся сюда.',
+        transcript: ''
+      });
+    }
   },
 
   onVoiceWakeup(event) {
     const keyword = String(event && event.keyword || '');
-    console.log('[RE:Vision] voice wakeup received', { keyword });
+    console.log('[RE:Vision] wakeup ignored outside two-finger hold', { keyword });
+    // A normal tap or a normal Rokid wake word must not start RE:Vision commands.
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
     this.setData({
       statusText: keyword === 'clickAiAssist'
-        ? 'Касание получено. Ожидаю голосовой ввод Rokid.'
-        : 'Голосовое пробуждение получено. Слушаю.',
-      detailText: keyword ? 'Источник: ' + keyword + '. Голосовой ввод Rokid открыт — скажи команду для Ревижн.' : 'Голосовой ввод Rokid открыт — скажи команду для Ревижн.'
+        ? 'Обычное касание не запускает Ревижн.'
+        : 'Ожидаю специальный вызов Ревижна.',
+      detailText: 'Для команд удерживай сенсор дужки двумя пальцами.'
     });
-    // Intentionally do not call preventDefault(): Rokid must open its native
-    // voice-input flow after either a wake word or a temple tap.
+  },
+
+  onKeyDown(event) {
+    if (event && event.code === 'GlobalHook') {
+      this.globalHookPressedAt = Date.now();
+      console.log('[RE:Vision] temple GlobalHook down');
+    }
   },
 
   onKeyUp(event) {
-    // Some Rokid firmware versions expose the temple tap as GlobalHook instead
-    // of clickAiAssist. Observe it as a compatibility fallback without blocking
-    // the host's normal voice interaction.
-    if (event && event.code === 'GlobalHook') {
-      console.log('[RE:Vision] temple tap received through GlobalHook');
+    if (!event || event.code !== 'GlobalHook') return;
+    const startedAt = Number(this.globalHookPressedAt || 0);
+    this.globalHookPressedAt = 0;
+    const heldMs = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+    const startupRelease = !startedAt && (Date.now() - Number(this.pageLoadedAt || 0) < 1200);
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+
+    // The first release may arrive after AIUI has opened the page and therefore
+    // after its key-down event. Treat only that immediate startup release as
+    // the release of the launch gesture. Normal short taps remain ignored.
+    if (!startupRelease && heldMs < 700) {
+      console.log('[RE:Vision] short temple tap ignored', { heldMs });
       this.setData({
-        statusText: 'Касание получено. Ожидаю голосовой ввод Rokid.',
-        detailText: 'Касание кнопки принято. Для голосовой команды дождись запуска голосового ввода Rokid.'
+        statusText: 'Короткое касание проигнорировано.',
+        detailText: 'Удерживай сенсор двумя пальцами для вызова Ревижна.'
       });
+      return;
     }
+    if (this.voiceListening) return;
+    console.log('[RE:Vision] hold accepted; starting one-shot Russian recognition', { heldMs, startupRelease });
+    this.startListening();
+  },
+
+  onUnload() {
+    this.clearVoiceTimers();
+    const recognition = this.recognition;
+    this.recognition = null;
+    this.voiceListening = false;
+    if (recognition && typeof recognition.abort === 'function') {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try { recognition.abort(); } catch (e) {}
+    }
+  },
+
+  clearVoiceTimers() {
+    ['noSpeechTimer', 'speechEndTimer', 'hardStopTimer', 'resetTimer'].forEach(key => {
+      if (this[key]) clearTimeout(this[key]);
+      this[key] = null;
+    });
+  },
+
+  finishListening(message, detail, recognition) {
+    if (this.voiceHandled) return;
+    this.voiceHandled = true;
+    this.clearVoiceTimers();
+    this.voiceListening = false;
+    if (this.recognition === recognition) this.recognition = null;
+    if (recognition && typeof recognition.abort === 'function') {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try { recognition.abort(); } catch (e) {}
+    }
+    this.setData({ statusText: message, detailText: detail });
+  },
+
+  startListening() {
+    if (this.voiceListening) return;
+    if (typeof SpeechRecognition === 'undefined') {
+      this.setData({
+        statusText: 'Распознавание речи недоступно.',
+        detailText: 'В этой версии AIUI нет SpeechRecognition.'
+      });
+      return;
+    }
+
+    this.clearVoiceTimers();
+    this.voiceHandled = false;
+    this.voiceSpeechStarted = false;
+    this.voiceListening = true;
+    this.setData({
+      statusText: 'Слушаю команду…',
+      detailText: 'Скажи одну команду по-русски.',
+      transcript: ''
+    });
+
+    let recognition;
+    try {
+      recognition = new SpeechRecognition();
+      this.recognition = recognition;
+      recognition.lang = 'ru-RU';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        this.setData({ statusText: 'Микрофон включён. Слушаю…' });
+      };
+
+      recognition.onaudiostart = () => {
+        this.setData({ statusText: 'Микрофон активен. Говори…' });
+      };
+
+      recognition.onspeechstart = () => {
+        this.voiceSpeechStarted = true;
+        if (this.noSpeechTimer) clearTimeout(this.noSpeechTimer);
+        this.noSpeechTimer = null;
+        this.setData({ statusText: 'Распознаю речь…' });
+      };
+
+      recognition.onspeechend = () => {
+        if (this.speechEndTimer) clearTimeout(this.speechEndTimer);
+        this.speechEndTimer = setTimeout(() => {
+          if (!this.voiceHandled && this.recognition === recognition) {
+            try { recognition.stop(); } catch (e) {}
+          }
+        }, 1800);
+      };
+
+      recognition.onresult = (resultEvent) => {
+        if (this.voiceHandled) return;
+        let interim = '';
+        let finalText = '';
+        const results = resultEvent && resultEvent.results;
+        if (!results) return;
+        const startIndex = Number(resultEvent.resultIndex || 0);
+        for (let i = startIndex; i < results.length; i++) {
+          const result = results[i];
+          const text = String(result && result[0] && result[0].transcript || '').trim();
+          if (!text) continue;
+          if (result.isFinal) finalText = text;
+          else interim = text;
+        }
+        if (finalText) {
+          this.voiceHandled = true;
+          this.clearVoiceTimers();
+          this.voiceListening = false;
+          this.recognition = null;
+          try { recognition.stop(); } catch (e) {}
+          console.log('[RE:Vision] final Russian transcript', finalText);
+          this.setData({
+            statusText: 'Команда распознана. Выполняю…',
+            detailText: 'Распознано:',
+            transcript: finalText
+          });
+          this.commandNavigating = true;
+          this.routeVoiceCommand(finalText);
+          return;
+        }
+        if (interim) {
+          this.setData({
+            statusText: 'Распознаю…',
+            detailText: 'Пока услышано:',
+            transcript: interim
+          });
+        }
+      };
+
+      recognition.onerror = (error) => {
+        const code = String(error && error.error || 'unknown');
+        console.warn('[RE:Vision] SpeechRecognition error', { code, message: error && error.message });
+        const message = code === 'no-speech' ? 'Не услышал речь.' : 'Не удалось распознать команду.';
+        const detail = code === 'not-allowed' || code === 'service-not-allowed'
+          ? 'Нет разрешения на микрофон. Проверь RECORD_AUDIO и разрешение AIUI.'
+          : 'Сеанс прослушивания закрыт. Для повтора снова удерживай сенсор двумя пальцами.';
+        this.finishListening(message, detail, recognition);
+      };
+
+      recognition.onend = () => {
+        if (this.voiceHandled) return;
+        this.clearVoiceTimers();
+        this.voiceListening = false;
+        if (this.recognition === recognition) this.recognition = null;
+        this.setData({
+          statusText: this.voiceSpeechStarted ? 'Не удалось получить фразу.' : 'Время ожидания истекло.',
+          detailText: 'Прослушивание закрыто. Для новой команды снова удерживай сенсор двумя пальцами.'
+        });
+      };
+
+      this.noSpeechTimer = setTimeout(() => {
+        if (!this.voiceSpeechStarted && !this.voiceHandled) {
+          this.finishListening('Время ожидания истекло.', 'Ничего не услышал. Прослушивание закрыто.', recognition);
+        }
+      }, 8000);
+      this.hardStopTimer = setTimeout(() => {
+        if (!this.voiceHandled) {
+          this.finishListening('Время прослушивания завершено.', 'Сеанс закрыт. Для новой команды снова удерживай сенсор двумя пальцами.', recognition);
+        }
+      }, 25000);
+
+      recognition.start();
+    } catch (error) {
+      this.finishListening(
+        'Не удалось запустить прослушивание.',
+        String(error && error.message || error),
+        recognition
+      );
+    }
+  },
+
+  routeVoiceCommand(transcript) {
+    const text = String(transcript || '').toLowerCase().replace(/ё/g, 'е').trim();
+    const compact = text.replace(/[^a-zа-я0-9]+/g, ' ').trim();
+    let params = null;
+
+    const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
+    const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк|компьютер|комп|пк)/i.test(compact);
+    const bridgePhrase = /(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн|проверь службу ревижн|служб\w* ревижн|дай доступ к voice bridge|подключись к voice bridge|восстанови voice bridge|почему не работает voice bridge|настройк\w* голосов\w* мост)/i.test(compact);
+
+    // Voice Bridge maintenance commands take priority over generic device routing.
+    if (bridgePhrase) {
+      params = { action: 'bridge_settings' };
+    }
+
+    // Wi-Fi radio controls are explicit independent actions, never Settings or a toggle intent.
+    if (!params && hasWifi && /(выключи|выключить|отключи|отключить|выруби)/i.test(compact)) {
+      params = { action: 'wifi_disable' };
+    } else if (!params && hasWifi && /(включи|включить|активируй|подними)/i.test(compact)) {
+      params = { action: 'wifi_enable' };
+    } else if (!params && hasWifi && /(какая сеть|какую сеть|проверь|статус|состояни|назови)/i.test(compact)) {
+      params = { action: 'wifi_status' };
+    } else if (!params && hasWifi && /(список|покажи|доступн|видим)/i.test(compact)) {
+      params = { action: 'wifi_list' };
+    } else if (!params && hasWifi && /(открой|открыть|настройк)/i.test(compact)) {
+      params = { action: 'wifi' };
+    }
+
+    // Named network shortcuts: the user commonly says only "подключись к Студио".
+    if (!params && /(подключись|переключись|соединись|подключи|перейди)/i.test(compact) &&
+        /(локал\s*нетворк|local\s*network|local\s*network\s*5g|студио|studio)/i.test(compact)) {
+      const networkName = /(локал\s*нетворк|local\s*network)/i.test(compact)
+        ? 'Local_Network_5G' : 'Studio';
+      params = { action: 'wifi_connect', networkName };
+    }
+
+    // SSH catalog commands are separate from Windows Agent application launches.
+    // The manager stores only the command phrase (for example "открой Mixxx"),
+    // not the wake/transport words ("Ревижн, выполни через SSH").
+    if (!params && /(через ssh|по ssh|ssh агент|эс эс эйч|эсэсэйч)/i.test(compact) &&
+        /(запусти|выполни|открой|запуск|команду)/i.test(compact)) {
+      const sshMarker = /(через\s+ssh|по\s+ssh|ssh\s+агент|эс\s+эс\s+эйч|эсэсэйч)/i.exec(transcript);
+      let commandPhrase = '';
+      if (sshMarker) {
+        const afterMarker = transcript.slice(sshMarker.index + sshMarker[0].length)
+          .replace(/^[\s,;:—-]*(команду|команда)(?=\s|$)[\s,;:—-]*/i, '')
+          .replace(/^[\s,;:—-]+/, '')
+          .trim();
+        if (afterMarker) {
+          commandPhrase = afterMarker;
+        } else {
+          commandPhrase = transcript.slice(0, sshMarker.index)
+            .replace(/^\s*(ревижн[\s,.:;-]*)?(пожалуйста[\s,.:;-]*)?(выполни[\s,.:;-]*команду[\s,.:;-]*)?/i, '')
+            .trim();
+        }
+      }
+      commandPhrase = commandPhrase.replace(/[.!?]+$/g, '').trim();
+      if (commandPhrase) {
+        params = { action: 'windows_ssh_launch', deviceName: 'STUDIO PC', commandPhrase };
+      }
+    }
+
+    // Windows STUDIO PC commands. Bare "компьютер" refers to the paired STUDIO PC.
+    if (!params && /(отмени|отменить|сними отмену).*(выключени|перезагрузк)|отмени выключение|отмени перезагрузку/i.test(compact)) {
+      params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
+    } else if (!params && isStudioPc && /(заблокируй|заблокировать|блокируй|заблокируй экран)/i.test(compact)) {
+      params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
+    } else if (!params && isStudioPc && /(перезагрузи|перезагрузить|рестарт|перезапусти компьютер)/i.test(compact)) {
+      params = { action: 'windows_restart', deviceName: 'STUDIO PC' };
+    } else if (!params && isStudioPc && /(выключи|выключить|отключи|заверши|завершить работу)/i.test(compact)) {
+      params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
+    } else if (!params && /(проверь|статус|состояние).*(windows\s*agent|виндовс|студио\s*писи|студия|компьютер|комп)/i.test(compact)) {
+      params = { action: 'windows_status', deviceName: 'STUDIO PC' };
+    } else if (!params && /(запусти|открой|закрой|закрыть|перезапусти|перезапуск).*(mixxx|\.exe|\.bat)/i.test(compact)) {
+      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+    }
+
+    } else if (!params && /(запусти|запустить|открой|открыть|закрой|закрыть|перезапусти|перезапустить|переключись|переключить|сверни|свернуть|разверни|развернуть|восстанови|восстановить)/i.test(compact)) {
+      // User-defined commands live in the Windows Agent catalog. Forward the
+      // recognized phrase unchanged so the Windows Agent can match it safely.
+      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+    }
+
+    if (!params) {
+      if (/(список устройств|покажи устройства|какие устройства|мои устройства)/i.test(compact)) {
+        params = { action: 'list' };
+      } else {
+        const verb = /(включи|включить|запусти|разбуди)/i.test(compact) ? 'wake'
+          : (/(выключи|выключить|отключи|отключить|заверши)/i.test(compact) ? 'shutdown'
+          : (/(проверь|проверить|статус|состояние)/i.test(compact) ? 'status' : ''));
+        if (verb) {
+          let deviceName = compact
+            .replace(/^(пожалуйста\s+)?(ревижн\s+)?(включи|включить|запусти|разбуди|выключи|выключить|отключи|отключить|заверши|проверь|проверить|статус|состояние)\s*/i, '')
+            .replace(/^(компьютер|устройство|пк)\s+/i, '')
+            .replace(/\s+(пожалуйста|сейчас)$/i, '')
+            .trim();
+          params = { action: verb, deviceName };
+        }
+      }
+    }
+
+    if (!params) {
+      this.setData({
+        statusText: 'Команду не удалось определить.',
+        detailText: 'Распознано: «' + transcript + '». Повтори команду или используй штатный голосовой канал Rokid.'
+      });
+      return;
+    }
+
+    console.log('[RE:Vision] voice command routed', { transcript, action: params.action, deviceName: params.deviceName || '', networkName: params.networkName || '' });
+    const query = Object.keys(params)
+      .filter((key) => params[key] !== undefined && params[key] !== '')
+      .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])))
+      .join('&');
+    this.setData({
+      statusText: 'Команда распознана.',
+      detailText: transcript
+    });
+    wx.navigateTo({ url: '/pages/device-action/index?' + query });
   }
 };
 </script>
@@ -59,6 +379,7 @@ export default {
     <text class="heading">{{title}}</text>
     <text class="status">{{statusText}}</text>
     <text class="detail">{{detailText}}</text>
+    <text class="transcript">{{transcript}}</text>
   </view>
 </page>
 
@@ -79,6 +400,12 @@ export default {
 .status {
   font-size: 18px;
   line-height: 1.35;
+}
+.transcript {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 700;
+  word-break: break-word;
 }
 .detail {
   font-size: 14px;
