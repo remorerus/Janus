@@ -178,7 +178,8 @@ export default {
       let commandPhrase = '';
       if (sshMarker) {
         const afterMarker = transcript.slice(sshMarker.index + sshMarker[0].length)
-          .replace(/^([\s,;:—-]*)(команду|команда)\b/i, '')
+          .replace(/^[\s,;:—-]*(команду|команда)(?=\s|$)[\s,;:—-]*/i, '')
+          .replace(/^[\s,;:—-]+/, '')
           .trim();
         if (afterMarker) {
           commandPhrase = afterMarker;
