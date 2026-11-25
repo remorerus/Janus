@@ -229,16 +229,28 @@ function speakAndReturn(page, text) {
           speak(spokenText);
           scheduleFallbackReturn(page, spokenText);
         });
-        task.finished.catch(error => {
-          if (settled) return;
-          settled = true;
-          releasePlayer();
-          if (page.returnHomeCancelled === true) return;
-          console.warn('[RE:Vision] TTS generation failed; using compatibility playback', error);
-          speak(spokenText);
-          scheduleFallbackReturn(page, spokenText);
-        });
-        player.play();
+        if (task.finished && typeof task.finished.catch === 'function') {
+          task.finished.catch(error => {
+            if (settled) return;
+            settled = true;
+            releasePlayer();
+            if (page.returnHomeCancelled === true) return;
+            console.warn('[RE:Vision] TTS generation failed; using compatibility playback', error);
+            speak(spokenText);
+            scheduleFallbackReturn(page, spokenText);
+          });
+        }
+        try {
+          player.play();
+        } catch (error) {
+          if (!settled) {
+            settled = true;
+            releasePlayer();
+            console.warn('[RE:Vision] TTS player could not start; using compatibility playback', error);
+            speak(spokenText);
+            scheduleFallbackReturn(page, spokenText);
+          }
+        }
       }).catch(error => {
         if (page.returnHomeCancelled === true) return;
         console.warn('[RE:Vision] TTS task creation failed; using compatibility playback', error);
