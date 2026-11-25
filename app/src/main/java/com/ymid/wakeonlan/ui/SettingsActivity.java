@@ -163,7 +163,7 @@ public class SettingsActivity extends AppCompatActivity {
             updateSystemAccessStatuses();
 
             Preference windowsAgentPreference = new Preference(requireContext());
-            windowsAgentPreference.setTitle("Windows Agent — STUDIO PC");
+            windowsAgentPreference.setTitle("Windows Agent — компьютеры");
             boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext());
             String savedAgentHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
             windowsAgentPreference.setSummary(agentPaired
@@ -230,6 +230,64 @@ public class SettingsActivity extends AppCompatActivity {
                 code.setSingleLine(true);
                 code.setHint("8-значный код сопряжения");
                 code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+                android.widget.Button devicesButton = new android.widget.Button(requireContext());
+                devicesButton.setText("Мои подключённые компьютеры");
+                fields.addView(devicesButton);
+                devicesButton.setOnClickListener(view -> {
+                    devicesButton.setEnabled(false);
+                    Context appContext = requireContext().getApplicationContext();
+                    new Thread(() -> {
+                        try {
+                            java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices =
+                                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext).getAll();
+                            handler.post(() -> {
+                                if (!isAdded()) return;
+                                devicesButton.setEnabled(true);
+                                if (devices.isEmpty()) {
+                                    Toast.makeText(appContext, "В реестре пока нет дополнительных компьютеров.", Toast.LENGTH_LONG).show();
+                                    return;
+                                }
+                                String[] labels = new String[devices.size()];
+                                for (int i = 0; i < devices.size(); i++) {
+                                    com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item = devices.get(i);
+                                    labels[i] = (item.isDefault ? "★ " : "") + item.displayName + " · " + item.baseUrl;
+                                }
+                                new AlertDialog.Builder(requireContext())
+                                        .setTitle("Подключённые компьютеры · выбери по умолчанию")
+                                        .setItems(labels, (dialog, index) -> {
+                                            String selectedId = devices.get(index).deviceId;
+                                            new Thread(() -> {
+                                                try {
+                                                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext)
+                                                            .setDefault(selectedId);
+                                                    handler.post(() -> {
+                                                        if (!isAdded()) return;
+                                                        windowsAgentPreference.setSummary("Компьютер по умолчанию: "
+                                                                + devices.get(index).displayName);
+                                                        Toast.makeText(appContext, "Компьютер по умолчанию изменён.", Toast.LENGTH_SHORT).show();
+                                                    });
+                                                } catch (Exception error) {
+                                                    handler.post(() -> Toast.makeText(appContext,
+                                                            error.getMessage() == null ? "Не удалось выбрать компьютер." : error.getMessage(),
+                                                            Toast.LENGTH_LONG).show());
+                                                }
+                                            }, "revision-device-default").start();
+                                        })
+                                        .setNegativeButton(android.R.string.cancel, null)
+                                        .show();
+                            });
+                        } catch (Exception error) {
+                            handler.post(() -> {
+                                if (isAdded()) {
+                                    devicesButton.setEnabled(true);
+                                    Toast.makeText(appContext,
+                                            error.getMessage() == null ? "Не удалось прочитать список компьютеров." : error.getMessage(),
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            });
+                        }
+                    }, "revision-device-list").start();
+                });
                 android.widget.Button discoverButton = new android.widget.Button(requireContext());
                 discoverButton.setText("Найти компьютеры в локальной сети");
                 fields.addView(discoverButton);
