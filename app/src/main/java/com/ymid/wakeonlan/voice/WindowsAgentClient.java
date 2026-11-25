@@ -65,12 +65,18 @@ public final class WindowsAgentClient {
         // its stable discovery ID lets us update only the endpoint without pairing again.
         if (existingBase != null && existingSecret != null) {
             String existingId = existing.getString(KEY_DEVICE_ID, null);
-            if (existingId == null) {
-                try {
-                    JSONObject oldIdentity = request(existingBase, "GET", "/v1/discovery", "", null);
-                    existingId = oldIdentity.optString("deviceId", null);
-                } catch (Exception ignored) { }
-            }
+            JSONObject oldIdentity = null;
+            try {
+                oldIdentity = request(existingBase, "GET", "/v1/discovery", "", null);
+                if (existingId == null) existingId = oldIdentity.optString("deviceId", null);
+                // Migrate the existing STUDIO pairing into the registry without asking for its code again.
+                if (!oldIdentity.optString("deviceId", "").isEmpty()) {
+                    com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                            new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+                    if (registry.get(oldIdentity.optString("deviceId")) == null)
+                        saveRegistryPair(context, oldIdentity, existingBase, existingSecret);
+                }
+            } catch (Exception ignored) { }
             String targetId = targetIdentity == null ? null : targetIdentity.optString("deviceId", null);
             boolean sameDevice = existingId != null && !existingId.isEmpty()
                     ? existingId.equals(targetId)
@@ -98,6 +104,9 @@ public final class WindowsAgentClient {
             }
         }
 
+        if (targetIdentity == null || targetIdentity.optString("deviceId", "").trim().isEmpty()) {
+            throw new IllegalStateException("Windows Agent не сообщил постоянный ID. Обнови Windows Agent до версии с поддержкой обнаружения устройств.");
+        }
         if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
             throw new IllegalArgumentException("Код сопряжения должен содержать 8 шестнадцатеричных символов.");
         }
