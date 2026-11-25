@@ -594,7 +594,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             try {
                 JsonObject requestBody = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
                 String phrase = requestBody.has("phrase") ? requestBody.get("phrase").getAsString() : "";
-                JsonObject response = JsonParser.parseString(WindowsAgentClient.executePhrase(this, phrase).toString()).getAsJsonObject();
+                String deviceName = requestBody.has("deviceName") ? requestBody.get("deviceName").getAsString() : "";
+                JsonObject response = JsonParser.parseString(
+                        WindowsAgentClient.executePhraseForDeviceName(this, deviceName, phrase).toString()).getAsJsonObject();
                 response.addProperty("ok", true);
                 writeResponse(socket.getOutputStream(), 200, response);
             } catch (Exception e) {
@@ -617,7 +619,13 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } else if ("POST".equals(method) && path.startsWith("/windows/command/")) {
             String action = path.substring("/windows/command/".length());
             try {
-                JsonObject response = JsonParser.parseString(WindowsAgentClient.command(this, action).toString()).getAsJsonObject();
+                String deviceName = "";
+                try {
+                    JsonObject requestBody = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
+                    if (requestBody.has("deviceName")) deviceName = requestBody.get("deviceName").getAsString();
+                } catch (Exception ignored) { }
+                JsonObject response = JsonParser.parseString(
+                        WindowsAgentClient.commandForDeviceName(this, deviceName, action).toString()).getAsJsonObject();
                 response.addProperty("ok", true);
                 writeResponse(socket.getOutputStream(), 200, response);
             } catch (Exception e) {
