@@ -15,7 +15,6 @@ import android.widget.RadioButton;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.util.TypedValue;
-import android.widget.AdapterView;
 import android.widget.Spinner;
 
 import androidx.annotation.NonNull;
@@ -31,7 +30,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
-import com.google.common.collect.Lists;
 
 import net.schmizz.sshj.connection.ConnectionException;
 import net.schmizz.sshj.userauth.UserAuthException;
@@ -39,6 +37,7 @@ import net.schmizz.sshj.userauth.UserAuthException;
 import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -85,10 +84,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     protected ObfuscatedEditText deviceSshAddressInput;
     protected TextInputEditText deviceSshPortInput;
     protected TextInputEditText deviceSshUsernameInput;
-    protected View deviceSshPasswordContainer;
-    protected TextInputEditText deviceSshPasswordInput;
     protected TextInputEditText deviceSshCommandInput;
-    protected Spinner deviceSshAuthTypeSpinner;
     protected Button generateSshKeyButton;
     protected TextView sshPublicKeyTitle;
     protected TextView sshPublicKeyHint;
@@ -126,10 +122,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceSshAddressInput = binding.device.deviceShutdownAddress;
         deviceSshPortInput = binding.device.deviceShutdownPort;
         deviceSshUsernameInput = binding.device.deviceShutdownUsername;
-        deviceSshPasswordContainer = binding.device.deviceRemoteShutdownPassword;
-        deviceSshPasswordInput = binding.device.deviceShutdownPassword;
         deviceSshCommandInput = binding.device.deviceShutdownCommand;
-        deviceSshAuthTypeSpinner = binding.device.deviceShutdownAuthType;
         generateSshKeyButton = binding.device.deviceButtonGenerateSshKey;
         sshPublicKeyTitle = binding.device.deviceSshPublicKeyTitle;
         sshPublicKeyHint = binding.device.deviceSshPublicKeyHint;
@@ -167,7 +160,6 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         addValidators();
         addAutofillClickHandler();
         setRemoteDeviceShutdownSwitchListener();
-        setAuthTypeListener();
         setSshKeyButtonListeners();
         setOsSpinnerSuggestionListener();
         setOnTestSshShutdownListenerClickedListener();
@@ -228,17 +220,12 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceSecureOnPassword.addTextChangedListener(new SecureOnPasswordValidator(deviceSecureOnPassword));
 
         List<Supplier<Boolean>> remoteShutdownEnabledSupplier = Collections.singletonList(() -> deviceEnableRemoteShutdown.isChecked());
-        List<Supplier<Boolean>> passwordAuthRequiredSupplier =
-                Lists.newArrayList(() -> deviceEnableRemoteShutdown.isChecked(), () -> !isSshKeyAuthSelected());
-        List<Supplier<Boolean>> statusIpFallbackAvailable =
-                Lists.newArrayList(() -> deviceEnableRemoteShutdown.isChecked(), () -> isEmpty(deviceStatusIpInput));
+        List<Supplier<Boolean>> statusIpFallbackAvailable = Arrays.asList(() -> deviceEnableRemoteShutdown.isChecked(), () -> isEmpty(deviceStatusIpInput));
 
         deviceSshAddressInput.addTextChangedListener(new ConditionalInputNotEmptyValidator(deviceSshAddressInput,
                 R.string.add_device_error_ssh_address_empty, statusIpFallbackAvailable));
         deviceSshUsernameInput.addTextChangedListener(new ConditionalInputNotEmptyValidator(deviceSshUsernameInput,
                 R.string.add_device_error_ssh_username_empty, remoteShutdownEnabledSupplier));
-        deviceSshPasswordInput.addTextChangedListener(new ConditionalInputNotEmptyValidator(deviceSshPasswordInput,
-                R.string.add_device_error_ssh_password_empty, passwordAuthRequiredSupplier));
         deviceSshCommandInput.addTextChangedListener(new ConditionalInputNotEmptyValidator(deviceSshCommandInput,
                 R.string.add_device_error_ssh_command_empty, remoteShutdownEnabledSupplier));
     }
@@ -254,9 +241,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
                 deviceSecureOnPassword.getError() == null &&
                 deviceSshAddressInput.getError() == null &&
                 deviceSshUsernameInput.getError() == null &&
-                deviceSshPasswordInput.getError() == null &&
                 deviceSshCommandInput.getError() == null &&
-                (!deviceEnableRemoteShutdown.isChecked() || !isSshKeyAuthSelected() || !Strings.isNullOrEmpty(sshKeyAlias));
+                (!deviceEnableRemoteShutdown.isChecked() || !Strings.isNullOrEmpty(sshKeyAlias));
     }
 
     protected boolean assertShutdownInputsNotEmptyAndValid() {
@@ -264,9 +250,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
                 deviceStatusIpInput.getError() == null &&
                 deviceSshAddressInput.getError() == null &&
                 deviceSshUsernameInput.getError() == null &&
-                deviceSshPasswordInput.getError() == null &&
                 deviceSshCommandInput.getError() == null &&
-                (!isSshKeyAuthSelected() || !Strings.isNullOrEmpty(sshKeyAlias));
+                !Strings.isNullOrEmpty(sshKeyAlias);
     }
 
     private boolean isNotEmpty(TextInputEditText inputEditText) {
@@ -339,23 +324,10 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceSshAddressInput);
         deviceSshUsernameInput.setText(deviceSshUsernameInput.getText());
-        deviceSshPasswordInput.setText(deviceSshPasswordInput.getText());
         deviceSshCommandInput.setText(deviceSshCommandInput.getText());
     }
 
-    private void setAuthTypeListener() {
-        deviceSshAuthTypeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                updateSshAuthUi();
-                triggerShutdownValidators();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                updateSshAuthUi();
-            }
-        });
+    private void initializeSshKeyUi() {
         updateSshAuthUi();
     }
 
@@ -378,15 +350,13 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     }
 
     protected void updateSshAuthUi() {
-        boolean keyAuth = isSshKeyAuthSelected();
-        deviceSshPasswordContainer.setVisibility(keyAuth ? View.GONE : View.VISIBLE);
-        generateSshKeyButton.setVisibility(keyAuth ? View.VISIBLE : View.GONE);
+        generateSshKeyButton.setVisibility(View.VISIBLE);
         updateSshPublicKeyUi();
     }
 
     protected void updateSshPublicKeyUi() {
         String publicKey = null;
-        if (isSshKeyAuthSelected() && !Strings.isNullOrEmpty(sshKeyAlias)) {
+        if (!Strings.isNullOrEmpty(sshKeyAlias)) {
             publicKey = SshKeyManager.getOpenSshPublicKey(sshKeyAlias);
         }
 
@@ -396,14 +366,6 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         sshPublicKeyText.setVisibility(showPublicKey ? View.VISIBLE : View.GONE);
         copySshKeyButton.setVisibility(showPublicKey ? View.VISIBLE : View.GONE);
         sshPublicKeyText.setText(Strings.nullToEmpty(publicKey));
-    }
-
-    protected boolean isSshKeyAuthSelected() {
-        return deviceSshAuthTypeSpinner != null && deviceSshAuthTypeSpinner.getSelectedItemPosition() == 1;
-    }
-
-    protected void setSshAuthType(String authType) {
-        deviceSshAuthTypeSpinner.setSelection("key".equalsIgnoreCase(authType) ? 1 : 0);
     }
 
     private void triggerObfuscatedInputValidators(ObfuscatedEditText input) {
@@ -659,17 +621,12 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     }
 
     @NonNull
-    protected String getDeviceSshPassword() {
-        return getInputText(deviceSshPasswordInput);
-    }
-
-    @NonNull
     protected String getDeviceSshAuthType() {
-        return isSshKeyAuthSelected() ? "key" : "password";
+        return "key";
     }
 
     protected String getDeviceSshKeyAlias() {
-        return isSshKeyAuthSelected() ? sshKeyAlias : null;
+        return sshKeyAlias;
     }
 
     @NonNull
