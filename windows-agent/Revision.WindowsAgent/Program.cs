@@ -126,6 +126,22 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 
 app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
 
+app.MapGet("/v1/manager/pairing", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var paired = config.ClientSecret is not null;
+    var codeAvailable = !paired && !string.IsNullOrWhiteSpace(config.PairingCode) && DateTimeOffset.UtcNow <= config.PairingExpiresUtc;
+    return Results.Json(new
+    {
+        paired,
+        codeAvailable,
+        pairingCode = codeAvailable ? config.PairingCode : null,
+        expiresUtc = codeAvailable ? config.PairingExpiresUtc : (DateTimeOffset?)null,
+        message = paired ? "Устройство уже привязано. Повторная привязка не требуется." :
+            codeAvailable ? "Код действует до указанного времени." : "Активного кода нет или срок его действия истёк."
+    });
+});
+
 app.MapPost("/v1/pair", async (HttpContext context) =>
 {
     // Read the small pairing payload explicitly instead of relying on minimal-API
@@ -670,7 +686,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:16px;ma
 main{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(360px,1.1fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
 label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:190px;resize:vertical;font:13px Consolas,monospace}
 button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
-.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
+.pairing{grid-column:1/-1}.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
 @media(max-width:800px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
 <header><div><h1>Win SSH Agent</h1><div class="muted">Каталог SSH-команд STUDIO PC · локальная панель</div></div><span class="pill">SSH по ключу · OpenSSH</span></header>
@@ -700,6 +716,7 @@ async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands'
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
 updateKindFields();
 loadCommands();
+loadPairing();
 </script></body></html>
 """;
 
@@ -716,7 +733,11 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 @media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
 <header><div><h1>RE:Vision Windows Agent</h1><div class="muted">Панель управления STUDIO PC · тестовая версия</div></div><span class="pill">Локальная панель</span></header>
-<main><section class="panel"><h2>Добавить команду в каталог</h2>
+<main><section class="panel pairing"><h2>Привязка RE:Vision</h2>
+<div id="pairingState" class="status">Проверка состояния привязки…</div>
+<div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
+<button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
+</section><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
 <label>Тип</label><select id="kind" onchange="updateKindFields()"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option></select>
@@ -733,6 +754,18 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 let commands=[];
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
+async function loadPairing(){
+ try{
+  const r=await fetch('/v1/manager/pairing',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const p=await r.json();
+  el('pairingCodeWrap').style.display=p.codeAvailable?'block':'none';
+  el('pairingCode').textContent=p.pairingCode||'';
+  el('pairingExpiry').textContent=p.expiresUtc?'Действует до: '+new Date(p.expiresUtc).toLocaleString():'';
+  el('pairingState').textContent=p.message;
+ }catch(e){el('pairingState').textContent='Не удалось проверить привязку: '+e.message}
+}
+function copyPairingCode(){const code=el('pairingCode').textContent;if(code)navigator.clipboard.writeText(code)}
 function updateKindFields(){
  const kind=el('kind').value, media=kind==='media', hotkey=kind==='hotkey', win=kind==='window';
  const winGlobal=win&&['next','previous'].includes(el('windowAction').value);
