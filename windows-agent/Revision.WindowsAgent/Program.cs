@@ -95,10 +95,17 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             target.Length > 500 || arguments.Length > 500 ||
             kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, тип команды и параметры." });
-        if ((kind is "app" or "bat" or "close" or "restart" or "media") && target.Length == 0)
-            return Results.BadRequest(new { error = "Для запуска приложения укажи полный путь к файлу." });
-        if (kind == "media" && (!string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase) || arguments is not ("/PLAY" or "/PAUSE" or "/PLAYPAUSE" or "/NEXT" or "/PREV" or "/STOP" or "/MUTE" or "/VOLUP" or "/VOLDWN")))
-            return Results.BadRequest(new { error = "Для мультимедиа выбери EXE и одно из разрешённых действий плеера." });
+        if ((kind is "app" or "bat" or "close" or "restart") && target.Length == 0)
+            return Results.BadRequest(new { error = "Для этой команды укажи полный путь к файлу." });
+        if (kind == "media")
+        {
+            var globalMediaActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
+            var legacyMediaActions = new[] { "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
+            var isGlobal = target.Length == 0 && globalMediaActions.Contains(arguments, StringComparer.Ordinal);
+            var isLegacyAppCommand = string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase) && legacyMediaActions.Contains(arguments, StringComparer.Ordinal);
+            if (!isGlobal && !isLegacyAppCommand)
+                return Results.BadRequest(new { error = "Выбери системное мультимедиа-действие или укажи EXE и старую команду плеера." });
+        }
         if (kind == "hotkey")
         {
             if (!TryNormalizeHotkey(target, out var normalizedHotkey))
@@ -434,6 +441,36 @@ for ($i = $mods.Count - 1; $i -ge 0; $i--) { [RevisionKeySender]::keybd_event([b
 """.Replace("__MODIFIERS__", mods).Replace("__KEY__", "0x" + key.ToString("X2"));
 }
 
+static string BuildMediaKeyScript(string action)
+{
+    var key = action switch
+    {
+        "GLOBAL_PLAYPAUSE" => 0xB3,
+        "GLOBAL_NEXT" => 0xB0,
+        "GLOBAL_PREV" => 0xB1,
+        "GLOBAL_STOP" => 0xB2,
+        "GLOBAL_MUTE" => 0xAD,
+        "GLOBAL_VOLUP" => 0xAF,
+        "GLOBAL_VOLDWN" => 0xAE,
+        _ => 0
+    };
+    if (key == 0) throw new ArgumentException("Unsupported global media action", nameof(action));
+    return """
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class RevisionMediaKeys {
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+}
+'@
+[RevisionMediaKeys]::keybd_event([byte]__KEY__, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 60
+[RevisionMediaKeys]::keybd_event([byte]__KEY__, 0, 2, [UIntPtr]::Zero)
+""".Replace("__KEY__", "0x" + key.ToString("X2"));
+}
+
 static string BuildWindowScript(string target, string action)
 {
     var safeTarget = "'" + (target ?? "").Replace("'", "''") + "'";
@@ -560,6 +597,8 @@ static bool LaunchCatalogCommand(AgentCommand command)
         if (sessionId == InvalidSessionId) return false;
         if (string.Equals(command.Kind, "hotkey", StringComparison.OrdinalIgnoreCase))
             return RunPowerShellInSession(sessionId, BuildHotkeyScript(command.Target));
+        if (string.Equals(command.Kind, "media", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(command.Target))
+            return RunPowerShellInSession(sessionId, BuildMediaKeyScript(command.Arguments));
         if (string.Equals(command.Kind, "window", StringComparison.OrdinalIgnoreCase))
             return RunPowerShellInSession(sessionId, BuildWindowScript(command.Target, command.Arguments));
         var target = Path.GetFullPath(command.Target);
@@ -741,7 +780,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
 <label>Тип</label><select id="kind" onchange="updateKindFields()"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option></select>
-<div id="mediaOptions" style="display:none"><label>Действие мультимедиа</label><select id="mediaAction"><option value="/PLAY">Воспроизведение</option><option value="/PAUSE">Пауза</option><option value="/PLAYPAUSE">Воспроизведение / Пауза</option><option value="/NEXT">Следующий трек</option><option value="/PREV">Предыдущий трек</option><option value="/STOP">Остановить</option><option value="/MUTE">Включить / выключить звук</option><option value="/VOLUP">Увеличить громкость</option><option value="/VOLDWN">Уменьшить громкость</option></select></div>
+<div id="mediaOptions" style="display:none"><label>Куда отправлять мультимедиа-команду</label><select id="mediaTarget" onchange="updateKindFields()"><option value="global">Системно — активный плеер Windows</option><option value="app">Старый режим — запуск EXE с параметром</option></select><label>Действие</label><select id="mediaAction"><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option><option value="/PLAY">Старый режим: воспроизведение</option><option value="/PAUSE">Старый режим: пауза</option><option value="/PLAYPAUSE">Старый режим: play/pause</option><option value="/NEXT">Старый режим: следующий трек</option><option value="/PREV">Старый режим: предыдущий трек</option><option value="/STOP">Старый режим: стоп</option><option value="/MUTE">Старый режим: mute</option><option value="/VOLUP">Старый режим: громкость +</option><option value="/VOLDWN">Старый режим: громкость −</option></select></div>
 <div id="hotkeyOptions" style="display:none"><label>Сочетание клавиш</label><input id="hotkeyCombo" placeholder="CTRL+ALT+T"></div>
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction" onchange="updateKindFields()"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" placeholder="C:\Program Files\...\app.exe">
@@ -769,22 +808,23 @@ function copyPairingCode(){const code=el('pairingCode').textContent;if(code)navi
 function updateKindFields(){
  const kind=el('kind').value, media=kind==='media', hotkey=kind==='hotkey', win=kind==='window';
  const winGlobal=win&&['next','previous'].includes(el('windowAction').value);
+ const mediaGlobal=media&&el('mediaTarget').value==='global';
  el('mediaOptions').style.display=media?'block':'none';
  el('hotkeyOptions').style.display=hotkey?'block':'none';
  el('windowOptions').style.display=win?'block':'none';
- el('targetLabel').style.display=(hotkey||winGlobal)?'none':'block';
- el('target').style.display=(hotkey||winGlobal)?'none':'block';
+ el('targetLabel').style.display=(hotkey||winGlobal||mediaGlobal)?'none':'block';
+ el('target').style.display=(hotkey||winGlobal||mediaGlobal)?'none':'block';
  el('targetLabel').textContent=win?'Имя процесса или часть заголовка окна':'Полный путь к файлу';
  el('target').placeholder=win?'chrome, explorer, aimp или часть заголовка':'C:\\Program Files\\...\\app.exe';
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
-function clearForm(){['name','phrase','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='/PLAY';el('windowAction').value='focus';updateKindFields()}
+function clearForm(){['name','phrase','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaTarget').value='global';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';updateKindFields()}
 function addCommand(){
  const kind=el('kind').value, action=el('windowAction').value;
- const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':el('target').value.trim());
+ const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':(kind==='media'&&el('mediaTarget').value==='global'?'':el('target').value.trim()));
  const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),kind,target,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
- if(!c.name||!c.phrase||(!c.target&&kind!=='window')){msg('Заполни название, голосовую фразу и параметры команды.');return}
+ if(!c.name||!c.phrase||(!c.target&&kind!=='window'&&!(kind==='media'&&el('mediaTarget').value==='global'))){msg('Заполни название, голосовую фразу и параметры команды.');return}
  if(kind==='window'&&!['next','previous'].includes(action)&&!c.target){msg('Укажи имя процесса или часть заголовка окна.');return}
  if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
  commands.push(c);render();clearForm();msg('Команда добавлена. Нажми «Сохранить изменения».')
