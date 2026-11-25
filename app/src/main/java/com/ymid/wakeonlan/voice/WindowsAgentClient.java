@@ -318,6 +318,30 @@ public final class WindowsAgentClient {
                 "/v1/command/execute", body.toString());
     }
 
+    public static JSONObject executePhrase(Context context, String deviceId, String phrase,
+            java.util.List<String> alternatives) throws Exception {
+        if (deviceId == null || deviceId.trim().isEmpty())
+            throw new IllegalArgumentException("Не указан ID компьютера.");
+        if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160)
+            throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).get(deviceId);
+        if (device == null || !device.enabled)
+            throw new IllegalStateException("Компьютер не найден или отключён в списке устройств.");
+        JSONObject body = new JSONObject();
+        body.put("phrase", phrase.trim());
+        org.json.JSONArray arr = new org.json.JSONArray();
+        java.util.LinkedHashSet<String> unique = new java.util.LinkedHashSet<>();
+        unique.add(phrase.trim());
+        if (alternatives != null) for (String item : alternatives) {
+            if (item != null && !item.trim().isEmpty() && item.trim().length() <= 160 && unique.size() < 5)
+                unique.add(item.trim());
+        }
+        for (String item : unique) arr.put(item);
+        body.put("alternatives", arr);
+        return authenticatedRequest(device.baseUrl, device.clientSecret, "/v1/command/execute", body.toString());
+    }
+
     /** Resolves a saved Windows Agent by exact display name or exact voice alias. */
     private static com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity resolveRegisteredDevice(
             Context context, String requestedName) throws Exception {
