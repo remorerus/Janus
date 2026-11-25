@@ -113,22 +113,48 @@ public final class VoiceBridgeRecoveryService extends Service {
     }
 
     private void serve() {
-        try (ServerSocket listener = new ServerSocket(PORT, 4, InetAddress.getByName("127.0.0.1"))) {
-            serverSocket = listener;
-            while (running) {
-                try (Socket client = listener.accept()) {
-                    client.setSoTimeout(5000);
-                    handle(client);
-                } catch (Exception e) {
-                    if (running) Log.w(TAG, "Recovery request failed", e);
+        long retryDelayMs = 1_000L;
+        while (running) {
+            try (ServerSocket listener = new ServerSocket()) {
+                listener.setReuseAddress(true);
+                listener.bind(new java.net.InetSocketAddress(
+                        InetAddress.getByName("127.0.0.1"), PORT), 4);
+                serverSocket = listener;
+                retryDelayMs = 1_000L;
+                Log.i(TAG, "Recovery endpoint listening on 127.0.0.1:" + PORT);
+
+                while (running) {
+                    try (Socket client = listener.accept()) {
+                        client.setSoTimeout(5000);
+                        handle(client);
+                    } catch (java.net.SocketException e) {
+                        if (running) Log.w(TAG, "Recovery listener interrupted; will retry", e);
+                        break;
+                    } catch (Exception e) {
+                        if (running) Log.w(TAG, "Recovery request failed", e);
+                    }
                 }
+            } catch (Exception e) {
+                if (running) Log.e(TAG, "Could not bind recovery port " + PORT + "; retrying", e);
+            } finally {
+                serverSocket = null;
             }
-        } catch (Exception e) {
-            if (running) Log.e(TAG, "Could not bind recovery port " + PORT, e);
-        } finally {
-            serverSocket = null;
-            serverThread = null;
+
+            if (running) {
+                try {
+                    Thread.sleep(retryDelayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (!running) break;
+                }
+                retryDelayMs = Math.min(retryDelayMs * 2L, 30_000L);
+            }
         }
+
+        synchronized (this) {
+            if (serverThread == Thread.currentThread()) serverThread = null;
+        }
+        Log.i(TAG, "Recovery endpoint server loop stopped");
     }
 
     private void handle(Socket socket) throws Exception {
