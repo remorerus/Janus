@@ -12,7 +12,7 @@ if (firebaseConfigured) {
 
 android {
     defaultConfig {
-        versionCode 128 // SSH key-only authentication, release 1.9.22
+        versionCode 129 // Win SSH Agent web manager and SSH command catalog, release 1.9.23
         buildConfigField 'boolean', 'FIREBASE_CONFIGURED', firebaseConfigured.toString()
     }
     buildFeatures {
