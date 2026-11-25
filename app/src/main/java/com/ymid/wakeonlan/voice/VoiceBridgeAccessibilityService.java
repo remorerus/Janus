@@ -375,12 +375,18 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     }
 
     private synchronized void stopServer() {
+        // Do not clear serverThread here. The worker may still be unwinding from
+        // accept()/backoff sleep; dropping the reference lets a reconnect start a
+        // second worker while the first one is still alive. Keep the reference
+        // until serve() clears it in its finally/exit path.
         running = false;
-        if (serverSocket != null) {
-            try { serverSocket.close(); } catch (Exception ignored) { }
-            serverSocket = null;
+        ServerSocket socket = serverSocket;
+        serverSocket = null;
+        if (socket != null) {
+            try { socket.close(); } catch (Exception ignored) { }
         }
-        serverThread = null;
+        Thread worker = serverThread;
+        if (worker != null) worker.interrupt();
     }
 
     /**
