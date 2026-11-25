@@ -97,6 +97,28 @@ export default {
     this.setData({ token: event.detail.value || '' });
   },
 
+  pasteToken() {
+    if (typeof wx === 'undefined' || typeof wx.getClipboardData !== 'function') {
+      this.setData({ statusText: 'Чтение буфера обмена недоступно в этой версии AIUI. Вставь PIN вручную.' });
+      return;
+    }
+    wx.getClipboardData({
+      success: (result) => {
+        const clipboardText = String(result && result.data != null ? result.data : '').trim();
+        const pin = validPin(clipboardText);
+        if (!pin) {
+          this.setData({ statusText: 'В буфере нет корректного четырёхзначного PIN.' });
+          return;
+        }
+        this.setData({ token: pin, statusText: 'Четырёхзначный PIN вставлен. Нажми «Сохранить PIN», чтобы сохранить его.' });
+      },
+      fail: (error) => {
+        console.warn('RE:Vision clipboard read failed', error);
+        this.setData({ statusText: 'Не удалось прочитать буфер обмена. Проверь разрешение AIUI или введи PIN вручную.' });
+      }
+    });
+  },
+
   saveToken() {
     const token = validPin(this.data.token);
     if (!token) {
@@ -135,6 +157,7 @@ export default {
     <input class="token" password="true" value="{{token}}" bindinput="onTokenInput" placeholder="Например, 0427" />
     <button bindtap="saveToken">Сохранить PIN</button>
     <button bindtap="clearToken">Удалить PIN</button>
+    <button bindtap="pasteToken">Вставить из буфера обмена</button>
     <text class="status">{{statusText}}</text>
   </view>
 </page>
