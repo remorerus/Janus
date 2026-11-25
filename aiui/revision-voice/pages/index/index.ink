@@ -174,17 +174,17 @@ export default {
     // not the wake/transport words ("Ревижн, выполни через SSH").
     if (!params && /(через ssh|по ssh|ssh агент|эс эс эйч|эсэсэйч)/i.test(compact) &&
         /(запусти|выполни|открой|запуск|команду)/i.test(compact)) {
-      const sshMarker = /(через\\s+ssh|по\\s+ssh|ssh\\s+агент|эс\\s+эс\\s+эйч|эсэсэйч)/i.exec(transcript);
+      const sshMarker = /(через\s+ssh|по\s+ssh|ssh\s+агент|эс\s+эс\s+эйч|эсэсэйч)/i.exec(transcript);
       let commandPhrase = '';
       if (sshMarker) {
         const afterMarker = transcript.slice(sshMarker.index + sshMarker[0].length)
-          .replace(/^([\\s,;:—-]*)(команду|команда)\\b/i, '')
+          .replace(/^([\s,;:—-]*)(команду|команда)\b/i, '')
           .trim();
         if (afterMarker) {
           commandPhrase = afterMarker;
         } else {
           commandPhrase = transcript.slice(0, sshMarker.index)
-            .replace(/^\\s*(ревижн[\\s,.:;-]*)?(пожалуйста[\\s,.:;-]*)?(выполни[\\s,.:;-]*команду[\\s,.:;-]*)?/i, '')
+            .replace(/^\s*(ревижн[\s,.:;-]*)?(пожалуйста[\s,.:;-]*)?(выполни[\s,.:;-]*команду[\s,.:;-]*)?/i, '')
             .trim();
         }
       }
