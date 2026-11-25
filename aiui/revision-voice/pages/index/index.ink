@@ -16,6 +16,7 @@ export default {
 
   onLoad(query) {
     this.pageLoadedAt = Date.now();
+    this.initialShowPending = true;
     this.voiceListening = false;
     this.voiceHandled = false;
     this.voiceSpeechStarted = false;
@@ -34,6 +35,10 @@ export default {
   },
 
   onShow() {
+    if (this.initialShowPending) {
+      this.initialShowPending = false;
+      return;
+    }
     if (!this.voiceListening) {
       this.setData({
         statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
