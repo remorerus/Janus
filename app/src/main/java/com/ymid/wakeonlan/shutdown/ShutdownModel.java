@@ -17,7 +17,7 @@ public class ShutdownModel {
         this.username = username;
         this.password = password;
         this.command = command;
-        this.sshAuthType = sshAuthType == null ? "password" : sshAuthType;
+        this.sshAuthType = "key";
         this.sshKeyAlias = sshKeyAlias;
     }
 
@@ -34,6 +34,6 @@ public class ShutdownModel {
     public String getSshKeyAlias() { return sshKeyAlias; }
 
     public boolean isKeyAuth() {
-        return "key".equalsIgnoreCase(sshAuthType);
+        return true;
     }
 }
