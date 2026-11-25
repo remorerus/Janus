@@ -82,7 +82,7 @@ internal sealed class ManagerForm : Form
         split.Panel2.Controls.Add(right);
         var listTitle = new Label { Text = "Сохранённые команды", AutoSize = true, Font = new Font("Segoe UI Semibold", 14F), Location = new Point(8, 8) };
         right.Controls.Add(listTitle);
-        _grid.SetBounds(8, 42, 610, 530); _grid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _grid.SetBounds(8, 42, 610, 470); _grid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         _grid.ReadOnly = true; _grid.AllowUserToAddRows = false; _grid.AllowUserToDeleteRows = false;
         _grid.MultiSelect = false; _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
@@ -92,11 +92,11 @@ internal sealed class ManagerForm : Form
         _grid.Columns.Add("Shell", "Оболочка");
         _grid.Columns[0].FillWeight = 80; _grid.Columns[1].FillWeight = 100; _grid.Columns[2].FillWeight = 45;
         right.Controls.Add(_grid);
-        var refresh = MakeButton("Обновить список", 8, 586, 150, 38, Color.FromArgb(75, 85, 99));
+        var refresh = MakeButton("Обновить список", 8, 526, 150, 38, Color.FromArgb(75, 85, 99));
         refresh.Click += (_, _) => LoadCatalog(); right.Controls.Add(refresh);
         var path = new Label { Text = "Файл: " + CatalogPath, AutoSize = false, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom, ForeColor = Color.Silver };
-        path.SetBounds(8, 632, 610, 34); right.Controls.Add(path);
-        _status.SetBounds(8, 675, 610, 28); _status.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+        path.SetBounds(8, 572, 610, 34); right.Controls.Add(path);
+        _status.SetBounds(8, 615, 610, 28); _status.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         _status.ForeColor = Color.LightGreen; right.Controls.Add(_status);
     }
 
