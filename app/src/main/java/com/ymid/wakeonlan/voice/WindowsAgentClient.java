@@ -289,7 +289,7 @@ public final class WindowsAgentClient {
         byte[] nonceBytes = new byte[16];
         new SecureRandom().nextBytes(nonceBytes);
         String nonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP | Base64.URL_SAFE);
-        String payload = "POST\\n" + path + "\\n" + timestamp + "\\n" + nonce + "\\n" + body;
+        String payload = "POST\n" + path + "\n" + timestamp + "\n" + nonce + "\n" + body;
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
         String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
