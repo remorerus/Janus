@@ -229,8 +229,23 @@ function speakAndReturn(page, text) {
           speak(spokenText);
           scheduleFallbackReturn(page, spokenText);
         });
-        if (task.finished && typeof task.finished.catch === 'function') {
-          task.finished.catch(error => {
+        if (task.finished && typeof task.finished.then === 'function') {
+          task.finished.then(result => {
+            if (settled || page.returnHomeCancelled === true) return;
+            const audioDurationMs = Number(result && result.duration) * 1000;
+            const watchdogMs = Math.max(5000, Math.min(30000,
+              (Number.isFinite(audioDurationMs) && audioDurationMs > 0
+                ? audioDurationMs : 2200 + spokenText.length * 130) + 5000));
+            if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
+            page.returnHomeTimer = setTimeout(() => {
+              page.returnHomeTimer = null;
+              if (settled || page.returnHomeCancelled === true) return;
+              settled = true;
+              releasePlayer();
+              console.warn('[RE:Vision] TTS end event timed out; using playback-duration watchdog');
+              returnToMainVoicePage(page);
+            }, watchdogMs);
+          }).catch(error => {
             if (settled) return;
             settled = true;
             releasePlayer();
