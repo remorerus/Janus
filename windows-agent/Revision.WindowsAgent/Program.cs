@@ -953,6 +953,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 </section><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
+<label>Варианты распознавания через запятую</label><input id="aliases" placeholder="Например: запусти аимб, открой а имп, запусти AIMP">
 <label>Тип</label><select id="kind" onchange="updateKindFields()"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option></select>
 <div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Команды отправляются через системные мультимедиа-клавиши Windows. Работают с плеерами и браузерами, которые поддерживают системное управление мультимедиа.</div></div>
 <div id="hotkeyOptions" style="display:none"><label>Сочетание клавиш</label><input id="hotkeyCombo" placeholder="CTRL+ALT+T"></div>
@@ -1010,11 +1011,13 @@ function updateKindFields(){
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
-function clearForm(){['name','phrase','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';updateKindFields()}
+function clearForm(){['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';updateKindFields()}
 function addCommand(){
  const kind=el('kind').value, action=el('windowAction').value;
  const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':(kind==='media'?'':el('target').value.trim()));
- const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),kind,target,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
+ const aliases=el('aliases').value.split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
+ const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases,kind,target,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
+ if(aliases.length>12){msg('Можно добавить не более 12 вариантов распознавания.');return}
  if(!c.name||!c.phrase||(!c.target&&kind!=='window'&&kind!=='media')){msg('Заполни название, голосовую фразу и параметры команды.');return}
  if(kind==='window'&&!['next','previous'].includes(action)&&!c.target){msg('Укажи имя процесса или часть заголовка окна.');return}
  if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
@@ -1022,7 +1025,7 @@ function addCommand(){
 }
 function removeCommand(i){commands.splice(i,1);render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')));info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
+root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 loadCommands();
