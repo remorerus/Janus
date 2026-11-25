@@ -393,11 +393,37 @@ static bool StopCatalogProcess(string target, uint sessionId)
 
 static string NormalizeVoicePhrase(string value)
 {
-    var tokens = Regex.Matches((value ?? "").ToLowerInvariant().Replace('ё', 'е'), @"[\p{L}\p{N}]+")
+    var rawTokens = Regex.Matches((value ?? "").ToLowerInvariant().Replace('ё', 'е'), @"[\p{L}\p{N}]+")
         .Cast<Match>()
         .Select(m => m.Value)
         .Where(t => t is not ("ревижн" or "ревижен" or "ревижин" or "ревиж" or "пожалуйста" or "агент"))
-        .Select(t => t switch { "аип" or "аймп" or "aimp" => "аимп", _ => t });
+        .ToArray();
+
+    var tokens = new List<string>();
+    for (var i = 0; i < rawTokens.Length; i++)
+    {
+        var token = rawTokens[i];
+
+        // ASR often splits a short app name into two words. Merge only known
+        // dictionary forms; do not generally concatenate arbitrary speech.
+        if (token == "а" && i + 1 < rawTokens.Length &&
+            rawTokens[i + 1] is "имп" or "ип" or "имб")
+        {
+            tokens.Add("аимп");
+            i++;
+            continue;
+        }
+
+        // Pronunciation variants observed for common application names.
+        // These are domain aliases, not global consonant substitutions.
+        tokens.Add(token switch
+        {
+            "аимб" or "аип" or "аймп" or "эймп" or "aimp" => "аимп",
+            "кром" or "хрома" or "chrome" => "хром",
+            _ => token
+        });
+    }
+
     return string.Join(" ", tokens);
 }
 
