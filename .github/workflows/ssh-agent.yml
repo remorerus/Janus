@@ -1,0 +1,30 @@
+name: Build RE:Vision SSH Agent
+on:
+  push:
+    branches: [revision-voicebridge-tap-ssh-manager-2026-11-25]
+    paths:
+      - 'ssh-agent/**'
+      - '.github/workflows/ssh-agent.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish standalone SSH Manager
+        shell: pwsh
+        run: |
+          dotnet publish ssh-agent/Revision.SshAgent/Revision.SshAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ssh-agent/publish
+          Copy-Item ssh-agent/install-ssh-agent.ps1 ssh-agent/publish/
+          Copy-Item ssh-agent/uninstall-ssh-agent.ps1 ssh-agent/publish/
+          Copy-Item ssh-agent/run-ssh-command.ps1 ssh-agent/publish/
+          Copy-Item ssh-agent/README.md ssh-agent/publish/
+          Compress-Archive -Path ssh-agent/publish/* -DestinationPath ssh-agent/RE-Vision-SSH-Agent-win-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-SSH-Agent-win-x64
+          path: ssh-agent/RE-Vision-SSH-Agent-win-x64.zip
+          if-no-files-found: error
