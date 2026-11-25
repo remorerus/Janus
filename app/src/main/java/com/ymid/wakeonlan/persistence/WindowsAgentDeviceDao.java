@@ -3,6 +3,7 @@ package com.ymid.wakeonlan.persistence;
 import androidx.room.Dao;
 import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
+import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
 import androidx.room.Update;
 
@@ -23,7 +24,7 @@ public interface WindowsAgentDeviceDao {
     @Query("SELECT * FROM WindowsAgentDevices WHERE enabled = 1")
     List<WindowsAgentDeviceEntity> getEnabled();
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insert(WindowsAgentDeviceEntity device);
 
     @Update
