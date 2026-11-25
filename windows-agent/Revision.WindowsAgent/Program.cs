@@ -91,8 +91,10 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
         var arguments = item.Arguments ?? "";
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
             target.Length is < 1 or > 500 || arguments.Length > 500 ||
-            kind is not ("app" or "bat" or "close" or "restart"))
+            kind is not ("app" or "bat" or "close" or "restart" or "media"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, тип и путь к файлу." });
+        if (kind == "media" && (!string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase) || arguments is not ("/PLAY" or "/PAUSE" or "/PLAYPAUSE" or "/NEXT" or "/PREV" or "/STOP" or "/MUTE" or "/VOLUP" or "/VOLDWN")))
+            return Results.BadRequest(new { error = "Для мультимедиа выбери EXE и одно из разрешённых действий плеера." });
         if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
             return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
         normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments));
@@ -278,7 +280,8 @@ static bool LaunchCatalogCommand(AgentCommand command)
         string commandLine;
         string workingDirectory = Path.GetDirectoryName(target) ?? Environment.SystemDirectory;
         if ((string.Equals(command.Kind, "app", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase)) &&
+             string.Equals(command.Kind, "restart", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(command.Kind, "media", StringComparison.OrdinalIgnoreCase)) &&
             string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase))
         {
             application = target;
@@ -418,6 +421,7 @@ function render(){const root=el('commands');root.replaceChildren();if(!commands.
 commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.shell==='cmd'?'CMD':'PowerShell')+' · '+c.command;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
+updateKindFields();
 loadCommands();
 </script></body></html>
 """;
@@ -438,9 +442,10 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <main><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
-<label>Тип</label><select id="kind"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option></select>
+<label>Тип</label><select id="kind" onchange="updateKindFields()"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option></select>
+<div id="mediaOptions" style="display:none"><label>Действие мультимедиа</label><select id="mediaAction"><option value="/PLAY">Воспроизведение</option><option value="/PAUSE">Пауза</option><option value="/PLAYPAUSE">Воспроизведение / Пауза</option><option value="/NEXT">Следующий трек</option><option value="/PREV">Предыдущий трек</option><option value="/STOP">Остановить</option><option value="/MUTE">Включить / выключить звук</option><option value="/VOLUP">Увеличить громкость</option><option value="/VOLDWN">Уменьшить громкость</option></select></div>
 <label>Полный путь к файлу</label><input id="target" placeholder="C:\Program Files\...\app.exe">
-<label>Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
+<label id="argsLabel">Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
 <button onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
 <div class="note">Команды запускаются только из этого локального каталога и только в активной пользовательской сессии Windows. Добавляй только проверенные EXE и BAT-файлы.</div>
@@ -449,14 +454,15 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 let commands=[];
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
-function clearForm(){['name','phrase','target','args'].forEach(x=>el(x).value='');el('kind').value='app'}
-function addCommand(){const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),kind:el('kind').value,target:el('target').value.trim(),arguments:el('args').value.trim()};
+function updateKindFields(){const media=el('kind').value==='media';el('mediaOptions').style.display=media?'block':'none';el('argsLabel').style.display=media?'none':'block';el('args').style.display=media?'none':'block'}
+function clearForm(){['name','phrase','target','args'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='/PLAY';updateKindFields()}
+function addCommand(){const kind=el('kind').value;const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),kind,target:el('target').value.trim(),arguments:kind==='media'?el('mediaAction').value:el('args').value.trim()};
 if(!c.name||!c.phrase||!c.target){msg('Заполни название, фразу и путь к файлу.');return}
 if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
 commands.push(c);render();clearForm();msg('Команда добавлена в редактор. Нажми «Сохранить изменения».')}
 function removeCommand(i){commands.splice(i,1);render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.kind==='bat'?'BAT':c.kind==='close'?'Закрытие EXE':c.kind==='restart'?'Перезапуск EXE':'Запуск EXE')+' · '+c.target;info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
+root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.kind==='media'?'Управление мультимедиа':c.kind==='bat'?'BAT':c.kind==='close'?'Закрытие EXE':c.kind==='restart'?'Перезапуск EXE':'Запуск EXE')+' · '+c.target+(c.kind==='media'?' · '+c.arguments:'');info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 loadCommands();
