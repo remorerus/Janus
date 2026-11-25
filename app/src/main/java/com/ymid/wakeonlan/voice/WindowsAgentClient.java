@@ -368,6 +368,12 @@ public final class WindowsAgentClient {
         return matches.get(0);
     }
 
+    private static boolean isLegacyStudioAlias(String value) {
+        String normalized = normalizeDeviceName(value);
+        return normalized.equals("studio") || normalized.equals("studiopc")
+                || normalized.equals("студия") || normalized.equals("студиописи");
+    }
+
     private static String normalizeDeviceName(String value) {
         return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT)
                 .replace('ё', 'е').replaceAll("[^a-zа-я0-9]", "");
@@ -379,7 +385,7 @@ public final class WindowsAgentClient {
         try {
             device = resolveRegisteredDevice(context, deviceName);
         } catch (IllegalStateException notFound) {
-            if ("studio".equals(normalizeDeviceName(deviceName))
+            if (isLegacyStudioAlias(deviceName)
                     && isConfigured(context)) return executePhrase(context, phrase);
             throw notFound;
         }
@@ -395,7 +401,7 @@ public final class WindowsAgentClient {
         try {
             device = resolveRegisteredDevice(context, deviceName);
         } catch (IllegalStateException notFound) {
-            if ("studio".equals(normalizeDeviceName(deviceName)) && isConfigured(context))
+            if (isLegacyStudioAlias(deviceName) && isConfigured(context))
                 return executeLegacyPhrase(context, phrase, alternatives);
             throw notFound;
         }
@@ -413,7 +419,7 @@ public final class WindowsAgentClient {
         try {
             device = resolveRegisteredDevice(context, deviceName);
         } catch (IllegalStateException notFound) {
-            if ("studio".equals(normalizeDeviceName(deviceName)) && isConfigured(context))
+            if (isLegacyStudioAlias(deviceName) && isConfigured(context))
                 return command(context, action);
             throw notFound;
         }
