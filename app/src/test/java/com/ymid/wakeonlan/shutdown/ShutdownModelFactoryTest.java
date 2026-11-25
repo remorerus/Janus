@@ -37,32 +37,27 @@ public class ShutdownModelFactoryTest {
     }
 
     @Test
-    public void fromDevice_missingPassword_passwordAuth_returnsEmpty() {
-        Device d = passwordDevice();
-        d.sshPassword = null;
-        assertFalse(ShutdownModelFactory.fromDevice(d).isPresent());
-    }
-
-    @Test
     public void fromDevice_missingCommand_returnsEmpty() {
         Device d = passwordDevice();
         d.sshCommand = null;
         assertFalse(ShutdownModelFactory.fromDevice(d).isPresent());
     }
 
-    // ── fromDevice: valid password auth ──────────────────────────────────────
+    // SSH key is mandatory; legacy password values are ignored.
 
     @Test
-    public void fromDevice_validPasswordAuth_returnsModel() {
+    public void fromDevice_legacyPasswordEntryWithoutKey_returnsEmpty() {
+        Device d = passwordDevice();
+        d.sshKeyAlias = null;
+        assertFalse(ShutdownModelFactory.fromDevice(d).isPresent());
+    }
+
+    @Test
+    public void fromDevice_legacyPasswordEntryWithKey_usesKeyAuth() {
         Optional<ShutdownModel> result = ShutdownModelFactory.fromDevice(passwordDevice());
         assertTrue(result.isPresent());
-        ShutdownModel m = result.get();
-        assertEquals("192.168.1.100", m.getSshAddress());
-        assertEquals(22, m.getSshPort());
-        assertEquals("user", m.getUsername());
-        assertEquals("pass", m.getPassword());
-        assertEquals("shutdown -h now", m.getCommand());
-        assertFalse(m.isKeyAuth());
+        assertTrue(result.get().isKeyAuth());
+        assertEquals("aweken_ssh_legacy_migration", result.get().getSshKeyAlias());
     }
 
     @Test
@@ -136,9 +131,9 @@ public class ShutdownModelFactoryTest {
     }
 
     @Test
-    public void isKeyAuth_nullAuthType_defaultsToPassword() {
-        ShutdownModel m = new ShutdownModel("h", 22, "u", "p", "cmd", null, null);
-        assertFalse(m.isKeyAuth());
+    public void isKeyAuth_nullAuthType_defaultsToKey() {
+        ShutdownModel m = new ShutdownModel("h", 22, "u", null, "cmd", null, "alias");
+        assertTrue(m.isKeyAuth());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -149,9 +144,10 @@ public class ShutdownModelFactoryTest {
         d.sshAddress = "192.168.1.100";
         d.sshPort = 22;
         d.sshUsername = "user";
-        d.sshPassword = "pass";
+        d.sshPassword = "legacy-value-must-be-ignored";
         d.sshCommand = "shutdown -h now";
         d.sshAuthType = "password";
+        d.sshKeyAlias = "aweken_ssh_legacy_migration";
         return d;
     }
 
