@@ -27,6 +27,7 @@ import com.ymid.wakeonlan.persistence.models.Device;
 import com.ymid.wakeonlan.persistence.repository.DeviceRepository;
 import com.ymid.wakeonlan.security.AuthenticatedDeviceActionActivity;
 import com.ymid.wakeonlan.security.DeviceActionExecutor;
+import com.ymid.wakeonlan.voice.WinSshAgentClient;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -499,7 +500,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 ("POST".equals(method) && ("/command".equals(path) || "/wifi".equals(path) || "/wifi/toggle".equals(path))) ||
                 ("GET".equals(method) && ("/wifi/status".equals(path) || "/wifi/networks".equals(path) || "/windows/status".equals(path))) ||
                 ("POST".equals(method) && ("/wifi".equals(path) || "/wifi/connect".equals(path) || "/wifi/toggle".equals(path))) ||
-                ("POST".equals(method) && (path.startsWith("/windows/command/") || "/windows/execute".equals(path)));
+                ("POST".equals(method) && (path.startsWith("/windows/command/") || "/windows/execute".equals(path) || "/windows/ssh/execute".equals(path)));
         if (protectedEndpoint && !isAuthorized(suppliedToken)) {
             Log.w(TAG, "HTTP 401 for " + path);
             writeResponse(socket.getOutputStream(), 401, error("unauthorized"));
@@ -555,6 +556,18 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 response.addProperty("detail", safeError(e));
                 writeResponse(socket.getOutputStream(), 502, response);
             }
+        } else if ("POST".equals(method) && "/windows/ssh/execute".equals(path)) {
+            try {
+                JsonObject requestBody = JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
+                String phrase = requestBody.has("phrase") ? requestBody.get("phrase").getAsString() : "";
+                String deviceName = requestBody.has("deviceName") ? requestBody.get("deviceName").getAsString() : "STUDIO";
+                JsonObject response = executeWinSshAgentPhrase(deviceName, phrase);
+                writeResponse(socket.getOutputStream(), 200, response);
+            } catch (Exception e) {
+                JsonObject response = error("win_ssh_agent_execute_failed");
+                response.addProperty("detail", safeError(e));
+                writeResponse(socket.getOutputStream(), 502, response);
+            }
         } else if ("POST".equals(method) && path.startsWith("/windows/command/")) {
             String action = path.substring("/windows/command/".length());
             try {
@@ -569,6 +582,26 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } else {
             writeResponse(socket.getOutputStream(), 404, error("not_found"));
         }
+    }
+
+    private JsonObject executeWinSshAgentPhrase(String deviceName, String phrase) throws Exception {
+        if (phrase == null || phrase.trim().isEmpty()) return error("command_phrase_required");
+        List<Device> devices = DeviceRepository.getInstance(this).getAll();
+        String wanted = normalizeDeviceLookupName(deviceName == null || deviceName.trim().isEmpty() ? "STUDIO" : deviceName);
+        Device selected = null;
+        for (Device device : devices) {
+            if (device.name == null || device.sshKeyAlias == null || device.sshKeyAlias.isEmpty()) continue;
+            String stored = normalizeDeviceLookupName(device.name);
+            if (stored.equalsIgnoreCase(wanted) || wanted.endsWith(stored)) {
+                selected = device;
+                break;
+            }
+        }
+        if (selected == null) return error("ssh_device_not_found_or_key_missing");
+        JsonObject result = JsonParser.parseString(
+                WinSshAgentClient.executePhrase(this, selected, phrase).toString()).getAsJsonObject();
+        result.addProperty("device", selected.name);
+        return result;
     }
 
     private static String safeError(Exception error) {
