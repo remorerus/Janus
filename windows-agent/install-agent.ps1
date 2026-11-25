@@ -72,6 +72,10 @@ if (-not (Get-NetFirewallRule -DisplayName 'RE:Vision Windows Agent (Private LAN
     New-NetFirewallRule -DisplayName 'RE:Vision Windows Agent (Private LAN)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 47821 -Profile Private -Service $serviceName | Out-Null
 }
 
+if (-not (Get-NetFirewallRule -DisplayName 'RE:Vision LAN Discovery (Private LAN)' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName 'RE:Vision LAN Discovery (Private LAN)' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 47822 -Profile Private -Service $serviceName | Out-Null
+}
+
 Start-Service -Name $serviceName
 $deadline = (Get-Date).AddSeconds(20)
 do {
@@ -84,7 +88,7 @@ $pairingFile = Join-Path $dataDir 'agent.pairing-code.txt'
 Write-Host 'Windows Agent service installed and running. Existing pairing data was preserved.' -ForegroundColor Green
 Write-Host "Pairing code file: $pairingFile"
 if (Test-Path $pairingFile) { Write-Host 'A pairing-code file exists. Check pairing status in the local manager; do not share the code.' }
-Write-Host 'Win SSH Agent manager: http://127.0.0.1:47821/ssh-manager' -ForegroundColor Green
+Write-Host 'RE:Vision unified manager: http://127.0.0.1:47821/manager (Windows Agent + SSH tabs)' -ForegroundColor Green
 Write-Host "Win SSH Agent command catalog: $newCatalog"
 Write-Warning 'SSH execution requires Windows OpenSSH Server, the RE:Vision public key in authorized_keys for the SSH login account, and a generated private key retained in Android Keystore.'
-Write-Warning 'Windows Agent HTTP is intended for a trusted private LAN only. Do not expose port 47821 to the Internet.'
+Write-Warning 'Windows Agent HTTP and UDP discovery are intended for a trusted private LAN only. Do not expose ports 47821/47822 to the Internet.'
