@@ -226,7 +226,7 @@
     <string name="ssh_auth_key">SSH Key</string>
     <string name="ssh_key_generate">Generate SSH key</string>
     <string name="ssh_key_public_title">Public Key</string>
-    <string name="ssh_key_public_hint">Add this key to ~/.ssh/authorized_keys on your device</string>
+    <string name="ssh_key_public_hint">Add this public key to the Windows account OpenSSH authorized_keys file</string>
     <string name="ssh_key_copy">Copy to clipboard</string>
     <string name="ssh_key_copied">Public key copied to clipboard</string>
 
