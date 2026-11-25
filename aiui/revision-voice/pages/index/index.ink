@@ -30,24 +30,59 @@ export default {
     const keyword = String(event && event.keyword || '');
     console.log('[RE:Vision] voice wakeup received', { keyword });
     this.setData({
-      statusText: keyword === 'clickAiAssist'
-        ? 'Касание получено. Ожидаю голосовой ввод Rokid.'
-        : 'Голосовое пробуждение получено. Слушаю.',
-      detailText: keyword ? 'Источник: ' + keyword + '. Голосовой ввод Rokid открыт — скажи команду для Ревижн.' : 'Голосовой ввод Rokid открыт — скажи команду для Ревижн.'
+      statusText: 'Запускаю распознавание команды…',
+      detailText: keyword ? 'Событие Rokid: ' + keyword : 'Получено голосовое пробуждение Rokid.'
     });
-    // Intentionally do not call preventDefault(): Rokid must open its native
-    // voice-input flow after either a wake word or a temple tap.
+    // Do not cancel the host event: preserve the native AI Assistant flow.
+    // The guard below merges clickAiAssist + GlobalHook when firmware emits both.
+    this.startAgentRecognition('onVoiceWakeup:' + keyword);
   },
 
   onKeyUp(event) {
-    // Some Rokid firmware versions expose the temple tap as GlobalHook instead
-    // of clickAiAssist. Observe it as a compatibility fallback without blocking
-    // the host's normal voice interaction.
     if (event && event.code === 'GlobalHook') {
-      console.log('[RE:Vision] temple tap received through GlobalHook');
+      console.log('[RE:Vision] temple touch received through GlobalHook');
+      this.startAgentRecognition('GlobalHook');
+    }
+  },
+
+  startAgentRecognition(source) {
+    const now = Date.now();
+    const lastStart = Number(this._lastRecognitionStartAt || 0);
+    if (now - lastStart < 1800) {
+      console.log('[RE:Vision] duplicate recognition trigger ignored', { source });
+      return;
+    }
+
+    if (typeof wx === 'undefined' || !wx.speech ||
+        typeof wx.speech.startRecognition !== 'function') {
+      const message = 'Голосовое распознавание Rokid недоступно в этой версии AIUI.';
+      console.error('[RE:Vision] wx.speech.startRecognition unavailable');
+      this.setData({ statusText: message, detailText: 'Проверь версию AIUI runtime и разрешение микрофона.' });
+      return;
+    }
+
+    if (typeof wx.canIUse === 'function' && !wx.canIUse('speech.startRecognition')) {
+      const message = 'AIUI не поддерживает запуск голосового распознавания.';
+      console.error('[RE:Vision] speech.startRecognition is not registered');
+      this.setData({ statusText: message, detailText: 'Распознавание не запущено; штатная обработка Rokid не блокировалась.' });
+      return;
+    }
+
+    this._lastRecognitionStartAt = now;
+    try {
+      const sessionId = wx.speech.startRecognition();
+      this._recognitionSessionId = sessionId || '';
+      console.log('[RE:Vision] native speech recognition started', { source, sessionId: sessionId || null });
       this.setData({
-        statusText: 'Касание получено. Ожидаю голосовой ввод Rokid.',
-        detailText: 'Касание кнопки принято. Для голосовой команды дождись запуска голосового ввода Rokid.'
+        statusText: 'Слушаю команду…',
+        detailText: 'Говори команду. После распознавания Ревижн передаст её на выполнение.'
+      });
+    } catch (error) {
+      this._lastRecognitionStartAt = 0;
+      console.error('[RE:Vision] native speech recognition failed to start', error);
+      this.setData({
+        statusText: 'Не удалось запустить голосовой ввод.',
+        detailText: String(error && error.message || error)
       });
     }
   }
