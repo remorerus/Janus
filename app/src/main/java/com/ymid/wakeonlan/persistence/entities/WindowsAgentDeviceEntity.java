@@ -2,6 +2,7 @@ package com.ymid.wakeonlan.persistence.entities;
 
 import androidx.annotation.NonNull;
 import androidx.room.Entity;
+import androidx.room.ColumnInfo;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
@@ -17,6 +18,7 @@ public class WindowsAgentDeviceEntity {
 
     /** JSON array of voice aliases; parsed and validated by the registry layer. */
     @NonNull
+    @ColumnInfo(defaultValue = "'[]'")
     public String voiceAliasesJson = "[]";
 
     @NonNull
@@ -28,6 +30,8 @@ public class WindowsAgentDeviceEntity {
 
     public long createdAt;
     public long lastSeenAt;
+    @ColumnInfo(defaultValue = "0")
     public boolean isDefault;
+    @ColumnInfo(defaultValue = "1")
     public boolean enabled = true;
 }
