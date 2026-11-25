@@ -23,10 +23,14 @@ export default {
     const keys = query && typeof query === 'object' ? Object.keys(query) : [];
     console.log('[RE:Vision] startup page loaded', { queryKeys: keys });
     this.setData({
-      statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
-      detailText: 'Короткое касание не запускает команды.',
+      statusText: 'Ревижн запускается. Готовлю микрофон…',
+      detailText: 'При вызове агента прослушивание начинается автоматически.',
       transcript: ''
     });
+    // The two-finger system gesture has already opened this agent. Try to
+    // consume that launch activation immediately; GlobalHook remains the
+    // fallback for later long holds while the page is already open.
+    this.startListening();
   },
 
   onShow() {
