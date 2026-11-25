@@ -162,6 +162,9 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         addAutofillClickHandler();
         setRemoteDeviceShutdownSwitchListener();
         setSshKeyButtonListeners();
+        // The layout hides SSH-key controls by default. Make key generation
+        // available on the Add Device screen as well as when editing a device.
+        initializeSshKeyUi();
         setOsSpinnerSuggestionListener();
         setOnTestSshShutdownListenerClickedListener();
     }
