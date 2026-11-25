@@ -741,6 +741,8 @@ function updateKindFields(){
  el('windowOptions').style.display=win?'block':'none';
  el('targetLabel').style.display=(hotkey||winGlobal)?'none':'block';
  el('target').style.display=(hotkey||winGlobal)?'none':'block';
+ el('targetLabel').textContent=win?'Имя процесса или часть заголовка окна':'Полный путь к файлу';
+ el('target').placeholder=win?'chrome, explorer, aimp или часть заголовка':'C:\\Program Files\\...\\app.exe';
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
