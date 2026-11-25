@@ -198,9 +198,15 @@ public final class VoiceBridgeRecoveryService extends Service {
         }
 
         if ("POST".equals(method) && "/accessibility/settings".equals(path)) {
+            // Do not let stale AIUI pages open Settings automatically on page load.
+            // Only the dedicated button sends this explicit confirmation marker.
+            if (!request[1].contains("userInitiated=1")) {
+                writeResponse(socket.getOutputStream(), 409,
+                        "{\\"ok\\":false,\\"error\\":\\"confirmation_required\\"}");
+                return;
+            }
             // This endpoint only opens Android's user-controlled settings screen.
-            // It cannot enable Accessibility or execute device commands, so pairing
-            // PIN is not required for recovery navigation.
+            // It cannot enable Accessibility or execute device commands.
             boolean opened = openAccessibilitySettings();
             if (opened) {
                 writeResponse(socket.getOutputStream(), 200,
