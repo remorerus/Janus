@@ -73,11 +73,8 @@ internal sealed class ManagerForm : Form
         var delete = MakeButton("Удалить", 298, 506, 90, 40, Color.FromArgb(153, 27, 27));
         delete.Click += (_, _) => DeleteSelected(); left.Controls.Add(delete);
 
-        var hint = new Label {
-            Text = "Команды запускаются по точному совпадению голосовой фразы и выполняются от имени SSH-пользователя Windows. Добавляй только команды, которым доверяешь.",
-            AutoSize = false, SetBounds = new Rectangle(8, 564, 380, 70), ForeColor = Color.Khaki
-        };
-        left.Controls.Add(hint);
+        var hint = new Label { Text = "Команды запускаются по точному совпадению голосовой фразы и выполняются от имени SSH-пользователя Windows. Добавляй только команды, которым доверяешь.", AutoSize = false, ForeColor = Color.Khaki };
+        hint.SetBounds(8, 564, 380, 70); left.Controls.Add(hint);
 
         var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10) };
         split.Panel2.Controls.Add(right);
@@ -95,8 +92,8 @@ internal sealed class ManagerForm : Form
         right.Controls.Add(_grid);
         var refresh = MakeButton("Обновить список", 8, 586, 150, 38, Color.FromArgb(75, 85, 99));
         refresh.Click += (_, _) => LoadCatalog(); right.Controls.Add(refresh);
-        var path = new Label { Text = "Файл: " + CatalogPath, AutoSize = false, SetBounds = new Rectangle(8, 632, 610, 34), Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom, ForeColor = Color.Silver };
-        right.Controls.Add(path);
+        var path = new Label { Text = "Файл: " + CatalogPath, AutoSize = false, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom, ForeColor = Color.Silver };
+        path.SetBounds(8, 632, 610, 34); right.Controls.Add(path);
         _status.SetBounds(8, 675, 610, 28); _status.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         _status.ForeColor = Color.LightGreen; right.Controls.Add(_status);
     }
