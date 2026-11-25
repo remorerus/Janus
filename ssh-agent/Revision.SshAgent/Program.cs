@@ -95,7 +95,7 @@ internal sealed class ManagerForm : Form
         var refresh = MakeButton("Обновить список", 8, 586, 150, 38, Color.FromArgb(75, 85, 99));
         refresh.Click += (_, _) => LoadCatalog(); right.Controls.Add(refresh);
         var path = new Label { Text = "Файл: " + CatalogPath, AutoSize = false, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom, ForeColor = Color.Silver };
-        path.SetBounds(8, 632, 610, 34); path.SetBounds(8, 632, 610, 34); right.Controls.Add(path);
+        path.SetBounds(8, 632, 610, 34); right.Controls.Add(path);
         _status.SetBounds(8, 675, 610, 28); _status.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         _status.ForeColor = Color.LightGreen; right.Controls.Add(_status);
     }
