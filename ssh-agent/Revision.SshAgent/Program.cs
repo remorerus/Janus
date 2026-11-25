@@ -35,7 +35,7 @@ internal sealed class ManagerForm : Form
         Height = 760;
         MinimumSize = new Size(900, 620);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb( twenty: 25, red: 24, green: 31, blue: 42);
+        BackColor = Color.FromArgb(24, 31, 42);
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 10F);
         BuildLayout();
@@ -47,10 +47,10 @@ internal sealed class ManagerForm : Form
         var header = new Panel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(22, 12, 22, 8), BackColor = Color.FromArgb(31, 41, 55) };
         var title = new Label { Text = "RE:Vision SSH Agent", AutoSize = true, Font = new Font("Segoe UI Semibold", 19F), ForeColor = Color.White, Location = new Point(18, 8) };
         var subtitle = new Label { Text = "Локальный каталог голосовых команд · без фоновой службы", AutoSize = true, ForeColor = Color.LightGray, Location = new Point(21, 43) };
-        header.Controls.Add(title); header.Controls.Add(subtitle); Controls.Add(header);
+        header.Controls.Add(title); header.Controls.Add(subtitle);
 
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 430, Padding = new Padding(14), BackColor = BackColor };
-        Controls.Add(split); split.BringToFront();
+        Controls.Add(split); Controls.Add(header); header.BringToFront();
 
         var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10) };
         split.Panel1.Controls.Add(left);
@@ -110,8 +110,14 @@ internal sealed class ManagerForm : Form
         control.ForeColor = Color.White;
     }
 
-    private static Button MakeButton(string text, int x, int y, int width, int height, Color color) =>
-        new() { Text = text, SetBounds = new Rectangle(x, y, width, height), BackColor = color, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+    private static Button MakeButton(string text, int x, int y, int width, int height, Color color) => CreateButton(text, x, y, width, height, color);
+
+    private static Button CreateButton(string text, int x, int y, int width, int height, Color color)
+    {
+        var button = new Button { Text = text, BackColor = color, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+        button.SetBounds(x, y, width, height);
+        return button;
+    }
 
     private void LoadCatalog()
     {
