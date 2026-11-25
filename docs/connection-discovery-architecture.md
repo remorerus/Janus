@@ -63,20 +63,40 @@ The Android RE:Vision settings should likewise have one **Устройства �
 - show connection health per transport;
 - keep the Voice Bridge PIN in its own local-security section because it protects the glasses-to-phone bridge, not a remote computer.
 
-## One-time enrollment without reusing one secret
+## Automatic trusted handshake and credential provisioning
 
-The target user experience is one approval/code for a newly discovered computer, not one shared cryptographic key:
-1. RE:Vision discovers the computer and displays its stable ID/name.
-2. The user approves the candidate and enters/scans one short-lived enrollment code.
-3. Android reuses an existing SSH key alias for that device or creates a key pair in Android Keystore.
-4. During the authenticated enrollment exchange, Android sends only the SSH public key and the chosen Windows SSH username. The Windows Agent installs that public key into the correct OpenSSH `authorized_keys` location with restrictive ACLs, after explicit user approval.
-5. The Windows Agent independently creates/returns its HMAC client secret. The SSH private key never leaves Android Keystore.
-6. The registry stores references to both credentials under the same device UUID.
+The target is one user action — **Add device / Подключить** — after which RE:Vision and the computer provision and save their own credentials. The user must never copy private keys or manually configure separate Windows and SSH secrets.
 
-The local Voice Bridge PIN is not part of remote-device enrollment: it protects the glasses-to-Android loopback bridge and should remain local. This produces one setup experience while preserving separate, revocable credentials for each transport.
+### Handshake flow
 
-This automatic SSH provisioning flow is a design target, not implemented in the current discovery milestone. Until it is implemented and tested, existing SSH public-key installation remains unchanged.
- 
+1. **Discover:** Android finds candidates through UDP discovery. This is only an announcement; any device on the LAN can imitate it. Discovery metadata is never treated as proof of identity.
+2. **Start enrollment:** the user selects the candidate and approves adding it. The Windows manager shows a short-lived one-time approval QR/code tied to that candidate's stable `deviceId`, expiring quickly and usable once. Scanning/approving this is the only first-time trust action.
+3. **Authenticate the handshake:** establish an encrypted channel using TLS 1.3. During first enrollment, bind both peers' public identity keys/certificate fingerprints to the approved one-time enrollment. Show a short comparison phrase or fingerprint on both sides when needed to prevent accidental approval of a different host.
+4. **Generate identities locally:** Android creates/uses its own non-exportable identity key in Android Keystore; Windows creates/uses its machine identity key in the Windows certificate/CNG store protected by the OS. Neither endpoint sends its private key.
+5. **Exchange public identity:** each peer sends its public certificate/key and a signed handshake transcript including both device IDs, ephemeral handshake values, protocol version and negotiated capabilities. Both sides verify the transcript and pin the peer identity.
+6. **Provision services automatically over the authenticated channel:**
+   - Windows Agent authorizes the Android app identity for its Windows command API. During a migration period it may provision a unique legacy HMAC credential per device, but the target is mutual TLS/public-key authentication rather than one shared secret.
+   - Android sends only the public half of its SSH key and the selected Windows SSH username. The Windows Agent installs it into the correct OpenSSH `authorized_keys` location only after the user-approved enrollment, with restrictive ACLs. The SSH private key stays in Android Keystore.
+   - The existing SSH host-key pin is retained or confirmed as part of the same enrollment.
+7. **Persist:** both peers save the other's public identity, stable device ID, capability list, endpoint hints and independently revocable service grants. Android stores references to credential aliases in the per-device record; Windows stores the peer identity and authorization under its protected ProgramData configuration.
+8. **Reconnect automatically:** future discovery finds the same device ID, then the peers authenticate using the pinned identities. A changed IP is just a new endpoint; it must not trigger re-pairing. A renamed device remains the same identity.
+
+### Security rules
+
+- Do not make one universal secret for Voice Bridge, Windows Agent and SSH. A single enrollment flow provisions separate credentials/grants for each service, so revoking SSH does not revoke Windows Agent and vice versa.
+- The local Voice Bridge PIN/token is a separate Rokid-to-Android loopback boundary. Keep the existing PIN and storage intact; it is not transmitted to a computer.
+- Discovery broadcasts contain no approval code, PIN, public-key authorization grant or private key.
+- The one-time enrollment approval is random, short-lived, single-use, bound to the selected device ID and rate-limited. Never accept an approval code merely because a host answered UDP discovery.
+- Private keys never leave their originating device. Only public keys/certificates and service-specific authorization grants are exchanged.
+- On device removal, revoke the selected device's service grants and unpin its peer identity. Do not clear credentials belonging to other devices.
+- If a device is reinstalled or its identity key changes, treat it as a new trust decision and require approval again; do not silently accept a new fingerprint.
+
+### What this means for the user
+
+For STUDIO PC, the existing pairing and SSH key are migrated in place: no new code and no key re-entry. For a new computer, the user finds it in the list and approves one enrollment QR/code. RE:Vision and the computer then create, exchange, save and validate the service credentials automatically. Future connections are silent unless the identity changes.
+
+This full handshake, mutual TLS and automatic SSH public-key provisioning are the next implementation milestone; they are not yet implemented by the current UDP discovery prototype. Until that milestone is complete and tested, existing Windows HMAC pairing and SSH key installation remain in place.
+
 ## Routing rules
 
 Voice commands resolve a logical device first, then select a transport based on the requested capability:
