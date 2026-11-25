@@ -1,9 +1,10 @@
 name: Build RE:Vision SSH Agent
 on:
   push:
-    branches: [revision-voicebridge-tap-ssh-manager-2026-11-25]
+    branches: [revision-voicebridge-tap-ssh-manager-2026-11-25, revision-win-ssh-web-manager-2026-11-25]
     paths:
       - 'ssh-agent/**'
+      - 'app/src/main/java/com/ymid/wakeonlan/voice/WinSshAgentClient.java'
       - '.github/workflows/ssh-agent.yml'
   workflow_dispatch:
 jobs:
