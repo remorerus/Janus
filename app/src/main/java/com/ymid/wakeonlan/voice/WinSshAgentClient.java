@@ -18,7 +18,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-/** Executes an exact phrase from the Win SSH Agent catalog over the device's paired SSH key. */
+/** Executes an exact phrase from the RE:Vision SSH Agent catalog over the device's paired SSH key. */
 public final class WinSshAgentClient {
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int COMMAND_TIMEOUT_MS = 15000;
