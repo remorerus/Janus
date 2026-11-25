@@ -351,8 +351,14 @@ public final class WindowsAgentClient {
 
     public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase) throws Exception {
         if (deviceName == null || deviceName.trim().isEmpty()) return executePhraseOnDefault(context, phrase);
-        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
-                resolveRegisteredDevice(context, deviceName);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
+        try {
+            device = resolveRegisteredDevice(context, deviceName);
+        } catch (IllegalStateException notFound) {
+            if ("studio".equals(normalizeDeviceName(deviceName))
+                    && isConfigured(context)) return executePhrase(context, phrase);
+            throw notFound;
+        }
         if (device == null) throw new IllegalStateException("Компьютер по умолчанию не настроен.");
         return executePhrase(context, device.deviceId, phrase);
     }
@@ -364,8 +370,14 @@ public final class WindowsAgentClient {
             if (defaultDevice != null) return command(context, defaultDevice.deviceId, action);
             return command(context, action);
         }
-        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
-                resolveRegisteredDevice(context, deviceName);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
+        try {
+            device = resolveRegisteredDevice(context, deviceName);
+        } catch (IllegalStateException notFound) {
+            if ("studio".equals(normalizeDeviceName(deviceName)) && isConfigured(context))
+                return command(context, action);
+            throw notFound;
+        }
         return command(context, device.deviceId, action);
     }
 
