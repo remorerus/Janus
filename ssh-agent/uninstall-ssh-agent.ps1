@@ -1,6 +1,6 @@
 param([switch]$PurgeData)
 $ErrorActionPreference = 'Stop'
-$installDir = Join-Path $env:ProgramFiles 'RE:Vision SSH Agent'
+$installDir = Join-Path $env:ProgramFiles 'REVision SSH Agent'
 $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\RE-Vision SSH Agent.lnk'
 Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $shortcut -Force -ErrorAction SilentlyContinue
