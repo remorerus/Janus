@@ -61,46 +61,6 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 });
 
 
-var sshDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSshAgent");
-Directory.CreateDirectory(sshDataDir);
-var sshCommandsPath = Path.Combine(sshDataDir, "commands.json");
-
-app.MapGet("/ssh-manager", (HttpContext context) =>
-{
-    if (!IsLocal(context)) return Results.NotFound();
-    return Results.Content(GetSshManagerHtml(), "text/html; charset=utf-8");
-});
-
-app.MapGet("/v1/ssh-manager/commands", (HttpContext context) =>
-{
-    if (!IsLocal(context)) return Results.NotFound();
-    return Results.Json(SshCommandCatalog.Load(sshCommandsPath));
-});
-
-app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
-{
-    if (!IsLocal(context)) return Results.NotFound();
-    var request = await context.Request.ReadFromJsonAsync<SshCommandCatalogRequest>();
-    if (request?.Commands is null || request.Commands.Count > 100)
-        return Results.BadRequest(new { error = "Некорректный список команд (максимум 100)." });
-    var normalized = new List<SshAgentCommand>();
-    foreach (var item in request.Commands)
-    {
-        var name = (item.Name ?? "").Trim();
-        var phrase = (item.Phrase ?? "").Trim();
-        var shell = (item.Shell ?? "powershell").Trim().ToLowerInvariant();
-        var command = (item.Command ?? "").Trim();
-        if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
-            command.Length is < 1 or > 2000 || shell is not ("powershell" or "cmd"))
-            return Results.BadRequest(new { error = "Проверь название, фразу, оболочку и текст команды." });
-        if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
-            return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
-        normalized.Add(new SshAgentCommand(Guid.NewGuid().ToString("N"), name, phrase, shell, command));
-    }
-    SshCommandCatalog.Save(sshCommandsPath, normalized);
-    return Results.Json(new { saved = true, count = normalized.Count });
-});
-
 app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
 
 app.MapPost("/v1/pair", async (HttpContext context) =>
@@ -421,43 +381,6 @@ loadCommands();
 """;
 
 
-static string GetSshManagerHtml() => """
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Win SSH Agent</title><style>
-:root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1100px;margin:auto}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}
-main{display:grid;grid-template-columns:1fr 1.15fr;gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
-label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:110px;resize:vertical;font:13px Consolas,monospace}
-button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
-.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px}.item button{margin:0}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
-@media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
-</style></head><body>
-<header><div><h1>Win SSH Agent</h1><div class="muted">Каталог команд Windows через SSH · STUDIO PC</div></div><span class="pill">Только локальная панель</span></header>
-<main><section class="panel"><h2>Добавить команду</h2>
-<label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
-<label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
-<label>Оболочка</label><select id="shell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select>
-<label>Команда</label><textarea id="command" placeholder="Например: Start-Process 'C:\Program Files\Mixxx\mixxx.exe'"></textarea>
-<button onclick="addCommand()">Добавить</button><button class="secondary" onclick="clearForm()">Очистить</button>
-<div class="status" id="status"></div>
-<div class="note">Команды выполняются от имени SSH-пользователя. Добавляй только команды, которым доверяешь. Панель доступна только с самого STUDIO PC; порт 47821 не открывай в Интернет.</div>
-</section><section class="panel"><h2>Сохранённые команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить</button><button class="secondary" onclick="loadCommands()">Обновить</button></section></main>
-<script>
-let commands=[];function el(id){return document.getElementById(id)}function msg(t){el('status').textContent=t}
-function clearForm(){['name','phrase','command'].forEach(x=>el(x).value='');el('shell').value='powershell'}
-function addCommand(){const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),shell:el('shell').value,command:el('command').value.trim()};
-if(!c.name||!c.phrase||!c.command){msg('Заполни название, фразу и команду.');return}
-if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
-commands.push(c);render();clearForm();msg('Добавлено. Нажми «Сохранить».')}
-function removeCommand(i){commands.splice(i,1);render();msg('Удалено. Сохрани изменения.')}
-function render(){const root=el('commands');root.innerHTML='';if(!commands.length){root.textContent='Команд пока нет.';return}
-commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const sm=document.createElement('small');sm.textContent=c.phrase+' · '+c.shell+' · '+c.command;info.append(b,sm);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
-async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель на STUDIO PC.')}}
-async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
-loadCommands();
-</script></body></html>
-""";
-
 static class NativeMethods
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -505,27 +428,7 @@ static class NativeMethods
     public static extern bool CloseHandle(IntPtr handle);
 }
 
-sealed record SshCommandCatalogRequest(List<SshAgentCommandInput>? Commands);
-sealed record SshAgentCommandInput(string? Name, string? Phrase, string? Shell, string? Command);
-sealed record SshAgentCommand(string Id, string Name, string Phrase, string Shell, string Command);
-
-sealed class SshCommandCatalog
-{
-    public static List<SshAgentCommand> Load(string path)
-    {
-        if (!File.Exists(path)) return new List<SshAgentCommand>();
-        try { return JsonSerializer.Deserialize<List<SshAgentCommand>>(File.ReadAllText(path)) ?? new(); }
-        catch { return new(); }
-    }
-    public static void Save(string path, List<SshAgentCommand> commands)
-    {
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(commands, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, path, true);
-    }
-}
-
-sealed record ExecuteRequest(string? Phrase);
+sealed sealed record ExecuteRequest(string? Phrase);
 sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
