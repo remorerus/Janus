@@ -75,7 +75,7 @@ jobs:
       - name: Build APKs
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon clean assembleDebug assembleRelease \
+          ./gradlew --no-daemon clean testDebugUnitTest assembleDebug assembleRelease \
             -PUPLOAD_KEYSTORE_PATH="$UPLOAD_KEYSTORE_PATH" \
             -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
             -PKEY_ALIAS="$KEY_ALIAS" \
