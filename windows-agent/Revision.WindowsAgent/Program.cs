@@ -61,7 +61,9 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 });
 
 
-var sshCommandsPath = Path.Combine(dataDir, "ssh-commands.json");
+var sshDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSshAgent");
+Directory.CreateDirectory(sshDataDir);
+var sshCommandsPath = Path.Combine(sshDataDir, "commands.json");
 
 app.MapGet("/ssh-manager", (HttpContext context) =>
 {
