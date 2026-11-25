@@ -486,7 +486,7 @@ export default {
     });
     const query = Object.keys(params)
       .filter((key) => params[key] !== undefined && params[key] !== '')
-      .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])))
+      .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(Array.isArray(params[key]) ? JSON.stringify(params[key]) : String(params[key])))
       .join('&');
     this.setData({
       statusText: 'Команда распознана.',
