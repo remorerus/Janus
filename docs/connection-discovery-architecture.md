@@ -63,6 +63,20 @@ The Android RE:Vision settings should likewise have one **Устройства �
 - show connection health per transport;
 - keep the Voice Bridge PIN in its own local-security section because it protects the glasses-to-phone bridge, not a remote computer.
 
+## One-time enrollment without reusing one secret
+
+The target user experience is one approval/code for a newly discovered computer, not one shared cryptographic key:
+1. RE:Vision discovers the computer and displays its stable ID/name.
+2. The user approves the candidate and enters/scans one short-lived enrollment code.
+3. Android reuses an existing SSH key alias for that device or creates a key pair in Android Keystore.
+4. During the authenticated enrollment exchange, Android sends only the SSH public key and the chosen Windows SSH username. The Windows Agent installs that public key into the correct OpenSSH `authorized_keys` location with restrictive ACLs, after explicit user approval.
+5. The Windows Agent independently creates/returns its HMAC client secret. The SSH private key never leaves Android Keystore.
+6. The registry stores references to both credentials under the same device UUID.
+
+The local Voice Bridge PIN is not part of remote-device enrollment: it protects the glasses-to-Android loopback bridge and should remain local. This produces one setup experience while preserving separate, revocable credentials for each transport.
+
+This automatic SSH provisioning flow is a design target, not implemented in the current discovery milestone. Until it is implemented and tested, existing SSH public-key installation remains unchanged.
+ 
 ## Routing rules
 
 Voice commands resolve a logical device first, then select a transport based on the requested capability:
