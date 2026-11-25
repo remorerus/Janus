@@ -135,6 +135,27 @@ function returnToMainVoicePage(page) {
   if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
   page.returnHomeTimer = null;
   page.returningHome = true;
+
+  const returnOneStep = (firstError) => {
+    try {
+      wx.navigateBack({
+        delta: 1,
+        success() {
+          console.log('[RE:Vision] fallback return reached the agent voice page');
+        },
+        fail(secondError) {
+          page.returningHome = false;
+          console.warn('[RE:Vision] both two-step and one-step returns failed', {
+            firstError, secondError
+          });
+        }
+      });
+    } catch (secondError) {
+      page.returningHome = false;
+      console.warn('[RE:Vision] fallback return failed', { firstError, secondError });
+    }
+  };
+
   try {
     wx.navigateBack({
       delta: 2,
@@ -142,13 +163,13 @@ function returnToMainVoicePage(page) {
         console.log('[RE:Vision] returned two steps to main voice input page');
       },
       fail(error) {
-        page.returningHome = false;
-        console.warn('[RE:Vision] could not return two steps to main voice input page', error);
+        console.warn('[RE:Vision] two-step return failed; trying one-step fallback', error);
+        returnOneStep(error);
       }
     });
   } catch (error) {
-    page.returningHome = false;
-    console.warn('[RE:Vision] two-step return failed', error);
+    console.warn('[RE:Vision] two-step return threw; trying one-step fallback', error);
+    returnOneStep(error);
   }
 }
 
@@ -217,6 +238,8 @@ function speakAndReturn(page, text) {
         player.audioPlayer.onEnded(() => {
           if (settled) return;
           settled = true;
+          if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
+          page.returnHomeTimer = null;
           releasePlayer();
           returnToMainVoicePage(page);
         });
@@ -229,6 +252,18 @@ function speakAndReturn(page, text) {
           speak(spokenText);
           scheduleFallbackReturn(page, spokenText);
         });
+        // Arm a watchdog immediately. Some Rokid builds never settle task.finished
+        // even though playback starts, which previously left the action page open.
+        const fallbackWatchdogMs = Math.max(7000, Math.min(30000, 3500 + spokenText.length * 150));
+        page.returnHomeTimer = setTimeout(() => {
+          page.returnHomeTimer = null;
+          if (settled || page.returnHomeCancelled === true) return;
+          settled = true;
+          releasePlayer();
+          console.warn('[RE:Vision] TTS playback watchdog expired; returning to voice page');
+          returnToMainVoicePage(page);
+        }, fallbackWatchdogMs);
+
         if (task.finished && typeof task.finished.then === 'function') {
           task.finished.then(result => {
             if (settled || page.returnHomeCancelled === true) return;
@@ -248,6 +283,8 @@ function speakAndReturn(page, text) {
           }).catch(error => {
             if (settled) return;
             settled = true;
+            if (page.returnHomeTimer) clearTimeout(page.returnHomeTimer);
+            page.returnHomeTimer = null;
             releasePlayer();
             if (page.returnHomeCancelled === true) return;
             console.warn('[RE:Vision] TTS generation failed; using compatibility playback', error);
