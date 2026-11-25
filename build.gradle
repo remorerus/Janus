@@ -15,10 +15,11 @@ buildscript {
 
 allprojects {
     repositories {
-        // Keep Maven Central as fallback if the mirror has not synced a newly published artifact.
+        // AndroidX and Android Gradle artifacts must resolve from Google's Maven first.
+        google()
+        // Use Google's Maven Central mirror before the rate-limited public Maven Central.
         maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
-        google()
     }
 }
 
