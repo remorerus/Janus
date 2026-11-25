@@ -779,7 +779,7 @@ static string GetSshManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Win SSH Agent</title><style>
 :root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1180px;margin:auto}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
 main{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(360px,1.1fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
 label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:190px;resize:vertical;font:13px Consolas,monospace}
 button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
@@ -813,8 +813,6 @@ async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands'
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
 updateKindFields();
 loadCommands();
-loadIdentity();
-loadPairing();
 </script></body></html>
 """;
 
@@ -823,7 +821,7 @@ static string GetManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RE:Vision Windows Agent</title><style>
 :root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1100px;margin:auto}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
 main{display:grid;grid-template-columns:1fr 1.15fr;gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
 label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}
 button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
@@ -911,6 +909,7 @@ root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div')
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 loadCommands();
+loadIdentity();
 loadPairing();
 </script></body></html>
 """;
