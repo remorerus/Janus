@@ -491,16 +491,34 @@ export default {
         if (!result || result.ok !== true) {
           throw new Error(result && result.error ? result.error : 'Android не выполнил переключение Wi-Fi');
         }
+        // Modern Android may reject WifiManager.setWifiEnabled(). In that case
+        // the bridge opens the system panel and uses its enabled Accessibility
+        // service to operate the exact Wi-Fi switch. Verify the radio state here
+        // instead of claiming success from merely opening the panel.
+        if (result.selectionPending === true) {
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            await delay(700);
+            const state = await request('/wifi/status', 'GET', token, null, 5000);
+            if (state && state.ok === true && state.enabled === requestedEnabled) {
+              result = Object.assign({}, state, {
+                verified: true,
+                requestedEnabled,
+                changed: true
+              });
+              break;
+            }
+          }
+        }
         if (result.verified === true && result.enabled === requestedEnabled) {
           const message = requestedEnabled ? 'Wi-Fi включён. Состояние проверено.' : 'Wi-Fi выключен. Состояние проверено.';
           this.setData({ statusText: message, detailText: result.ssid ? 'Сеть: ' + result.ssid : '', resultText: message, busy: false });
           speakAndReturn(this, message);
           return;
         }
-        if (result.requiresUserAction === true) {
+        if (result.requiresUserAction === true || result.selectionPending === true) {
           const message = requestedEnabled
-            ? 'Android не разрешил включить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — включи переключатель вручную.'
-            : 'Android не разрешил выключить Wi-Fi напрямую. Открыл системные настройки Wi-Fi — выключи переключатель вручную.';
+            ? 'Не удалось автоматически подтвердить включение Wi-Fi. Системная панель открыта — включи переключатель вручную.'
+            : 'Не удалось автоматически подтвердить выключение Wi-Fi. Системная панель открыта — выключи переключатель вручную.';
           this.setData({ statusText: message, detailText: 'Переключение не подтверждено. Требуется действие в системных настройках.', resultText: message, busy: false });
           speakAndReturn(this, message);
           return;
