@@ -7,10 +7,15 @@ $zip = Join-Path $PSScriptRoot 'Revision.WindowsAgent-win-x64.zip'
 if (-not (Test-Path $zip)) { throw "Publish archive not found: $zip" }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+$sshDataDir = Join-Path $env:ProgramData 'WinSshAgent'
+New-Item -ItemType Directory -Force -Path $sshDataDir | Out-Null
+& icacls.exe $sshDataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Could not secure Win SSH Agent command directory.' }
 # Only LocalSystem (service identity) and local Administrators may read agent secrets.
 & icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not secure agent data directory ACL.' }
 Expand-Archive -Path $zip -DestinationPath $installDir -Force
+Copy-Item (Join-Path $PSScriptRoot 'run-ssh-command.ps1') (Join-Path $installDir 'run-ssh-command.ps1') -Force
 $exe = Join-Path $installDir 'Revision.WindowsAgent.exe'
 if (-not (Test-Path $exe)) { throw "Agent executable missing: $exe" }
 if (Get-Service $serviceName -ErrorAction SilentlyContinue) { Stop-Service $serviceName -Force -ErrorAction SilentlyContinue; sc.exe delete $serviceName | Out-Null; Start-Sleep -Seconds 2 }
