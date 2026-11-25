@@ -37,12 +37,13 @@ An IP address is an endpoint, not the device identity. DHCP changes should updat
 
 Use a small, unauthenticated discovery advertisement that contains no credentials:
 
-- Service identity: `_revision-agent._tcp.local` (mDNS/DNS-SD).
-- TCP control endpoint: existing Windows Agent port `47821`.
-- Advertisement fields: protocol version, stable device UUID, user-configurable display name, TCP port and capability names.
-- Fallback for networks without mDNS: UDP discovery request/response on a dedicated port (proposed `47822/UDP`) with a short timeout and subnet-local scope.
-- The existing authenticated pairing endpoint remains authoritative. Discovery only finds a candidate; it does not establish trust or grant command access.
+Current v1 implementation:
+- UDP broadcast request/response on `47822/UDP`; request payload is `REVISION_DISCOVER_V1`.
+- Android sends to the limited broadcast address and, when available, the current Wi-Fi subnet broadcast address.
+- Response fields: protocol version, stable device UUID, user-configurable display name, TCP port `47821` and capability names.
+- The authenticated pairing endpoint remains authoritative. Discovery only finds a candidate; it does not establish trust or grant command access.
 - The Windows manager exposes the advertised name and allows the user to change it. The UUID remains stable when the display name changes.
+- mDNS/DNS-SD (`_revision-agent._tcp.local`) is a possible later enhancement; it is not required for v1 and is not yet implemented.
 
 The Android discovery UI should show candidates with name, IP, advertised services and reachability. It should deduplicate mDNS and UDP results by UUID, not by IP or name.
 
@@ -72,14 +73,15 @@ Voice commands resolve a logical device first, then select a transport based on 
 
 If the user explicitly names a transport (for example, “через SSH”), honour it. Otherwise use the configured preferred transport and fall back only when safe. Never silently fall back from an authenticated Windows action to an arbitrary SSH shell command.
 
-## Rollout sequence
+## Rollout sequence and current boundary
 
-1. Preserve current keys and fix voice intent/query handling and diagnostic propagation.
-2. Add stable identity and read-only discovery advertisement to the Windows Agent.
-3. Add Android discovery and merge discovered endpoints into existing device records without destructive migration.
-4. Build the single Android connection manager on top of existing storage and key references.
-5. Combine the two Windows web catalog views under one manager navigation.
-6. Add multiple-device voice routing and explicit per-device transport preferences.
+1. **Implemented in this branch:** preserve current keys; prioritize device-list voice intent; safely decode AIUI query values; preserve HTTP 502 downstream diagnostics; strip the explicit Windows Agent transport marker; add a stable Windows Agent identity, configurable network name, UDP broadcast discovery, Android discovery UI and one navigation between the Windows/SSH web catalog views.
+2. **Still required for full multi-device support:** store multiple Windows pairing records keyed by stable device UUID instead of the current single global Windows Agent record.
+3. Associate each saved Android device record with the discovered UUID and endpoint list, while keeping existing SSH Keystore aliases and host-key pins intact.
+4. Build the unified Android connection manager and per-device transport preferences.
+5. Add voice routing to select the correct device and transport from the logical device registry.
+
+Important current boundary: discovery can find multiple computers, but the existing Windows Agent pairing store and voice command path still represent one active Windows Agent connection. Do not treat discovery alone as completed multi-device command routing.
 
 ## Acceptance criteria
 
