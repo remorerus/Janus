@@ -960,12 +960,12 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction" onchange="updateKindFields()"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" placeholder="C:\Program Files\...\app.exe">
 <label id="argsLabel">Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
-<button onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
+<button id="addCommandButton" onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
 <div class="note">Команды запускаются только из этого локального каталога и только в активной пользовательской сессии Windows. Добавляй только проверенные EXE и BAT-файлы.</div>
 </section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section></main>
 <script>
-let commands=[];
+let commands=[],editingIndex=-1;
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
 async function loadIdentity(){
@@ -1011,7 +1011,7 @@ function updateKindFields(){
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
-function clearForm(){['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';updateKindFields()}
+function clearForm(){editingIndex=-1;['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('addCommandButton').textContent='Добавить в список';updateKindFields()}
 function addCommand(){
  const kind=el('kind').value, action=el('windowAction').value;
  const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':(kind==='media'?'':el('target').value.trim()));
@@ -1020,12 +1020,13 @@ function addCommand(){
  if(aliases.length>12){msg('Можно добавить не более 12 вариантов распознавания.');return}
  if(!c.name||!c.phrase||(!c.target&&kind!=='window'&&kind!=='media')){msg('Заполни название, голосовую фразу и параметры команды.');return}
  if(kind==='window'&&!['next','previous'].includes(action)&&!c.target){msg('Укажи имя процесса или часть заголовка окна.');return}
- if(commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
- commands.push(c);render();clearForm();msg('Команда добавлена. Нажми «Сохранить изменения».')
+ if(commands.some((x,i)=>i!==editingIndex&&x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
+ if(editingIndex>=0){commands[editingIndex]=c}else{commands.push(c)}render();clearForm();msg('Изменение внесено. Нажми «Сохранить изменения».')
 }
-function removeCommand(i){commands.splice(i,1);render();msg('Команда удалена из списка. Сохрани изменения.')}
+function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
+function removeCommand(i){commands.splice(i,1);if(editingIndex===i)clearForm();else if(editingIndex>i)editingIndex--;render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);d.append(info,btn);root.append(d)})}
+root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 loadCommands();
