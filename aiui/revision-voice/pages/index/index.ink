@@ -39,10 +39,19 @@ export default {
       this.initialShowPending = false;
       return;
     }
+    if (this.closeAfterReturn) {
+      this.closeAfterReturn = false;
+      this.setData({
+        statusText: 'Команда завершена. Возвращаюсь к Rokid.',
+        detailText: 'Ревижн закроется; для следующей команды снова удерживай сенсор двумя пальцами.'
+      });
+      this.scheduleAgentClose(1200);
+      return;
+    }
     if (!this.voiceListening) {
       this.setData({
         statusText: 'Ревижн готов. Удерживай сенсор двумя пальцами.',
-        detailText: 'После одной команды Ревижн вернётся сюда.',
+        detailText: 'После одной команды Ревижн вернётся к Rokid.',
         transcript: ''
       });
     }
@@ -110,7 +119,49 @@ export default {
     });
   },
 
-  finishListening(message, detail, recognition) {
+  scheduleAgentClose(delay) {
+    if (this.resetTimer) clearTimeout(this.resetTimer);
+    this.resetTimer = setTimeout(() => {
+      this.resetTimer = null;
+      this.requestAgentClose();
+    }, delay);
+  },
+
+  requestAgentClose() {
+    try {
+      if (typeof wx !== 'undefined' && typeof wx.exitMiniProgram === 'function') {
+        wx.exitMiniProgram({
+          success: () => console.log('[RE:Vision] agent exit accepted'),
+          fail: (error) => {
+            console.warn('[RE:Vision] agent exit was not accepted', error);
+            this.setData({
+              statusText: 'Прослушивание закрыто.',
+              detailText: 'Для новой команды снова удерживай сенсор двумя пальцами.'
+            });
+          }
+        });
+        return;
+      }
+    } catch (error) {
+      console.warn('[RE:Vision] wx.exitMiniProgram failed', error);
+    }
+    try {
+      if (typeof window !== 'undefined' && typeof window.close === 'function') {
+        window.close();
+        return;
+      }
+    } catch (error) {
+      console.warn('[RE:Vision] window.close failed', error);
+    }
+    this.setData({
+      statusText: 'Прослушивание закрыто.',
+      detailText: 'Автоматическое закрытие недоступно. Для новой команды удерживай сенсор двумя пальцами.'
+    });
+  },
+
+
+
+  finishListening(message, detail, recognition, closeDelay) {
     if (this.voiceHandled) return;
     this.voiceHandled = true;
     this.clearVoiceTimers();
@@ -123,6 +174,7 @@ export default {
       try { recognition.abort(); } catch (e) {}
     }
     this.setData({ statusText: message, detailText: detail });
+    this.scheduleAgentClose(Number(closeDelay) || 1800);
   },
 
   startListening() {
@@ -130,8 +182,9 @@ export default {
     if (typeof SpeechRecognition === 'undefined') {
       this.setData({
         statusText: 'Распознавание речи недоступно.',
-        detailText: 'В этой версии AIUI нет SpeechRecognition.'
+        detailText: 'В этой версии AIUI нет SpeechRecognition. Закрою Ревижн.'
       });
+      this.scheduleAgentClose(3500);
       return;
     }
 
@@ -224,7 +277,7 @@ export default {
         const detail = code === 'not-allowed' || code === 'service-not-allowed'
           ? 'Нет разрешения на микрофон. Проверь RECORD_AUDIO и разрешение AIUI.'
           : 'Сеанс прослушивания закрыт. Для повтора снова удерживай сенсор двумя пальцами.';
-        this.finishListening(message, detail, recognition);
+        this.finishListening(message, detail, recognition, code === 'not-allowed' || code === 'service-not-allowed' ? 5000 : 1800);
       };
 
       recognition.onend = () => {
@@ -234,8 +287,9 @@ export default {
         if (this.recognition === recognition) this.recognition = null;
         this.setData({
           statusText: this.voiceSpeechStarted ? 'Не удалось получить фразу.' : 'Время ожидания истекло.',
-          detailText: 'Прослушивание закрыто. Для новой команды снова удерживай сенсор двумя пальцами.'
+          detailText: 'Прослушивание закрыто. Возвращаюсь к Rokid.'
         });
+        this.scheduleAgentClose(1500);
       };
 
       this.noSpeechTimer = setTimeout(() => {
@@ -383,7 +437,18 @@ export default {
       statusText: 'Команда распознана.',
       detailText: transcript
     });
-    wx.navigateTo({ url: '/pages/device-action/index?' + query });
+    this.closeAfterReturn = true;
+    wx.navigateTo({
+      url: '/pages/device-action/index?' + query,
+      fail: (error) => {
+        this.closeAfterReturn = false;
+        this.setData({
+          statusText: 'Не удалось открыть выполнение команды.',
+          detailText: String(error && error.errMsg || error || 'navigation failed')
+        });
+        this.scheduleAgentClose(2000);
+      }
+    });
   }
 };
 </script>
