@@ -61,3 +61,17 @@ GitHub Actions собирает self-contained ZIP для Windows x64. Для у
 - `POST /v1/unpair`
 
 Подписываемая строка: `METHOD\nPATH\nUNIX_TIMESTAMP\nNONCE\nBODY`. Заголовки: `X-Revision-Time`, `X-Revision-Nonce`, `X-Revision-Signature`.
+
+## Windows OpenSSH public-key setup for Win SSH Agent
+
+1. In RE:Vision, open the STUDIO device and enable remote shutdown/SSH settings.
+2. Generate an SSH key and copy the displayed **public** key. The private key remains inside Android Keystore.
+3. On STUDIO, open PowerShell **as Administrator** and run the installer script from this repository:
+
+```powershell
+.\install-ssh-public-key.ps1 -PublicKey 'PASTE_THE_PUBLIC_KEY_HERE'
+```
+
+The script writes the key to `%ProgramData%\ssh\administrators_authorized_keys` and restricts its ACL to SYSTEM and the local Administrators group. It does not change the Windows password, sshd configuration, firewall, or other authentication settings.
+
+The script accepts one OpenSSH public-key line. Never copy or send the private key.
