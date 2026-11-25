@@ -12,6 +12,9 @@ var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.C
 Directory.CreateDirectory(dataDir);
 var configPath = Path.Combine(dataDir, "agent.json");
 var commandsPath = Path.Combine(dataDir, "commands.json");
+var sshDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSshAgent");
+Directory.CreateDirectory(sshDataDir);
+var sshCommandsPath = Path.Combine(sshDataDir, "commands.json");
 var config = AgentConfig.LoadOrCreate(configPath);
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "REVisionWindowsAgent");
@@ -24,6 +27,45 @@ app.MapGet("/manager", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
     return Results.Content(GetManagerHtml(), "text/html; charset=utf-8");
+});
+
+app.MapGet("/ssh-manager", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    return Results.Content(GetSshManagerHtml(), "text/html; charset=utf-8");
+});
+
+app.MapGet("/v1/ssh-manager/commands", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    return Results.Json(SshCommandCatalog.Load(sshCommandsPath));
+});
+
+app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var request = await context.Request.ReadFromJsonAsync<SshCommandCatalogRequest>();
+    if (request?.Commands is null || request.Commands.Count > 100)
+        return Results.BadRequest(new { error = "Некорректный список SSH-команд (максимум 100)." });
+
+    var normalized = new List<SshCommandEntry>();
+    foreach (var item in request.Commands)
+    {
+        var id = string.IsNullOrWhiteSpace(item.Id) ? Guid.NewGuid().ToString("N") : item.Id.Trim();
+        var name = (item.Name ?? "").Trim();
+        var phrase = (item.Phrase ?? "").Trim();
+        var shell = (item.Shell ?? "").Trim().ToLowerInvariant();
+        var command = item.Command ?? "";
+        if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
+            command.Trim().Length is < 1 or > 12000 || shell is not ("powershell" or "cmd"))
+            return Results.BadRequest(new { error = "Проверь название, голосовую фразу, оболочку и команду." });
+        if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
+            return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
+        normalized.Add(new SshCommandEntry(id, name, phrase, shell, command));
+    }
+
+    SshCommandCatalog.Save(sshCommandsPath, normalized);
+    return Results.Json(new { saved = true, count = normalized.Count });
 });
 
 app.MapGet("/v1/manager/commands", (HttpContext context) =>
@@ -340,6 +382,47 @@ static string? GetAuthenticationFailureReason(string secretBase64, string method
     catch { return "authentication_error"; }
 }
 
+static string GetSshManagerHtml() => """
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Win SSH Agent</title><style>
+:root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1180px;margin:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}
+main{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(360px,1.1fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
+label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:190px;resize:vertical;font:13px Consolas,monospace}
+button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
+.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
+@media(max-width:800px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+</style></head><body>
+<header><div><h1>Win SSH Agent</h1><div class="muted">Каталог SSH-команд STUDIO PC · локальная панель</div></div><span class="pill">SSH по ключу · OpenSSH</span></header>
+<main><section class="panel"><h2 id="formTitle">Добавить SSH-команду</h2>
+<label>Название команды</label><input id="name" maxlength="80" placeholder="Например, Запуск Mixxx">
+<label>Точная голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Запусти Mixxx">
+<label>Оболочка</label><select id="shell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select>
+<label>Команда или сценарий</label><textarea id="command" maxlength="12000" spellcheck="false" placeholder="Start-Process 'C:\Program Files\Mixxx\mixxx.exe'"></textarea>
+<div class="actions"><button onclick="saveEditor()">Сохранить команду</button><button class="secondary" onclick="clearEditor()">Новая</button></div>
+<div class="status" id="status"></div>
+<div class="note">Команда выполняется на STUDIO PC от имени SSH-пользователя Windows. Доступ к панели есть только с самого компьютера. Сохраняй только доверенные команды.</div>
+</section><section class="panel"><h2>Сохранённые SSH-команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить каталог</button><button class="secondary" onclick="loadCommands()">Обновить список</button><div class="muted" style="margin-top:14px;font-size:12px">Файл: %ProgramData%\\WinSshAgent\\commands.json</div></section></main>
+<script>
+let commands=[],editingId=null;
+function el(id){return document.getElementById(id)}
+function msg(t){el('status').textContent=t}
+function clearEditor(){editingId=null;['name','phrase','command'].forEach(x=>el(x).value='');el('shell').value='powershell';el('formTitle').textContent='Добавить SSH-команду'}
+function saveEditor(){const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),shell:el('shell').value,command:el('command').value};
+if(!c.name||!c.phrase||!c.command.trim()){msg('Заполни название, точную фразу и команду.');return}
+const duplicate=commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase()&&x.id!==editingId);if(duplicate){msg('Такая голосовая фраза уже есть.');return}
+if(editingId){const i=commands.findIndex(x=>x.id===editingId);if(i>=0)commands[i]=c}else commands.push(c);render();clearEditor();msg('Изменение внесено. Нажми «Сохранить каталог».')}
+function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('shell').value=c.shell;el('command').value=c.command;el('formTitle').textContent='Изменить SSH-команду';window.scrollTo({top:0,behavior:'smooth'})}
+function removeCommand(id){commands=commands.filter(x=>x.id!==id);if(editingId===id)clearEditor();render();msg('Команда удалена из редактора. Нажми «Сохранить каталог».')}
+function render(){const root=el('commands');root.replaceChildren();if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
+commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.shell==='cmd'?'CMD':'PowerShell')+' · '+c.command;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
+async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
+async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
+loadCommands();
+</script></body></html>
+""";
+
+
 static string GetManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RE:Vision Windows Agent</title><style>
@@ -426,6 +509,27 @@ static class NativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr handle);
+}
+
+sealed record SshCommandCatalogRequest(List<SshCommandInput>? Commands);
+sealed record SshCommandInput(string? Id, string? Name, string? Phrase, string? Shell, string? Command);
+sealed record SshCommandEntry(string Id, string Name, string Phrase, string Shell, string Command);
+
+sealed class SshCommandCatalog
+{
+    public static List<SshCommandEntry> Load(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<SshCommandEntry>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+    public static void Save(string path, List<SshCommandEntry> commands)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(commands, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temp, path, true);
+    }
 }
 
 sealed record ExecuteRequest(string? Phrase);
