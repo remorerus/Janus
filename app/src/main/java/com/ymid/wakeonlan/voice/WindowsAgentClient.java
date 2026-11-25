@@ -72,17 +72,28 @@ public final class WindowsAgentClient {
                 } catch (Exception ignored) { }
             }
             String targetId = targetIdentity == null ? null : targetIdentity.optString("deviceId", null);
-            if (targetIdentity != null && (existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
-                    && existingId.equals(targetId)))) {
-                SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
-                if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
-                if (!keep.commit()) throw new IllegalStateException("Не удалось обновить адрес существующего устройства.");
-                JSONObject alreadyPaired = targetIdentity == null ? new JSONObject() : targetIdentity;
-                alreadyPaired.put("paired", true);
-                alreadyPaired.put("alreadyPaired", true);
-                return alreadyPaired;
+            boolean sameDevice = existingBase.equals(base) || (existingId != null && !existingId.isEmpty()
+                    && existingId.equals(targetId));
+            if (sameDevice) {
+                boolean agentPaired = false;
+                try {
+                    JSONObject status = request(base, "GET", "/v1/status", "", null);
+                    agentPaired = status.optBoolean("paired", false);
+                } catch (Exception ignored) { }
+                if (agentPaired) {
+                    SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
+                    if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
+                    if (!keep.commit()) throw new IllegalStateException("Не удалось обновить адрес существующего устройства.");
+                    JSONObject alreadyPaired = targetIdentity == null ? new JSONObject() : targetIdentity;
+                    alreadyPaired.put("paired", true);
+                    alreadyPaired.put("alreadyPaired", true);
+                    return alreadyPaired;
+                }
+                // The same physical PC is reachable but has been locally unpaired.
+                // Allow an explicit new one-time code to renew its secret.
+            } else {
+                throw new IllegalStateException("В RE:Vision уже сохранено сопряжение с другим Windows Agent. Существующий ключ сохранён и не будет заменён. Поддержка нескольких одновременно привязанных Windows Agent будет добавлена отдельным этапом.");
             }
-            throw new IllegalStateException("В RE:Vision уже сохранено сопряжение с другим Windows Agent. Существующий ключ сохранён и не будет заменён. Поддержка нескольких одновременно привязанных Windows Agent будет добавлена отдельным этапом.");
         }
 
         if (code == null || !code.trim().matches("[A-Fa-f0-9]{8}")) {
