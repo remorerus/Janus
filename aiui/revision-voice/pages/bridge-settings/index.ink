@@ -1,7 +1,7 @@
 <script def>
 {
   "navigationBarTitleText": "Ревижн — Voice Bridge",
-  "description": "Панель восстановления Voice Bridge. Проверяет основной и аварийный локальные каналы и открывает системные настройки специальных возможностей Android, где пользователь может включить RE:Vision."
+  "description": "Панель диагностики Voice Bridge. Автоматически проверяет состояние основного и аварийного локальных каналов. Системные настройки специальных возможностей открываются только после отдельного нажатия пользователя."
 }
 </script>
 
@@ -14,12 +14,16 @@ function speak(text) {
   } catch (e) {}
 }
 
-function bridgeRequest(port, path, method, token) {
+function bridgeRequest(port, path, method) {
   return new Promise((resolve, reject) => {
+    if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
+      reject(new Error('wx.request недоступен в AIUI runtime'));
+      return;
+    }
     wx.request({
       url: 'http://127.0.0.1:' + port + path,
       method: method || 'GET',
-      header: token ? { 'content-type': 'application/json', 'X-Revision-Token': token } : { 'content-type': 'application/json' },
+      header: { 'content-type': 'application/json' },
       data: method === 'POST' ? {} : undefined,
       timeout: 5000,
       dataType: 'json',
@@ -41,54 +45,102 @@ function bridgeRequest(port, path, method, token) {
 export default {
   data: {
     title: 'Voice Bridge',
-    statusText: 'Проверяю основной и аварийный каналы…',
-    detailText: 'Аварийный канал не зависит от службы специальных возможностей.',
-    busy: false
+    statusText: 'Проверяю состояние Voice Bridge…',
+    detailText: 'Проверка не открывает системные настройки.',
+    busy: false,
+    mainStatus: 'Проверка основного канала…',
+    recoveryStatus: 'Проверка аварийного канала…'
   },
 
   onLoad() {
-    this.checkAndOpen();
+    // Important: opening this page must never launch Android Settings.
+    this.checkStatus();
   },
 
-  async checkAndOpen() {
+  async checkStatus() {
     if (this.data.busy) return;
-    this.setData({ busy: true, statusText: 'Проверяю каналы RE:Vision…' });
-    let lastError = null;
-    for (const port of [38761, 38762]) {
-      try {
-        const health = await bridgeRequest(port, '/health', 'GET', '');
-        const opened = await bridgeRequest(port, '/accessibility/settings', 'POST', '');
-        const wasEnabled = health.accessibilityEnabled !== false && opened.accessibilityEnabled !== false;
-        const message = wasEnabled
-          ? 'Запрос на открытие системного меню отправлен. Проверь службу RE:Vision.'
-          : 'Служба RE:Vision выключена. Запрос на открытие системного меню отправлен.';
-        this.setData({
-          busy: false,
-          statusText: message,
-          detailText: 'Использован локальный канал ' + String(port) + '. Если системный экран не появился, открой RE:Vision → Настройки → Voice Bridge вручную. В системном меню найди RE:Vision и включи переключатель.'
-        });
-        speak(message + ' Если экран не появился, открой настройки Ревижн вручную.');
-        return;
-      } catch (error) {
-        lastError = error;
-        if (error && error.statusCode === 401) break;
-      }
+    this.setData({
+      busy: true,
+      statusText: 'Проверяю локальные каналы…',
+      mainStatus: 'Проверяю 127.0.0.1:38761…',
+      recoveryStatus: 'Проверяю 127.0.0.1:38762…'
+    });
+
+    let main = null;
+    let recovery = null;
+    try { main = await bridgeRequest(38761, '/health', 'GET'); } catch (e) {}
+    try { recovery = await bridgeRequest(38762, '/health', 'GET'); } catch (e) {}
+
+    const health = main || recovery;
+    if (!health) {
+      this.setData({
+        busy: false,
+        statusText: 'Voice Bridge недоступен.',
+        mainStatus: 'Основной канал 38761: НЕТ ОТВЕТА',
+        recoveryStatus: 'Аварийный канал 38762: НЕТ ОТВЕТА',
+        detailText: 'Открой приложение RE:Vision на телефоне. Проверь, включена ли служба RE:Vision в системных специальных возможностях Android. Настройки автоматически не открываются.'
+      });
+      return;
     }
 
-    const unauthorized = lastError && lastError.statusCode === 401;
-    const message = unauthorized
-      ? 'PIN не совпадает с ключом приложения RE:Vision.'
-      : 'Оба локальных канала пока недоступны.';
+    const enabled = health.accessibilityEnabled === true;
+    const connected = health.accessibilityConnected === true;
+    const mainRunning = main ? main.mainServerRunning === true : health.mainServerRunning === true;
+    const recoveryRunning = recovery ? recovery.recoveryServerRunning === true : false;
+
+    const mainText = mainRunning
+      ? 'Основной канал 38761: РАБОТАЕТ'
+      : 'Основной канал 38761: НЕ ЗАПУЩЕН';
+    const recoveryText = recoveryRunning
+      ? 'Аварийный канал 38762: РАБОТАЕТ'
+      : 'Аварийный канал 38762: НЕТ ОТВЕТА';
+
+    let message;
+    if (mainRunning && enabled && connected) {
+      message = 'Voice Bridge работает. Основной канал активен.';
+    } else if (!enabled) {
+      message = 'Служба специальных возможностей RE:Vision выключена.';
+    } else if (!connected || !mainRunning) {
+      message = 'Служба включена, но основной Voice Bridge не подключён.';
+    } else {
+      message = 'Состояние Voice Bridge требует проверки.';
+    }
+
     this.setData({
       busy: false,
       statusText: message,
-      detailText: unauthorized
-        ? 'Сверь PIN в настройках агента с PIN в приложении RE:Vision.'
-        : 'Если это первое включение RE:Vision, открой приложение вручную → Настройки → Voice Bridge. После первого включения аварийный канал будет запускаться при загрузке даже если прошивка сбросит системный переключатель.'
+      mainStatus: mainText,
+      recoveryStatus: recoveryText,
+      detailText: 'Accessibility: ' + (enabled ? 'включена' : 'выключена')
+        + '. Подключение службы: ' + (connected ? 'есть' : 'нет')
+        + '. Аварийный канал нужен только для диагностики и восстановления.'
     });
-    speak(unauthorized
-      ? 'Проверь PIN доступа.'
-      : 'Локальные каналы недоступны. При первом запуске открой Ревижн вручную и включи службу Voice Bridge.');
+  },
+
+  async openAccessibilitySettings() {
+    if (this.data.busy) return;
+    this.setData({ busy: true, statusText: 'Открываю системные настройки по запросу…' });
+    let lastError = null;
+    for (const port of [38762, 38761]) {
+      try {
+        // The explicit confirmation flag is also enforced by the Android endpoints.
+        await bridgeRequest(port, '/accessibility/settings?userInitiated=1', 'POST');
+        this.setData({
+          busy: false,
+          statusText: 'Системные настройки открыты.',
+          detailText: 'Найди RE:Vision в списке служб специальных возможностей и включи переключатель вручную.'
+        });
+        speak('Открыл настройки специальных возможностей. Включи службу Ревижн.');
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    this.setData({
+      busy: false,
+      statusText: 'Не удалось открыть системные настройки.',
+      detailText: String(lastError && lastError.message || 'Оба локальных канала недоступны.')
+    });
   }
 };
 </script>
@@ -97,9 +149,11 @@ export default {
   <view class="panel">
     <text class="heading">{{title}}</text>
     <text class="status">{{statusText}}</text>
+    <text class="detail">{{mainStatus}}</text>
+    <text class="detail">{{recoveryStatus}}</text>
     <text class="detail">{{detailText}}</text>
-    <button bindtap="checkAndOpen" disabled="{{busy}}">Повторить проверку и открыть меню</button>
-    <text class="footer" ink:if="{{busy}}">Проверка выполняется…</text>
+    <button bindtap="checkStatus" disabled="{{busy}}">Проверить Voice Bridge</button>
+    <button bindtap="openAccessibilitySettings" disabled="{{busy}}">Открыть специальные возможности</button>
   </view>
 </page>
 
@@ -115,6 +169,6 @@ export default {
 }
 .heading { font-size: 22px; font-weight: 700; }
 .status { font-size: 18px; line-height: 1.35; }
-.detail, .footer { font-size: 14px; opacity: 0.9; }
+.detail { font-size: 14px; line-height: 1.35; opacity: 0.9; }
 button { border: 2px solid #40ff5e; color: #40ff5e; }
 </style>
