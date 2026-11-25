@@ -502,22 +502,25 @@ export default {
           const result = windowsAction === 'status'
             ? await request('/windows/status', 'GET', token, null)
             : windowsAction === 'launch'
-              ? await request('/windows/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim() })
+              ? await request('/windows/execute', 'POST', token, {
+                  phrase: decodeQueryValue(query && query.commandPhrase || '').trim(),
+                  deviceName: requestedName
+                })
               : windowsAction === 'ssh_launch'
                 ? await request('/windows/ssh/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
-                : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
+                : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, { deviceName: requestedName });
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
           if (windowsAction === 'status') {
             const reachable = result.configured && result.agent && result.agent.paired === true;
-            message = reachable ? 'Windows Agent STUDIO PC доступен и сопряжён.' : 'Windows Agent не настроен или недоступен. Проверь сопряжение и сеть.';
+            message = reachable ? 'Windows Agent компьютера ' + (requestedName || 'по умолчанию') + ' доступен и сопряжён.' : 'Windows Agent не настроен или недоступен. Проверь сопряжение и сеть.';
           } else {
             message = result.accepted === true ? (windowsAction === 'launch' ? 'Команда запуска передана Windows Agent.' : windowsAction === 'ssh_launch' ? 'Команда передана Win SSH Agent по защищённому SSH-соединению.' : 'Команда Windows передана компьютеру.') : 'Windows Agent не подтвердил выполнение команды.';
           }
-          this.setData({ statusText: message, detailText: windowsAction === 'ssh_launch' ? 'STUDIO PC · Win SSH Agent' : 'STUDIO PC · Windows Agent', resultText: message, busy: false });
+          this.setData({ statusText: message, detailText: windowsAction === 'ssh_launch' ? (requestedName || 'Компьютер по умолчанию') + ' · Win SSH Agent' : (requestedName || 'Компьютер по умолчанию') + ' · Windows Agent', resultText: message, busy: false });
           speakAndReturn(this, message);
         } catch (error) {
-          const message = windowsAction === 'ssh_launch' ? 'Не удалось выполнить команду через Win SSH Agent.' : 'Не удалось связаться с Windows Agent STUDIO PC.';
+          const message = windowsAction === 'ssh_launch' ? 'Не удалось выполнить команду через Win SSH Agent.' : 'Не удалось связаться с Windows Agent компьютера ' + (requestedName || 'по умолчанию') + '.';
           this.setData({ statusText: message, detailText: String(error && error.message || error), busy: false });
           speakAndReturn(this, message);
         }
