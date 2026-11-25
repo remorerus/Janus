@@ -14,8 +14,17 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import android.net.wifi.DhcpInfo;
+import android.net.wifi.WifiManager;
 import java.security.SecureRandom;
 import java.util.Locale;
 import javax.crypto.Mac;
@@ -70,6 +79,68 @@ public final class WindowsAgentClient {
         editor.putString(KEY_SECRET, secret);
         if (!editor.commit()) throw new IllegalStateException("Не удалось сохранить защищённые данные сопряжения.");
         return response;
+    }
+
+    /**
+     * Finds RE:Vision Windows Agents on the current private LAN. Discovery is
+     * unauthenticated and returns only public identity/endpoint metadata; it
+     * never reads, changes or replaces an existing pairing secret.
+     */
+    public static List<JSONObject> discover(Context context) throws Exception {
+        Map<String, JSONObject> found = new LinkedHashMap<>();
+        List<InetAddress> targets = new ArrayList<>();
+        targets.add(InetAddress.getByName("255.255.255.255"));
+        try {
+            WifiManager wifi = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            DhcpInfo dhcp = wifi == null ? null : wifi.getDhcpInfo();
+            if (dhcp != null && dhcp.ipAddress != 0 && dhcp.netmask != 0) {
+                int broadcast = (dhcp.ipAddress & dhcp.netmask) | ~dhcp.netmask;
+                byte[] address = new byte[] {
+                        (byte) (broadcast & 0xff),
+                        (byte) ((broadcast >> 8) & 0xff),
+                        (byte) ((broadcast >> 16) & 0xff),
+                        (byte) ((broadcast >> 24) & 0xff)
+                };
+                InetAddress subnetBroadcast = InetAddress.getByAddress(address);
+                if (!targets.contains(subnetBroadcast)) targets.add(subnetBroadcast);
+            }
+        } catch (Exception ignored) { }
+
+        byte[] request = "REVISION_DISCOVER_V1".getBytes(StandardCharsets.UTF_8);
+        long deadline = System.currentTimeMillis() + 2800L;
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.setBroadcast(true);
+            socket.setSoTimeout(250);
+            for (InetAddress target : targets) {
+                DatagramPacket packet = new DatagramPacket(request, request.length, target, 47822);
+                socket.send(packet);
+            }
+            while (System.currentTimeMillis() < deadline) {
+                byte[] buffer = new byte[4096];
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                try {
+                    socket.receive(packet);
+                } catch (SocketTimeoutException timeout) {
+                    continue;
+                }
+                try {
+                    String raw = new String(packet.getData(), packet.getOffset(),
+                            packet.getLength(), StandardCharsets.UTF_8);
+                    JSONObject item = new JSONObject(raw);
+                    if (!"revision-discovery-v1".equals(item.optString("protocol"))) continue;
+                    String deviceId = item.optString("deviceId", "").trim();
+                    String name = item.optString("name", "").trim();
+                    int port = item.optInt("port", 47821);
+                    if (deviceId.isEmpty() || name.isEmpty() || port < 1 || port > 65535) continue;
+                    String address = packet.getAddress().getHostAddress();
+                    item.put("address", address);
+                    item.put("baseUrl", "http://" + address + ":" + port);
+                    found.put(deviceId, item);
+                } catch (Exception ignored) { }
+            }
+        }
+        return new ArrayList<>(found.values());
     }
 
     public static boolean isConfigured(Context context) {
