@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $installDir = Join-Path $env:ProgramFiles 'REVision SSH Agent'
 $dataDir = Join-Path $env:ProgramData 'REVisionSshAgent'
 New-Item -ItemType Directory -Force -Path $installDir, $dataDir | Out-Null
-& icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)M' | Out-Null
+& icacls.exe $dataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not set permissions on the SSH command catalog.' }
 $exe = Join-Path $PSScriptRoot 'Revision.SshAgent.exe'
 $runner = Join-Path $PSScriptRoot 'run-ssh-command.ps1'
