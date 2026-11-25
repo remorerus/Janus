@@ -190,6 +190,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
     private volatile ServerSocket serverSocket;
     private volatile Thread serverThread;
     private volatile String pendingWifiTarget;
+    private volatile Boolean pendingWifiEnabled;
     private volatile long pendingWifiSelectionUntilMs;
     private volatile boolean pendingWifiSelectionClicked;
     private volatile int pendingWifiScrollSteps;
@@ -288,8 +289,48 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         return false;
     }
 
+    private static boolean isWifiControlLabel(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        String label = norm(node.getText()) + " " + norm(node.getContentDescription());
+        return (label.contains("wifi") || label.contains("вайфай") || label.contains("вайфи"))
+                && !label.contains("hotspot") && !label.contains("tether")
+                && !label.contains("calling") && !label.contains("direct");
+    }
+
+    private static boolean setWifiSwitchInTree(AccessibilityNodeInfo node, boolean enabled, boolean inWifiRow) {
+        if (node == null) return false;
+        boolean wifiRow = inWifiRow || isWifiControlLabel(node);
+        if (wifiRow && node.isCheckable()) {
+            if (node.isChecked() == enabled) return true;
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (setWifiSwitchInTree(node.getChild(i), enabled, wifiRow)) return true;
+        }
+        return false;
+    }
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        long now = System.currentTimeMillis();
+        final Boolean desiredWifiEnabled = pendingWifiEnabled;
+        if (desiredWifiEnabled != null && now <= pendingWifiSelectionUntilMs) {
+            AccessibilityNodeInfo wifiRoot = getRootInActiveWindow();
+            if (wifiRoot != null) {
+                CharSequence packageName = wifiRoot.getPackageName();
+                String pkg = packageName == null ? "" : packageName.toString();
+                if ("com.android.settings".equals(pkg) || "com.android.systemui".equals(pkg)) {
+                    if (setWifiSwitchInTree(wifiRoot, desiredWifiEnabled, false)) {
+                        pendingWifiEnabled = null;
+                        Log.i(TAG, "Wi-Fi toggle: accessibility switch reached requested state " + desiredWifiEnabled + " in " + pkg);
+                        return;
+                    }
+                }
+            }
+        } else if (desiredWifiEnabled != null) {
+            pendingWifiEnabled = null;
+        }
+
         final String target = pendingWifiTarget;
         if (target == null) return;
         long now = System.currentTimeMillis();
@@ -1027,6 +1068,8 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             // state in time. Do not claim success; fall through to the system UI.
         }
 
+        pendingWifiEnabled = enabled;
+        pendingWifiSelectionUntilMs = System.currentTimeMillis() + 20_000L;
         final boolean[] opened = new boolean[1];
         final String[] failure = new String[1];
         CountDownLatch latch = new CountDownLatch(1);
@@ -1055,8 +1098,12 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
                 latch.countDown();
             }
         });
-        if (!latch.await(4, TimeUnit.SECONDS)) return error("wifi_panel_timeout");
+        if (!latch.await(4, TimeUnit.SECONDS)) {
+            pendingWifiEnabled = null;
+            return error("wifi_panel_timeout");
+        }
         if (!opened[0]) {
+            pendingWifiEnabled = null;
             JsonObject response = error("wifi_panel_unavailable");
             if (failure[0] != null) response.addProperty("detail", failure[0]);
             return response;
@@ -1067,8 +1114,9 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         response.addProperty("requestedEnabled", enabled);
         response.addProperty("changed", false);
         response.addProperty("verified", false);
-        response.addProperty("requiresUserAction", true);
-        response.addProperty("message", "Direct Wi-Fi toggle was not confirmed; Android system panel opened for manual action.");
+        response.addProperty("selectionPending", true);
+        response.addProperty("requiresUserAction", false);
+        response.addProperty("message", "Android system panel opened; RE:Vision will try to switch Wi-Fi through the enabled Accessibility service and verify the result.");
         return response;
     }
 
