@@ -170,11 +170,28 @@ export default {
     }
 
     // SSH catalog commands are separate from Windows Agent application launches.
-    // Pass the exact spoken phrase so the paired RE:Vision SSH Agent can resolve
-    // only commands already configured in its local catalog.
+    // The manager stores only the command phrase (for example "открой Mixxx"),
+    // not the wake/transport words ("Ревижн, выполни через SSH").
     if (!params && /(через ssh|по ssh|ssh агент|эс эс эйч|эсэсэйч)/i.test(compact) &&
         /(запусти|выполни|открой|запуск|команду)/i.test(compact)) {
-      params = { action: 'windows_ssh_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+      const sshMarker = /(через\\s+ssh|по\\s+ssh|ssh\\s+агент|эс\\s+эс\\s+эйч|эсэсэйч)/i.exec(transcript);
+      let commandPhrase = '';
+      if (sshMarker) {
+        const afterMarker = transcript.slice(sshMarker.index + sshMarker[0].length)
+          .replace(/^([\\s,;:—-]*)(команду|команда)\\b/i, '')
+          .trim();
+        if (afterMarker) {
+          commandPhrase = afterMarker;
+        } else {
+          commandPhrase = transcript.slice(0, sshMarker.index)
+            .replace(/^\\s*(ревижн[\\s,.:;-]*)?(пожалуйста[\\s,.:;-]*)?(выполни[\\s,.:;-]*команду[\\s,.:;-]*)?/i, '')
+            .trim();
+        }
+      }
+      commandPhrase = commandPhrase.replace(/[.!?]+$/g, '').trim();
+      if (commandPhrase) {
+        params = { action: 'windows_ssh_launch', deviceName: 'STUDIO PC', commandPhrase };
+      }
     }
 
     // Windows STUDIO PC commands. Bare "компьютер" refers to the paired STUDIO PC.
