@@ -144,7 +144,9 @@ function speak(text) {
   }
   try {
     if (typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') {
-      speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ru-RU';
+      speechSynthesis.speak(utterance);
     }
   } catch (e) {
     console.warn('RE:Vision speech fallback failed', e);
@@ -227,7 +229,9 @@ function speakAndReturn(page, text) {
         && typeof speechSynthesis.synthesize === 'function'
         && typeof SpeechSynthesisUtterance !== 'undefined'
         && typeof SpeechAudioPlayer === 'function') {
-      const taskPromise = speechSynthesis.synthesize(new SpeechSynthesisUtterance(spokenText));
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.lang = 'ru-RU';
+      const taskPromise = speechSynthesis.synthesize(utterance);
       Promise.resolve(taskPromise).then(task => {
         if (page.returnHomeCancelled === true || page.keepActionPageOpen === true) {
           try { task.abort(); } catch (ignored) { }
