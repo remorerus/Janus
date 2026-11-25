@@ -6,7 +6,7 @@ import androidx.room.Index;
 import androidx.room.PrimaryKey;
 
 /** One independently paired Windows Agent. IP addresses are endpoints, never device identity. */
-@Entity(tableName = "WindowsAgentDevices", indices = {@Index(value = {"display_name"})})
+@Entity(tableName = "WindowsAgentDevices", indices = {@Index(value = {"displayName"}, name = "index_WindowsAgentDevices_display_name")})
 public class WindowsAgentDeviceEntity {
     @PrimaryKey
     @NonNull
