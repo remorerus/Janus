@@ -43,6 +43,7 @@
 ### Windows Agent
 Windows Agent на STUDIO PC подключается через Android Voice Bridge. Перед командами пользователь должен один раз выполнить сопряжение в RE:Vision → Настройки → Windows Agent — STUDIO PC, указав локальный адрес компьютера и одноразовый код из `agent.pairing-code.txt`.
 - `windows_status`, `windows_lock`, `windows_shutdown`, `windows_restart`, `windows_cancel_shutdown` — отдельные голосовые действия.
+- `windows_ssh_launch` — выполнить точную фразу из каталога команд Win SSH Agent на STUDIO PC по SSH-ключу; передавай исходную фразу пользователя в `commandPhrase` и имя компьютера в `deviceName`. Вызывай только когда пользователь просит выполнить сохранённую SSH-команду. Для этой функции требуется созданный в RE:Vision ключ, добавленный на STUDIO в `%ProgramData%\\ssh\\administrators_authorized_keys`, работающий Windows OpenSSH Server и установленный Win SSH Agent. Не запрашивай и не используй пароль учётной записи Windows. Если ключ или SSH-настройки отсутствуют, сообщи, что сначала нужно завершить настройку ключа.
 - Не утверждай, что команда выполнена, если Windows Agent не вернул `accepted=true`.
 - Для сопряжения используй только доверенную частную локальную сеть. Текущий тестовый транспорт Windows Agent использует HTTP без TLS; не используй публичные сети и не открывай порт 47821 в Интернет.
 - Не выдумывай имя STUDIO PC и не запускай произвольные команды.
