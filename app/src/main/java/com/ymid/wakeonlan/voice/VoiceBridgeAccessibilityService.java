@@ -589,15 +589,26 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         List<Device> devices = DeviceRepository.getInstance(this).getAll();
         String wanted = normalizeDeviceLookupName(deviceName == null || deviceName.trim().isEmpty() ? "STUDIO" : deviceName);
         Device selected = null;
+        List<Device> sshCandidates = new java.util.ArrayList<>();
         for (Device device : devices) {
             if (device.name == null || device.sshKeyAlias == null || device.sshKeyAlias.isEmpty()) continue;
+            sshCandidates.add(device);
             String stored = normalizeDeviceLookupName(device.name);
-            if (stored.equalsIgnoreCase(wanted) || wanted.endsWith(stored)) {
+            if (stored.equalsIgnoreCase(wanted)) {
                 selected = device;
                 break;
             }
         }
-        if (selected == null) return error("ssh_device_not_found_or_key_missing");
+        if (selected == null) {
+            List<Device> partialMatches = new java.util.ArrayList<>();
+            for (Device device : sshCandidates) {
+                String stored = normalizeDeviceLookupName(device.name);
+                if (stored.contains(wanted) || wanted.contains(stored)) partialMatches.add(device);
+            }
+            if (partialMatches.size() == 1) selected = partialMatches.get(0);
+            else if (partialMatches.isEmpty() && sshCandidates.size() == 1) selected = sshCandidates.get(0);
+        }
+        if (selected == null) return error("ssh_device_not_found_or_ambiguous");
         JsonObject result = JsonParser.parseString(
                 WinSshAgentClient.executePhrase(this, selected, phrase).toString()).getAsJsonObject();
         result.addProperty("device", selected.name);
