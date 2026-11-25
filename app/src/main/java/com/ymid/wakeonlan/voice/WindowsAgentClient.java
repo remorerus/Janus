@@ -285,7 +285,7 @@ public final class WindowsAgentClient {
             String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
             request(base, "POST", path, "", new String[]{Long.toString(timestamp), nonce, signature});
         }
-        prefs(context).edit().remove(KEY_BASE).remove(KEY_SECRET).commit();
+        prefs(context).edit().remove(KEY_BASE).remove(KEY_SECRET).remove(KEY_DEVICE_ID).commit();
     }
 
     private static String normalizeBase(String input) throws Exception {
