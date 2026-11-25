@@ -12,6 +12,7 @@ on:
       - revision-windows-agent-integration-test
       - revision-ssh-key-only-2026-11-25
       - revision-voicebridge-tap-ssh-manager-2026-11-25
+      - revision-aiui-95-voice-merge-2026-11-25
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
