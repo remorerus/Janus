@@ -205,7 +205,9 @@ export default {
       recognition.lang = 'ru-RU';
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
+      // Ask the ASR service for several hypotheses when supported. Some Rokid
+      // firmware versions return only one; the primary result remains a fallback.
+      recognition.maxAlternatives = 5;
 
       recognition.onstart = () => {
         this.setData({ statusText: 'Микрофон включён. Слушаю…' });
@@ -235,6 +237,7 @@ export default {
         if (this.voiceHandled) return;
         let interim = '';
         let finalText = '';
+        let finalAlternatives = [];
         const results = resultEvent && resultEvent.results;
         if (!results) return;
         const startIndex = Number(resultEvent.resultIndex || 0);
@@ -242,8 +245,17 @@ export default {
           const result = results[i];
           const text = String(result && result[0] && result[0].transcript || '').trim();
           if (!text) continue;
-          if (result.isFinal) finalText = text;
-          else interim = text;
+          if (result.isFinal) {
+            finalText = text;
+            finalAlternatives = [];
+            const alternativeCount = Math.min(5, Math.max(1, Number(result.length) || 1));
+            for (let alternativeIndex = 0; alternativeIndex < alternativeCount; alternativeIndex++) {
+              const candidate = String(result[alternativeIndex] && result[alternativeIndex].transcript || '').trim();
+              if (candidate && !finalAlternatives.includes(candidate)) finalAlternatives.push(candidate);
+            }
+          } else {
+            interim = text;
+          }
         }
         if (finalText) {
           this.voiceHandled = true;
@@ -258,7 +270,7 @@ export default {
             transcript: finalText
           });
           this.commandNavigating = true;
-          this.routeVoiceCommand(finalText);
+          this.routeVoiceCommand(finalText, finalAlternatives);
           return;
         }
         if (interim) {
@@ -313,10 +325,30 @@ export default {
     }
   },
 
-  routeVoiceCommand(transcript) {
+  routeVoiceCommand(transcript, alternatives) {
     const text = String(transcript || '').toLowerCase().replace(/ё/g, 'е').trim();
     const compact = text.replace(/[^a-zа-я0-9]+/g, ' ').trim();
     let params = null;
+
+    // Convert each ASR hypothesis to the same catalog-phrase shape that the
+    // primary Windows Agent route uses. The Windows Agent performs the final
+    // dictionary/fuzzy match against the commands actually configured on that PC.
+    const commandCandidates = [];
+    [transcript].concat(Array.isArray(alternatives) ? alternatives : []).forEach(candidate => {
+      let value = String(candidate || '')
+        .replace(/(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/ig, ' ')
+        .replace(/^\s*(?:ревижн|ревижен|ревижин|ревиж)\s*[,:.\-;]?\s*/i, '')
+        .replace(/^\s*(?:пожалуйста\s*)?(?:выполни\s*)?(?:команду\s*)?/i, '')
+        .replace(/[.!?]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (value && value.length <= 160 && !commandCandidates.includes(value)) commandCandidates.push(value);
+    });
+    const attachCommandCandidates = () => {
+      if (params && params.action === 'windows_launch' && commandCandidates.length) {
+        params.commandAlternatives = commandCandidates.slice(0, 5);
+      }
+    };
 
     // Device-list intent must win before generic Windows/SSH command fallbacks.
     // A list request never carries a deviceName.
@@ -447,7 +479,11 @@ export default {
       return;
     }
 
-    console.log('[RE:Vision] voice command routed', { transcript, action: params.action, deviceName: params.deviceName || '', networkName: params.networkName || '' });
+    attachCommandCandidates();
+    console.log('[RE:Vision] voice command routed', {
+      transcript, commandCandidates: params.commandAlternatives || [],
+      action: params.action, deviceName: params.deviceName || '', networkName: params.networkName || ''
+    });
     const query = Object.keys(params)
       .filter((key) => params[key] !== undefined && params[key] !== '')
       .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])))
