@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -132,6 +133,33 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
 
 
 app.MapGet("/v1/status", () => Results.Json(new { name = "RE:Vision Windows Agent", version = "0.2.0-test", paired = config.ClientSecret is not null }));
+
+// Read-only LAN discovery. This endpoint and UDP advertisement expose no secrets.
+app.MapGet("/v1/discovery", () => Results.Json(new {
+    protocol = "revision-discovery-v1",
+    deviceId = config.DeviceId,
+    name = config.DeviceName,
+    port = Port,
+    capabilities = new[] { "windows-agent", "ssh" }
+}));
+
+app.MapGet("/v1/manager/identity", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    return Results.Json(new { deviceId = config.DeviceId, name = config.DeviceName });
+});
+
+app.MapPut("/v1/manager/identity", async (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var request = await context.Request.ReadFromJsonAsync<AgentIdentityRequest>();
+    var name = (request?.Name ?? "").Trim();
+    if (name.Length is < 1 or > 64)
+        return Results.BadRequest(new { error = "Имя устройства должно содержать от 1 до 64 символов." });
+    config.DeviceName = name;
+    config.Save(configPath);
+    return Results.Json(new { saved = true, deviceId = config.DeviceId, name = config.DeviceName });
+});
 
 app.MapGet("/v1/manager/pairing", (HttpContext context) =>
 {
@@ -294,6 +322,36 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
     config.ClientSecret = null;
     config.Save(configPath);
     return Results.Ok(new { paired = false });
+});
+
+// UDP broadcast discovery listener. The advertisement is intentionally public
+// and contains only a stable ID, display name, port and capability list.
+_ = Task.Run(async () =>
+{
+    using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, 47822));
+    app.Lifetime.ApplicationStopping.Register(() => udp.Close());
+    while (true)
+    {
+        try
+        {
+            IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+            var requestBytes = udp.Receive(ref remote);
+            var requestText = Encoding.UTF8.GetString(requestBytes);
+            if (!string.Equals(requestText, "REVISION_DISCOVER_V1", StringComparison.Ordinal)) continue;
+            var responseBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                protocol = "revision-discovery-v1",
+                deviceId = config.DeviceId,
+                name = config.DeviceName,
+                port = Port,
+                capabilities = new[] { "windows-agent", "ssh" }
+            }));
+            await udp.SendAsync(responseBytes, responseBytes.Length, remote);
+        }
+        catch (ObjectDisposedException) { break; }
+        catch (SocketException) { if (app.Lifetime.ApplicationStopping.IsCancellationRequested) break; }
+        catch (Exception ex) { Console.Error.WriteLine("LAN discovery responder: " + ex.Message); }
+    }
 });
 
 app.Run($"http://0.0.0.0:{Port}");
@@ -721,14 +779,14 @@ static string GetSshManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Win SSH Agent</title><style>
 :root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1180px;margin:auto}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
 main{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(360px,1.1fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
 label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:190px;resize:vertical;font:13px Consolas,monospace}
 button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
 .pairing{grid-column:1/-1}.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
 @media(max-width:800px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
-<header><div><h1>Win SSH Agent</h1><div class="muted">Каталог SSH-команд STUDIO PC · локальная панель</div></div><span class="pill">SSH по ключу · OpenSSH</span></header>
+<header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">SSH по ключу · OpenSSH</span></header>
 <main><section class="panel"><h2 id="formTitle">Добавить SSH-команду</h2>
 <label>Название команды</label><input id="name" maxlength="80" placeholder="Например, Запуск Mixxx">
 <label>Точная голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Запусти Mixxx">
@@ -755,6 +813,7 @@ async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands'
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
 updateKindFields();
 loadCommands();
+loadIdentity();
 loadPairing();
 </script></body></html>
 """;
@@ -771,8 +830,8 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 .item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px}.item button{margin:0}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
 @media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
-<header><div><h1>RE:Vision Windows Agent</h1><div class="muted">Панель управления STUDIO PC · тестовая версия</div></div><span class="pill">Локальная панель</span></header>
-<main><section class="panel pairing"><h2>Привязка RE:Vision</h2>
+<header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">Локальная панель</span></header>
+<main><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
 <div id="pairingState" class="status">Проверка состояния привязки…</div>
 <div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
 <button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
@@ -793,6 +852,24 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 let commands=[];
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
+async function loadIdentity(){
+ try{
+  const r=await fetch('/v1/manager/identity',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();
+  el('deviceId').textContent=d.deviceId;
+  el('deviceName').value=d.name||'';
+ }catch(e){el('identityStatus').textContent='Не удалось загрузить имя устройства: '+e.message}
+}
+async function saveIdentity(){
+ try{
+  const r=await fetch('/v1/manager/identity',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el('deviceName').value})});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  el('deviceId').textContent=d.deviceId;
+  el('identityStatus').textContent='Сетевое имя сохранено: '+d.name;
+ }catch(e){el('identityStatus').textContent='Не удалось сохранить имя: '+e.message}
+}
 async function loadPairing(){
  try{
   const r=await fetch('/v1/manager/pairing',{cache:'no-store'});
@@ -932,18 +1009,36 @@ sealed class CommandCatalog
 
 sealed class AgentConfig
 {
+    public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = "";
     public string PairingCode { get; set; } = "";
     public DateTimeOffset PairingExpiresUtc { get; set; }
     public string? ClientSecret { get; set; }
     public static AgentConfig LoadOrCreate(string path)
     {
-        if (File.Exists(path)) return JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path)) ?? new AgentConfig();
-        var c = new AgentConfig { PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24) };
+        AgentConfig c;
+        if (File.Exists(path))
+        {
+            c = JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(path)) ?? new AgentConfig();
+            bool changed = false;
+            if (string.IsNullOrWhiteSpace(c.DeviceId)) { c.DeviceId = Guid.NewGuid().ToString("N"); changed = true; }
+            if (string.IsNullOrWhiteSpace(c.DeviceName)) { c.DeviceName = Environment.MachineName; changed = true; }
+            if (changed) c.Save(path);
+            return c;
+        }
+        c = new AgentConfig {
+            DeviceId = Guid.NewGuid().ToString("N"),
+            DeviceName = Environment.MachineName,
+            PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)),
+            PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24)
+        };
         c.Save(path);
         File.WriteAllText(Path.ChangeExtension(path, ".pairing-code.txt"), $"RE:Vision pairing code (valid 24h): {c.PairingCode}{Environment.NewLine}Run this file locally on STUDIO and keep the code private.");
         return c;
     }
     public void Save(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
 }
+
+sealed record AgentIdentityRequest(string Name);
 
 
