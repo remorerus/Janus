@@ -428,7 +428,7 @@ static class NativeMethods
     public static extern bool CloseHandle(IntPtr handle);
 }
 
-sealed sealed record ExecuteRequest(string? Phrase);
+sealed record ExecuteRequest(string? Phrase);
 sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
