@@ -1,17 +1,30 @@
-# RE:Vision Windows Agent — integration test
+# RE:Vision Windows Agent + Win SSH Agent
 
-Тестовый Windows-сервис для управления STUDIO PC через Android-приложение RE:Vision и голосовой агент Rokid.
+Windows-компонент для STUDIO PC. Windows Agent предоставляет защищённые команды управления ПК, а **Win SSH Agent** — отдельный каталог пользовательских SSH-команд с локальной веб-панелью. Это разные функции одного установочного пакета.
 
-## Что реализовано в этой ветке
+## Win SSH Agent — веб-панель
 
-- Сопряжение Android-клиента по одноразовому коду из `%ProgramData%\RevisionWindowsAgent\agent.pairing-code.txt`.
-- HMAC-SHA256 для команд после сопряжения, временная метка и одноразовый nonce против повторного воспроизведения.
-- `lock` — блокировка активной консольной сессии Windows через штатный LockWorkStation.
-- `shutdown`, `restart`, `cancel-shutdown`.
-- Локальный редактор каталога приложений и BAT-файлов; удалённое выполнение допускается только по точной сохранённой голосовой фразе.
-- EXE/BAT запускаются в активной пользовательской сессии, а не в Session 0.
+После установки открой непосредственно на STUDIO PC:
 
-## Android / Rokid
+`http://127.0.0.1:47821/ssh-manager`
+
+Панель позволяет добавлять, редактировать и удалять команды, задавать точную голосовую фразу, выбирать PowerShell или CMD и сохранять многострочные сценарии. Каталог хранится отдельно от Windows Agent:
+
+`%ProgramData%\WinSshAgent\commands.json`
+
+Панель доступна только с loopback (самого компьютера). Она не открывает отдельный сетевой порт и не требует отдельного приложения/службы. Сам каталог команд не смешивается с командами Windows Agent.
+
+## Как выполняется SSH-команда
+
+1. Пользователь произносит фразу для RE:Vision.
+2. Android-клиент подключается напрямую к Windows OpenSSH Server по SSH с ключом из Android Keystore.
+3. Android вызывает установленный runner: `C:\Program Files\REVision Windows Agent\run-ssh-command.ps1`.
+4. Runner находит точное совпадение фразы в `%ProgramData%\WinSshAgent\commands.json` и запускает сохранённый сценарий от имени SSH-пользователя.
+5. SSH-сессия завершается. Win SSH Agent не является фоновым SSH-сервером; постоянно открывать веб-панель не нужно.
+
+Требуется включённый Windows OpenSSH Server и публичный ключ RE:Vision в `authorized_keys` именно того Windows-пользователя, под которым выполняется SSH-вход. Парольная SSH-аутентификация не используется: Android применяет приватный ключ, который остаётся в Android Keystore.
+
+## Windows Agent
 
 В RE:Vision → Настройки → Windows Agent — STUDIO PC укажи адрес вида `http://192.168.1.10:47821` и одноразовый код с компьютера. Секрет сопряжения сохраняется в Android EncryptedSharedPreferences.
 
@@ -21,47 +34,34 @@
 - `windows_shutdown`
 - `windows_restart`
 - `windows_cancel_shutdown`
-- `windows_launch` — требует точную фразу, сохранённую в каталоге.
+- `windows_launch` — команды из отдельного каталога Windows Agent.
+- `windows_ssh_launch` — команда из каталога Win SSH Agent по точной фразе.
 
-## Панель команд на STUDIO PC
+## Установка
 
-После установки открой на самом компьютере `http://127.0.0.1:47821/manager`. Панель доступна только с loopback. Добавляй только проверенные EXE и BAT, указывай точную голосовую фразу. Каталог хранится в `%ProgramData%\RevisionWindowsAgent\commands.json`.
+GitHub Actions собирает self-contained ZIP для Windows x64. Распакуй архив, открой PowerShell от имени администратора и запусти `install-agent.ps1`. Установщик создаёт службу Windows Agent, настраивает отдельные каталоги данных и устанавливает SSH runner. Win SSH Agent использует тот же локальный HTTP-хост и порт 47821, маршрут панели — `/ssh-manager`.
 
-## Отдельный SSH Agent
-
-SSH-команды вынесены в самостоятельное приложение **RE:Vision SSH Agent**. Оно не является службой и не требует постоянной фоновой работы. Инструкция и отдельная сборка находятся в [`ssh-agent/README.md`](../ssh-agent/README.md). Windows Agent отвечает только за собственные команды Windows и не нужен для SSH-выполнения.
-
-## Сборка и установка
-
-GitHub Actions собирает self-contained ZIP для Windows x64. Для установки распакуй архив, открой PowerShell от имени администратора и запусти `install-agent.ps1`. Сервис устанавливается как LocalSystem; это необходимо для получения токена активной пользовательской сессии и запуска процессов на её рабочем столе.
-
-## Важное ограничение безопасности
-
-Это интеграционная тестовая сборка. Транспорт Windows Agent пока HTTP без TLS. HMAC защищает целостность команд после сопряжения, но не шифрует трафик и не защищает одноразовый код от перехвата в сети. Используй только доверенную частную локальную сеть, не подключайся через публичный Wi-Fi и не открывай TCP 47821 в Интернет. Перед постоянным использованием нужен TLS с проверкой сертификата/закреплением ключа и тест на реальном STUDIO PC.
-
-## Протокол
-
-- `GET /v1/status`
-- `POST /v1/pair` с JSON `{"code":"ONE_TIME_CODE"}`
-- `POST /v1/command/lock`
-- `POST /v1/command/shutdown`
-- `POST /v1/command/restart`
-- `POST /v1/command/cancel-shutdown`
-- `POST /v1/command/execute` с JSON `{"phrase":"точная фраза из каталога"}`
-- `POST /v1/unpair`
-
-Подписываемая строка: `METHOD\nPATH\nUNIX_TIMESTAMP\nNONCE\nBODY`. Заголовки: `X-Revision-Time`, `X-Revision-Nonce`, `X-Revision-Signature`.
-
-## Windows OpenSSH public-key setup for Win SSH Agent
-
-1. In RE:Vision, open the STUDIO device and enable remote shutdown/SSH settings.
-2. Generate an SSH key and copy the displayed **public** key. The private key remains inside Android Keystore.
-3. On STUDIO, open PowerShell **as Administrator** and run the installer script from this repository:
+Для Windows OpenSSH установи публичный ключ RE:Vision на STUDIO PC. На странице настроек устройства в RE:Vision сгенерируй SSH-ключ и скопируй только публичную часть. На STUDIO выполни от имени администратора:
 
 ```powershell
 .\install-ssh-public-key.ps1 -PublicKey 'PASTE_THE_PUBLIC_KEY_HERE'
 ```
 
-The script writes the key to `%ProgramData%\ssh\administrators_authorized_keys` and restricts its ACL to SYSTEM and the local Administrators group. It does not change the Windows password, sshd configuration, firewall, or other authentication settings.
+Скрипт записывает публичный ключ в системный файл OpenSSH для администраторской учётной записи. Никогда не копируй приватный ключ с Android.
 
-The script accepts one OpenSSH public-key line. Never copy or send the private key.
+## Протокол Windows Agent
+
+- `GET /v1/status`
+- `POST /v1/pair`
+- `POST /v1/command/lock`
+- `POST /v1/command/shutdown`
+- `POST /v1/command/restart`
+- `POST /v1/command/cancel-shutdown`
+- `POST /v1/command/execute`
+- `POST /v1/unpair`
+
+## Безопасность
+
+Панель Win SSH Agent доступна только локально через loopback. SSH-выполнение идёт по OpenSSH с проверкой host key и ключевой аутентификацией; пароль не передаётся. Команды каталога содержат исполняемый код и запускаются с правами SSH-пользователя — сохраняй только доверенные команды.
+
+Windows Agent использует HTTP без TLS и предназначен только для доверенной частной сети. Не открывай TCP 47821 в Интернет и не используй публичные Wi-Fi сети для сопряжения.
