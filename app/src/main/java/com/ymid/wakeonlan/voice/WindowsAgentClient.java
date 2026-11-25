@@ -433,10 +433,37 @@ public final class WindowsAgentClient {
 
     /** Executes on the configured default paired device; legacy STUDIO pairing remains supported. */
     public static JSONObject executePhraseOnDefault(Context context, String phrase) throws Exception {
+        return executePhraseOnDefault(context, phrase, java.util.Collections.emptyList());
+    }
+
+    public static JSONObject executePhraseOnDefault(Context context, String phrase,
+            java.util.List<String> alternatives) throws Exception {
         com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
                 new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
-        if (device != null) return executePhrase(context, device.deviceId, phrase);
-        return executePhrase(context, phrase);
+        if (device != null) return executePhrase(context, device.deviceId, phrase, alternatives);
+        return executeLegacyPhrase(context, phrase, alternatives);
+    }
+
+    private static JSONObject executeLegacyPhrase(Context context, String phrase,
+            java.util.List<String> alternatives) throws Exception {
+        if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160)
+            throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
+        SharedPreferences p = prefs(context);
+        String base = p.getString(KEY_BASE, null);
+        String secret = p.getString(KEY_SECRET, null);
+        if (base == null || secret == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        JSONObject body = new JSONObject();
+        body.put("phrase", phrase.trim());
+        org.json.JSONArray arr = new org.json.JSONArray();
+        java.util.LinkedHashSet<String> unique = new java.util.LinkedHashSet<>();
+        unique.add(phrase.trim());
+        if (alternatives != null) for (String item : alternatives) {
+            if (item != null && !item.trim().isEmpty() && item.trim().length() <= 160 && unique.size() < 5)
+                unique.add(item.trim());
+        }
+        for (String item : unique) arr.put(item);
+        body.put("alternatives", arr);
+        return authenticatedRequest(base, secret, "/v1/command/execute", body.toString());
     }
 
     private static JSONObject authenticatedRequest(String base, String secret, String path, String body)
