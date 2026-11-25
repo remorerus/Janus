@@ -45,6 +45,23 @@ function normalize(value) {
     .replace(/[^a-zа-я0-9]/g, '');
 }
 
+function decodeQueryValue(value) {
+  let decoded = String(value == null ? '' : value);
+  // AIUI runtimes differ: some decode navigateTo query values once, others
+  // leave percent-encoded UTF-8 intact. Decode at most twice for double-encoded
+  // values, and never let malformed escapes abort command handling.
+  for (let pass = 0; pass < 2 && /%[0-9a-f]{2}/i.test(decoded); pass += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (e) {
+      break;
+    }
+  }
+  return decoded;
+}
+
 function request(path, method, token, data, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (typeof wx === 'undefined' || typeof wx.request !== 'function') {
@@ -64,16 +81,21 @@ function request(path, method, token, data, timeoutMs) {
       timeout: timeoutMs || 12000,
       success(res) {
         const status = Number(res && res.statusCode || 0);
+        let body = res && res.data;
+        if (typeof body === 'string') {
+          try { body = JSON.parse(body); } catch (e) {}
+        }
         if (status >= 200 && status < 300) {
-          let body = res.data;
-          if (typeof body === 'string') {
-            try { body = JSON.parse(body); } catch (e) {}
-          }
           resolve(body);
         } else {
-          const error = new Error('HTTP ' + status);
+          const serverDetail = body && (body.detail || body.message || body.error);
+          const error = new Error(serverDetail
+            ? 'HTTP ' + status + ': ' + String(serverDetail)
+            : 'HTTP ' + status);
           error.statusCode = status;
           error.stage = path;
+          error.detail = serverDetail ? String(serverDetail) : '';
+          error.response = body;
           reject(error);
         }
       },
@@ -415,7 +437,7 @@ export default {
   },
 
   async onLoad(query) {
-    const requestedAction = String((query && query.action) || '').toLowerCase().trim();
+    const requestedAction = decodeQueryValue(query && query.action).toLowerCase().trim();
     if (requestedAction === 'bridge_settings') {
       wx.navigateTo({ url: '/pages/bridge-settings/index' });
       return;
@@ -433,7 +455,7 @@ export default {
       speakAndReturn(this, message);
       return;
     }
-    const rawRequestedName = query && (query.deviceName ?? query.device) || '';
+    const rawRequestedName = decodeQueryValue(query && (query.deviceName ?? query.device) || '');
     const requestedText = String(rawRequestedName).trim();
     const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
@@ -476,9 +498,9 @@ export default {
           const result = windowsAction === 'status'
             ? await request('/windows/status', 'GET', token, null)
             : windowsAction === 'launch'
-              ? await request('/windows/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim() })
+              ? await request('/windows/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim() })
               : windowsAction === 'ssh_launch'
-                ? await request('/windows/ssh/execute', 'POST', token, { phrase: String(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
+                ? await request('/windows/ssh/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
                 : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, {});
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
@@ -768,6 +790,9 @@ export default {
       } else if (error && error.statusCode === 404) {
         message = 'RE:Vision получил запрос, но такой адрес не найден. Обнови приложение RE:Vision.';
         detail += ' Ответ моста: HTTP 404.';
+      } else if (error && error.statusCode === 502) {
+        message = 'Voice Bridge не смог выполнить команду на целевом компьютере.';
+        detail += ' Ответ моста: HTTP 502. Причина от Windows Agent / SSH: ' + (error.detail || raw);
       } else if (error && error.networkFailure) {
         message = 'Не удалось достучаться до RE:Vision на очках. Сам запрос не получил HTTP-ответ.';
         detail += ' Точная ошибка AIUI: ' + raw;
