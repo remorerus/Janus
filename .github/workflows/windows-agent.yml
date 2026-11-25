@@ -1,7 +1,7 @@
 name: Build RE:Vision Windows Agent
 on:
   push:
-    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test, revision-windows-agent-apk-retry, revision-stability-polish-2026-11-24b]
+    branches: [revision-windows-agent-prototype, revision-agent-manager-test, revision-windows-agent-integration-test, revision-windows-agent-apk-retry, revision-stability-polish-2026-11-24b, revision-ssh-key-only-2026-11-25]
     paths:
       - 'windows-agent/**'
       - '.github/workflows/windows-agent.yml'
@@ -19,7 +19,7 @@ jobs:
         run: |
           dotnet publish windows-agent/Revision.WindowsAgent/Revision.WindowsAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o windows-agent/publish
           Copy-Item windows-agent/install-agent.ps1 windows-agent/publish/
-          Copy-Item windows-agent/uninstall-agent.ps1 windows-agent/publish/
+          Copy-Item windows-agent/uninstall-agent.ps1 windows-agent/publish/\n          Copy-Item windows-agent/run-ssh-command.ps1 windows-agent/publish/
           Copy-Item windows-agent/README.md windows-agent/publish/
           Compress-Archive -Path windows-agent/publish/* -DestinationPath windows-agent/Revision.WindowsAgent-win-x64.zip -Force
       - uses: actions/upload-artifact@v4
