@@ -12,7 +12,7 @@ if (firebaseConfigured) {
 
 android {
     defaultConfig {
-        versionCode 129 // Win SSH Agent web manager and SSH command catalog, release 1.9.23
+        versionCode 130 // Voice Bridge reboot recovery, SSH key UI, release 1.9.24
         buildConfigField 'boolean', 'FIREBASE_CONFIGURED', firebaseConfigured.toString()
     }
     buildFeatures {
