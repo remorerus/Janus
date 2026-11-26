@@ -35,7 +35,6 @@ object CrashReporter {
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
-        installUncaughtExceptionHandler()
 
         if (firebaseEnabled) {
             runCatching {
@@ -47,6 +46,9 @@ object CrashReporter {
                 }
             }
         }
+        // Install last so our handler writes the local report, then delegates
+        // to Firebase/Android's previously registered crash handler.
+        installUncaughtExceptionHandler()
         log("local crash dump handler initialized")
     }
 
