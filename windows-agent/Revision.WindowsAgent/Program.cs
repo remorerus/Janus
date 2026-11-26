@@ -75,7 +75,7 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
             aliases.Count > 12 || aliases.Any(x => x.Length > 160) ||
             target.Length > 500 || arguments.Length > 500 ||
-            kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
+            kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window" or "script"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты (максимум 12), тип и параметры." });
 
         foreach (var spoken in new[] { phrase }.Concat(aliases))
@@ -85,6 +85,8 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
             if (!registeredPhrases.Add(normalizedPhrase))
                 return Results.BadRequest(new { error = $"Голосовая фраза или вариант уже используется другой командой: {spoken}" });
         }
+        if (kind == "script" && string.IsNullOrWhiteSpace(item.Command))
+            return Results.BadRequest(new { error = "Для старой команды-сценария нужен текст PowerShell/CMD." });
         if ((kind is "app" or "bat" or "restart") && target.Length == 0)
             return Results.BadRequest(new { error = "Укажи полный путь к EXE или BAT-файлу." });
         if (kind == "close" && target.Length == 0)
@@ -106,7 +108,8 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
         if (kind == "window" && arguments is not ("next" or "previous") && target.Length == 0)
             return Results.BadRequest(new { error = "Укажи имя процесса или часть заголовка окна." });
 
-        normalized.Add(new SshCommandEntry(id, name, phrase, kind, target, arguments, aliases));
+        normalized.Add(new SshCommandEntry(id, name, phrase, kind, target, arguments, aliases,
+            item.Shell ?? "powershell", item.Command ?? ""));
     }
 
     SshCommandCatalog.Save(sshCommandsPath, normalized);
@@ -1208,11 +1211,11 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Воспроизведи AIMP">
 <label>Варианты распознавания через запятую</label><input id="aliases" maxlength="2000" placeholder="Включи AIMP, Запусти плеер">
 <label>Тип действия</label><select id="kind" onchange="updateFields()">
-<option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option>
+<option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option><option value="script">Сценарий PowerShell / CMD (совместимость)</option>
 </select>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" maxlength="500" placeholder="C:\Program Files\AIMP\AIMP.exe">
 <label id="argumentsLabel">Аргументы запуска (необязательно)</label><input id="arguments" maxlength="500" placeholder="Параметры запуска или действие">
-<div class="note" id="kindHint">Для запуска укажи полный путь к EXE.</div>
+<div id="scriptFields" style="display:none"><label>Оболочка сценария</label><select id="scriptShell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select><label>Текст сценария</label><textarea id="scriptCommand" maxlength="12000" spellcheck="false"></textarea></div><div class="note" id="kindHint">Для запуска укажи полный путь к EXE.</div>
 <div class="actions"><button onclick="saveEditor()">Сохранить команду</button><button class="secondary" onclick="clearEditor()">Новая команда</button></div><div class="status" id="status"></div>
 <div class="note">Команды выполняются по SSH от имени указанного Windows-пользователя. Добавляй только доверенные приложения и действия.</div>
 </section>
@@ -1225,14 +1228,15 @@ function msg(t){el('status').textContent=t}
 function splitAliases(s){return [...new Set((s||'').split(',').map(x=>x.trim()).filter(Boolean))]}
 function updateFields(){
  const k=el('kind').value;
+ el('scriptFields').style.display=k==='script'?'block':'none';
  el('targetLabel').textContent=k==='hotkey'?'Сочетание клавиш':k==='window'?'Имя процесса / часть заголовка окна':k==='media'?'Плеер (необязательно для системного действия)':'Полный путь к файлу / имя процесса';
  el('argumentsLabel').textContent=k==='media'?'Действие мультимедиа':k==='window'?'Действие с окном':'Аргументы запуска (необязательно)';
  const hints={app:'Укажи полный путь к EXE, например C:\\Program Files\\AIMP\\AIMP.exe.',close:'Укажи имя процесса без .exe, например aimp.',restart:'Укажи полный путь к EXE и имя процесса в аргументах, если оно отличается от имени файла.',bat:'Укажи полный путь к BAT-файлу.',media:'Выбери действие: GLOBAL_PLAYPAUSE, GLOBAL_NEXT, GLOBAL_PREV, GLOBAL_STOP, GLOBAL_MUTE, GLOBAL_VOLUP или GLOBAL_VOLDWN.',hotkey:'Примеры: CTRL+C, ALT+F4, WIN+D, CTRL+SHIFT+ESC.',window:'Действие: focus, minimize, maximize, restore, close, next или previous.'};
  el('kindHint').textContent=hints[k]||'';
 }
-function clearEditor(){editingId=null;['name','phrase','aliases','target','arguments'].forEach(x=>el(x).value='');el('kind').value='app';el('formTitle').textContent='Добавить команду в каталог';updateFields()}
+function clearEditor(){editingId=null;['name','phrase','aliases','target','arguments','scriptCommand'].forEach(x=>el(x).value='');el('scriptShell').value='powershell';el('kind').value='app';el('formTitle').textContent='Добавить команду в каталог';updateFields()}
 function saveEditor(){
- const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases:splitAliases(el('aliases').value),kind:el('kind').value,target:el('target').value.trim(),arguments:el('arguments').value.trim()};
+ const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases:splitAliases(el('aliases').value),kind:el('kind').value,target:el('target').value.trim(),arguments:el('arguments').value.trim(),shell:el('scriptShell').value,command:el('scriptCommand').value};
  if(!c.name||!c.phrase){msg('Заполни название и основную голосовую фразу.');return}
  if(c.aliases.length>12){msg('Можно добавить не более 12 вариантов произнесения.');return}
  const all=new Set();for(const x of commands){if(x.id===editingId)continue;for(const p of [x.phrase,...(x.aliases||[])])all.add(p.trim().toLocaleLowerCase('ru'))}
@@ -1242,14 +1246,15 @@ function saveEditor(){
  if(c.kind==='media'&&!c.arguments){msg('Выбери действие мультимедиа в поле «Действие».');return}
  if(c.kind==='hotkey'&&!c.target){msg('Укажи сочетание клавиш.');return}
  if(c.kind==='window'&&!c.arguments){msg('Укажи действие с окном в поле «Действие».');return}
+ if(c.kind==='script'&&!c.command.trim()){msg('Вставь текст сценария PowerShell или CMD.');return}
  if(editingId){const i=commands.findIndex(x=>x.id===editingId);if(i>=0)commands[i]=c}else commands.push(c);
  render();clearEditor();msg('Изменение внесено. Нажми «Сохранить каталог».')
 }
-function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('arguments').value=c.arguments||'';el('formTitle').textContent='Изменить команду';updateFields();window.scrollTo({top:0,behavior:'smooth'})}
+function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'script';el('target').value=c.target||'';el('arguments').value=c.arguments||'';el('scriptShell').value=c.shell||'powershell';el('scriptCommand').value=c.command||'';el('formTitle').textContent='Изменить команду';updateFields();window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(id){commands=commands.filter(x=>x.id!==id);if(editingId===id)clearEditor();render();msg('Команда удалена из редактора. Нажми «Сохранить каталог».')}
 function render(){const root=el('commands');root.replaceChildren();if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
  commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+(c.aliases?.length?' · '+c.aliases.join(', '):'')+' · '+c.kind+' · '+c.target;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
-async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
+async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);commands=(await r.json()).map(x=>({...x,kind:x.kind||'script',target:x.target||'',arguments:x.arguments||'',aliases:x.aliases||[],shell:x.shell||'powershell',command:x.command||''}));render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const d=await r.json();if(!r.ok)throw Error(d.error||'Ошибка сохранения');msg('Сохранено. Команд: '+d.count)}catch(e){msg(e.message)}}
 async function loadIdentity(){try{const r=await fetch('/v1/manager/identity',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('deviceName').value=d.name;el('identityStatus').textContent='Имя и постоянный ID загружены.'}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
 async function saveIdentity(){try{const r=await fetch('/v1/manager/identity',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el('deviceName').value.trim()})});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('identityStatus').textContent='Отображаемое имя сохранено: '+d.name}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
@@ -1426,9 +1431,9 @@ static class NativeMethods
 
 sealed record SshCommandCatalogRequest(List<SshCommandInput>? Commands);
 sealed record SshCommandInput(string? Id, string? Name, string? Phrase, string? Kind, string? Target,
-    string? Arguments, List<string>? Aliases = null);
+    string? Arguments, List<string>? Aliases = null, string? Shell = null, string? Command = null);
 sealed record SshCommandEntry(string Id, string Name, string Phrase, string Kind, string Target,
-    string Arguments, List<string>? Aliases = null);
+    string Arguments, List<string>? Aliases = null, string? Shell = null, string? Command = null);
 
 sealed class SshCommandCatalog
 {
