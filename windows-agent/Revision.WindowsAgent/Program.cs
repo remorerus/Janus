@@ -243,6 +243,27 @@ app.MapGet("/v1/manager/pairing", (HttpContext context) =>
     });
 });
 
+app.MapPost("/v1/manager/pairing/generate", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    if (config.ClientSecret is not null)
+        return Results.Conflict(new { error = "RE:Vision уже сопряжён с этим компьютером. Новый код не требуется; сначала отвяжи устройство штатным способом." });
+
+    config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+    config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+    config.Save(configPath);
+    var codePath = Path.ChangeExtension(configPath, ".pairing-code.txt");
+    File.WriteAllText(codePath,
+        $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Run this file locally on this PC and keep the code private.");
+    return Results.Json(new
+    {
+        generated = true,
+        pairingCode = config.PairingCode,
+        expiresUtc = config.PairingExpiresUtc,
+        message = "Создан новый код. Он действует 24 часа."
+    });
+});
+
 app.MapPost("/v1/pair", async (HttpContext context) =>
 {
     // Read the small pairing payload explicitly instead of relying on minimal-API
@@ -1078,7 +1099,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <main><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
 <div id="pairingState" class="status">Проверка состояния привязки…</div>
 <div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
-<button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
+<button type="button" onclick="generatePairingCode()">Сгенерировать новый код</button><button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
 </section><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
@@ -1124,7 +1145,20 @@ async function loadPairing(){
   el('pairingCode').textContent=p.pairingCode||'';
   el('pairingExpiry').textContent=p.expiresUtc?'Действует до: '+new Date(p.expiresUtc).toLocaleString():'';
   el('pairingState').textContent=p.message;
+  const generateButton=document.querySelector('[onclick="generatePairingCode()"]');
+  if(generateButton)generateButton.style.display=p.paired?'none':'inline-block';
  }catch(e){el('pairingState').textContent='Не удалось проверить привязку: '+e.message}
+}
+async function generatePairingCode(){
+ const status=el('pairingState');
+ if(!confirm('Создать новый код сопряжения? Предыдущий незавершённый код перестанет действовать.'))return;
+ try{
+  const r=await fetch('/v1/manager/pairing/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  await loadPairing();
+  status.textContent=d.message;
+ }catch(e){status.textContent='Не удалось создать код: '+e.message}
 }
 function copyPairingCode(){const code=el('pairingCode').textContent;if(code)navigator.clipboard.writeText(code)}
 function updateKindFields(){
