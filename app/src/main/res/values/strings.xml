@@ -352,4 +352,7 @@
 
     <string name="voice_bridge_notification_title">RE:Vision Voice Bridge</string>
     <string name="voice_bridge_notification_text">Канал восстановления голосового моста активен</string>
+    <string name="ssh_key_find_and_connect">Найти и подключить SSH</string>
+    <string name="ssh_key_searching">Поиск Windows Agent в локальной сети…</string>
+    <string name="ssh_key_request_sent">Запрос отправлен. Подтверди подключение в веб-интерфейсе Windows Agent на компьютере.</string>
 </resources>
