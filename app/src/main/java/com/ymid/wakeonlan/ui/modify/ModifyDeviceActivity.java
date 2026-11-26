@@ -392,6 +392,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
                 deviceSshAddressInput.getError() == null &&
                 deviceSshUsernameInput.getError() == null &&
                 deviceSshCommandInput.getError() == null &&
+                areAdditionalProfileAddressesValid() &&
                 !Strings.isNullOrEmpty(sshKeyAlias);
     }
 
@@ -468,6 +469,10 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     private void triggerShutdownValidators() {
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceSshAddressInput);
+        for (NetworkProfileInput profile : additionalNetworkProfiles) {
+            profile.broadcast.setRealText(profile.broadcast.getRealTextValue());
+            profile.status.setRealText(profile.status.getRealTextValue());
+        }
         deviceSshUsernameInput.setText(deviceSshUsernameInput.getText());
         deviceSshCommandInput.setText(deviceSshCommandInput.getText());
     }
