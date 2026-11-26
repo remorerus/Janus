@@ -806,12 +806,9 @@ public final class WindowsAgentClient {
     private static JSONObject authenticatedRequestForDevice(Context context,
             com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device,
             String path, String body) throws Exception {
+        // Fast path: try previously verified routes first. A normal voice command
+        // should not trigger a subnet sweep when the saved endpoint is still alive.
         java.util.LinkedHashSet<String> routes = new java.util.LinkedHashSet<>();
-        JSONObject currentAgent = findAgentOnCurrentWifi(context, device.deviceId);
-        if (currentAgent != null) {
-            String discovered = currentAgent.optString("baseUrl", "");
-            if (!discovered.isEmpty()) routes.add(discovered);
-        }
         try {
             org.json.JSONArray saved = new org.json.JSONArray(device.endpointUrlsJson == null ? "[]" : device.endpointUrlsJson);
             for (int i = 0; i < saved.length(); i++) {
@@ -819,28 +816,50 @@ public final class WindowsAgentClient {
                 if (!value.isEmpty()) routes.add(value);
             }
         } catch (Exception ignored) { }
-        if (device.baseUrl != null && !device.baseUrl.isEmpty()) routes.add(device.baseUrl);
-        if (routes.isEmpty()) throw new IllegalStateException("Windows Agent не найден в локальной сети.");
-
-        org.json.JSONArray updated = new org.json.JSONArray();
-        for (String route : routes) updated.put(route);
-        device.endpointUrlsJson = updated.toString();
-        device.baseUrl = routes.iterator().next();
-        device.lastSeenAt = System.currentTimeMillis();
-        new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
-
+        if (device.baseUrl != null && !device.baseUrl.isEmpty()) {
+            routes.remove(device.baseUrl);
+            routes.add(device.baseUrl);
+            // Keep the current primary endpoint first.
+            java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+            ordered.add(device.baseUrl);
+            ordered.addAll(routes);
+            routes = ordered;
+        }
         Exception last = null;
         for (String route : routes) {
             try {
                 JSONObject result = authenticatedRequest(route, device.clientSecret, path, body);
-                if (!route.equals(device.baseUrl)) {
-                    device.baseUrl = route;
-                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
-                }
+                device.baseUrl = route;
+                device.lastSeenAt = System.currentTimeMillis();
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
                 return result;
             } catch (Exception error) { last = error; }
         }
-        throw last == null ? new IllegalStateException("Нет доступных маршрутов Windows Agent.") : last;
+
+        // Only recover/discover after all saved routes failed. Discovery still
+        // verifies the stable deviceId before an updated endpoint is trusted.
+        JSONObject currentAgent = findAgentOnCurrentWifi(context, device.deviceId);
+        if (currentAgent != null) {
+            String discovered = currentAgent.optString("baseUrl", "");
+            if (!discovered.isEmpty() && !routes.contains(discovered)) {
+                try {
+                    JSONObject result = authenticatedRequest(discovered, device.clientSecret, path, body);
+                    java.util.LinkedHashSet<String> updatedRoutes = new java.util.LinkedHashSet<>();
+                    updatedRoutes.add(discovered);
+                    updatedRoutes.addAll(routes);
+                    org.json.JSONArray updated = new org.json.JSONArray();
+                    for (String route : updatedRoutes) updated.put(route);
+                    device.endpointUrlsJson = updated.toString();
+                    device.baseUrl = discovered;
+                    device.lastSeenAt = System.currentTimeMillis();
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
+                    return result;
+                } catch (Exception error) { last = error; }
+            }
+        }
+        throw last == null
+                ? new IllegalStateException("Windows Agent не найден в локальной сети.")
+                : last;
     }
 
     private static JSONObject authenticatedRequest(String base, String secret, String path, String body)
