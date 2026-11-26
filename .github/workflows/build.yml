@@ -79,7 +79,6 @@ jobs:
           echo "Release signing key verified."
       - name: Run Android unit tests
         if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26'
-        continue-on-error: true
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon testDebugUnitTest
@@ -99,6 +98,23 @@ jobs:
           script: |
             chmod +x ./gradlew
             ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ymid.wakeonlan.ui.MainActivityTest#launches_showsDeviceList
+      - name: Capture emulator diagnostics on smoke-test failure
+        if: failure()
+        run: |
+          adb logcat -d -v time -t 5000 > emulator-logcat.txt || true
+          adb shell dumpsys activity activities > emulator-activities.txt || true
+          adb shell dumpsys activity services > emulator-services.txt || true
+      - name: Upload emulator diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-Emulator-Diagnostics
+          path: |
+            emulator-logcat.txt
+            emulator-activities.txt
+            emulator-services.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Build APKs
         run: |
           chmod +x ./gradlew
