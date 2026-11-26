@@ -57,6 +57,9 @@ public class DeviceBackupModel {
     @SerializedName(value = "wan_port")
     public Integer wanPort;
 
+    @SerializedName(value = "network_profiles")
+    public String networkProfilesJson = "[]";
+
     public DeviceBackupModel(Device device) {
         this.id = device.id;
         this.name = device.name;
@@ -75,15 +78,18 @@ public class DeviceBackupModel {
         this.groupName = device.groupName;
         this.wanIp = device.wanIp;
         this.wanPort = device.wanPort;
+        this.networkProfilesJson = device.networkProfilesJson == null ? "[]" : device.networkProfilesJson;
     }
 
     public Device toModel() {
-        return new Device(
+        Device device = new Device(
                 this.id, this.name, this.macAddress, this.broadcastAddress, this.port,
                 this.statusIp, this.secureOnPassword, this.remoteShutdownEnabled,
                 this.sshAddress, this.sshPort, this.sshUsername, this.sshPassword,
                 this.sshCommand, this.shutdownOs == null ? "linux" : this.shutdownOs,
                 "password", null, this.groupName, this.wanIp, this.wanPort);
+        device.networkProfilesJson = this.networkProfilesJson == null ? "[]" : this.networkProfilesJson;
+        return device;
     }
 
     @SuppressWarnings("unused")
