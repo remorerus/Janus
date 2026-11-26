@@ -23,6 +23,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import android.net.DhcpInfo;
 import android.net.wifi.WifiManager;
 import java.security.SecureRandom;
@@ -206,6 +211,107 @@ public final class WindowsAgentClient {
         return new ArrayList<>(found.values());
     }
 
+
+    /**
+     * Resolves the already-paired Agent on the Wi-Fi network currently used by
+     * the glasses. UDP broadcast is preferred; an HTTP sweep of the active Wi-Fi
+     * subnet is the fallback for routers/APs that do not forward limited broadcasts.
+     * A candidate is accepted only when its stable deviceId matches the saved pairing.
+     */
+    private static JSONObject findAgentOnCurrentWifi(Context context, String expectedDeviceId) {
+        if (expectedDeviceId == null || expectedDeviceId.trim().isEmpty()) return null;
+        try {
+            for (JSONObject item : discover(context)) {
+                if (expectedDeviceId.equals(item.optString("deviceId", ""))) return item;
+            }
+        } catch (Exception ignored) { }
+
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        ExecutorCompletionService<JSONObject> completion = new ExecutorCompletionService<>(pool);
+        int submitted = 0;
+        try {
+            WifiManager wifi = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            DhcpInfo dhcp = wifi == null ? null : wifi.getDhcpInfo();
+            if (dhcp == null || dhcp.ipAddress == 0 || dhcp.netmask == 0) return null;
+            int local = dhcp.ipAddress;
+            int mask = dhcp.netmask;
+            int network = local & mask;
+            int broadcast = network | ~mask;
+            long hostCount = Integer.toUnsignedLong(broadcast - network - 1);
+            if (hostCount < 1 || hostCount > 1024) return null;
+
+            for (int candidate = network + 1; candidate != broadcast; candidate++) {
+                if (candidate == local) continue;
+                final String host = (candidate & 0xff) + "." + ((candidate >>> 8) & 0xff)
+                        + "." + ((candidate >>> 16) & 0xff) + "." + ((candidate >>> 24) & 0xff);
+                completion.submit(() -> requestDiscoveryFast(host));
+                submitted++;
+            }
+
+            long deadline = System.currentTimeMillis() + 4500L;
+            for (int i = 0; i < submitted; i++) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) break;
+                Future<JSONObject> future = completion.poll(remaining, TimeUnit.MILLISECONDS);
+                if (future == null) break;
+                try {
+                    JSONObject item = future.get();
+                    if (item != null && expectedDeviceId.equals(item.optString("deviceId", "")))
+                        return item;
+                } catch (Exception ignored) { }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            pool.shutdownNow();
+        }
+        return null;
+    }
+
+    private static JSONObject requestDiscoveryFast(String host) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL("http://" + host + ":47821/v1/discovery").openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(450);
+            connection.setReadTimeout(450);
+            connection.setUseCaches(false);
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
+            try (InputStream input = connection.getInputStream();
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[1024];
+                int count;
+                while ((count = input.read(buffer)) != -1 && output.size() < 8192)
+                    output.write(buffer, 0, count);
+                JSONObject item = new JSONObject(output.toString("UTF-8"));
+                if (!"revision-discovery-v1".equals(item.optString("protocol"))) return null;
+                item.put("address", host);
+                item.put("baseUrl", "http://" + host + ":" + item.optInt("port", 47821));
+                return item;
+            }
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static String currentBaseForLegacyPairing(Context context, SharedPreferences preferences,
+            String fallbackBase) {
+        try {
+            String deviceId = preferences.getString(KEY_DEVICE_ID, null);
+            JSONObject current = findAgentOnCurrentWifi(context, deviceId);
+            if (current != null) {
+                String base = normalizeBase(current.optString("baseUrl", ""));
+                if (!base.isEmpty()) {
+                    preferences.edit().putString(KEY_BASE, base).commit();
+                    return base;
+                }
+            }
+        } catch (Exception ignored) { }
+        return fallbackBase;
+    }
+
     public static boolean isConfigured(Context context) {
         try {
             SharedPreferences p = prefs(context);
@@ -253,6 +359,7 @@ public final class WindowsAgentClient {
         String base = p.getString(KEY_BASE, null);
         String secret = p.getString(KEY_SECRET, null);
         if (base == null || secret == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        base = currentBaseForLegacyPairing(context, p, base);
         String path = "/v1/command/" + action;
         long timestamp = System.currentTimeMillis() / 1000L;
         byte[] nonceBytes = new byte[16];
@@ -672,6 +779,7 @@ public final class WindowsAgentClient {
         String base = p.getString(KEY_BASE, null);
         String secret = p.getString(KEY_SECRET, null);
         if (base == null || secret == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        base = currentBaseForLegacyPairing(context, p, base);
         JSONObject body = new JSONObject();
         body.put("phrase", phrase.trim());
         org.json.JSONArray arr = new org.json.JSONArray();
@@ -694,14 +802,11 @@ public final class WindowsAgentClient {
             com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device,
             String path, String body) throws Exception {
         java.util.LinkedHashSet<String> routes = new java.util.LinkedHashSet<>();
-        try {
-            for (JSONObject found : discover(context)) {
-                if (device.deviceId.equals(found.optString("deviceId", ""))) {
-                    String discovered = found.optString("baseUrl", "");
-                    if (!discovered.isEmpty()) routes.add(discovered);
-                }
-            }
-        } catch (Exception ignored) { }
+        JSONObject currentAgent = findAgentOnCurrentWifi(context, device.deviceId);
+        if (currentAgent != null) {
+            String discovered = currentAgent.optString("baseUrl", "");
+            if (!discovered.isEmpty()) routes.add(discovered);
+        }
         try {
             org.json.JSONArray saved = new org.json.JSONArray(device.endpointUrlsJson == null ? "[]" : device.endpointUrlsJson);
             for (int i = 0; i < saved.length(); i++) {
