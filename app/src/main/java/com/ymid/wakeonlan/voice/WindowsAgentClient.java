@@ -401,6 +401,22 @@ public final class WindowsAgentClient {
         if (scannedMatches.size() > 1)
             throw new IllegalStateException("В списке RE:Vision несколько устройств с таким именем.");
 
+        // Also consult the live scan screen. This lets a spoken hostname resolve
+        // immediately after RE:Vision discovers it, without manually entering an IP
+        // or adding the scan result to the saved-device list first.
+        java.util.List<String> liveScanIps = new java.util.ArrayList<>();
+        for (com.ymid.wakeonlan.ui.scan.model.NetworkScanDevice scanItem
+                : com.ymid.wakeonlan.ui.scan.NetworkScanCache.snapshot()) {
+            if (scanItem != null && scanItem.getName() != null && scanItem.getName().isPresent()
+                    && wanted.equals(normalizeDeviceName(scanItem.getName().get()))) {
+                String ip = scanItem.getIpAddress();
+                if (ip != null && !ip.trim().isEmpty() && !liveScanIps.contains(ip.trim()))
+                    liveScanIps.add(ip.trim());
+            }
+        }
+        if (liveScanIps.size() > 1)
+            throw new IllegalStateException("Сканирование RE:Vision нашло несколько компьютеров с таким именем.");
+
         java.util.List<JSONObject> discovered = new java.util.ArrayList<>();
         try { discovered = discover(context); } catch (Exception ignored) { }
 
@@ -418,6 +434,13 @@ public final class WindowsAgentClient {
 
             boolean match = live != null
                     && wanted.equals(normalizeDeviceName(live.optString("name", "")));
+
+            if (!match && !liveScanIps.isEmpty()) {
+                String currentAgentHost = live != null
+                        ? endpointHost(live.optString("address", ""))
+                        : endpointHost(pairedDevice.baseUrl);
+                match = liveScanIps.contains(currentAgentHost);
+            }
 
             if (!match && !scannedMatches.isEmpty()) {
                 com.ymid.wakeonlan.persistence.models.Device saved = scannedMatches.get(0);
@@ -444,9 +467,9 @@ public final class WindowsAgentClient {
         if (resolved.size() == 1) return resolved.get(0);
         if (resolved.size() > 1)
             throw new IllegalStateException("Имя устройства соответствует нескольким сопряжённым компьютерам.");
-        if (!scannedMatches.isEmpty())
+        if (!scannedMatches.isEmpty() || !liveScanIps.isEmpty())
             throw new IllegalStateException("Устройство «" + requestedName
-                    + "» найдено в списке RE:Vision, но для него не найден соответствующий сопряжённый Windows Agent.");
+                    + "» найдено сканированием RE:Vision, но для него не найден соответствующий сопряжённый Windows Agent.");
         throw new IllegalStateException("Устройство «" + requestedName
                 + "» не найдено среди устройств RE:Vision и обнаруженных Windows Agent.");
     }
