@@ -474,7 +474,12 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceBroadcastInput);
         for (NetworkProfileInput profile : additionalNetworkProfiles) {
-            profile.mac.setRealText(profile.mac.getRealTextValue());
+            String profileMac = profile.mac.getRealTextValue();
+            if (profileMac == null || profileMac.trim().isEmpty()) {
+                profile.mac.setRealText(getDeviceMacInputText());
+            } else {
+                profile.mac.setRealText(profileMac);
+            }
             profile.broadcast.setRealText(profile.broadcast.getRealTextValue());
             profile.status.setRealText(profile.status.getRealTextValue());
         }
