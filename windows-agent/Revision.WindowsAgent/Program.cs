@@ -1132,9 +1132,6 @@ static bool IsPrivateLan(HttpContext context)
     return b.Length == 16 && (b[0] & 0xFE) == 0xFC;
 }
 
-record PendingSshKeyRequest(string Id, string DeviceName, string DeviceId, string Username,
-    string PublicKey, string Fingerprint, string RemoteAddress, DateTimeOffset CreatedUtc);
-
 static string? GetAuthenticationFailureReason(string secretBase64, string method, string path, string timestamp, string nonce, string body, string signature)
 {
     if (!long.TryParse(timestamp, out var unix)) return "invalid_timestamp";
@@ -1464,4 +1461,8 @@ sealed class AgentConfig
 sealed record AgentIdentityRequest(string Name);
 sealed record VoiceCorrectionRequest(string? HeardPhrase, string? CommandId);
 
+
+
+record PendingSshKeyRequest(string Id, string DeviceName, string DeviceId, string Username,
+    string PublicKey, string Fingerprint, string RemoteAddress, DateTimeOffset CreatedUtc);
 
