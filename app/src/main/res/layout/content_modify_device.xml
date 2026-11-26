@@ -439,6 +439,30 @@
                 android:visibility="gone"
                 app:layout_constraintTop_toBottomOf="@id/device_ssh_public_key" />
 
+            <Button
+                android:id="@+id/device_button_ssh_connect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="24dp"
+                android:text="@string/ssh_key_find_and_connect"
+                android:visibility="gone"
+                app:layout_constraintTop_toBottomOf="@id/device_ssh_connect_status" />
+
+            <TextView
+                android:id="@+id/device_ssh_connect_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="24dp"
+                android:textSize="12sp"
+                android:visibility="gone"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/device_button_ssh_connect" />
+
             <!-- Operating system selector for shutdown command interpretation -->
             <TextView
                 android:id="@+id/device_shutdown_os_label"
