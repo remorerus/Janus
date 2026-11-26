@@ -453,6 +453,10 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceNameInput.setText(deviceNameInput.getText());
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceBroadcastInput);
+        for (NetworkProfileInput profile : additionalNetworkProfiles) {
+            profile.broadcast.setRealText(profile.broadcast.getRealTextValue());
+            profile.status.setRealText(profile.status.getRealTextValue());
+        }
         triggerObfuscatedInputValidators(deviceWanAddressInput);
         triggerObfuscatedInputValidators(deviceMacInput);
         devicePorts.setText(devicePorts.getText());
