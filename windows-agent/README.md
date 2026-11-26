@@ -67,6 +67,8 @@ GitHub Actions собирает self-contained ZIP для Windows x64. Расп�
 - `GET /v1/status`
 - `POST /v1/heartbeat` — authenticated heartbeat from the paired RE:Vision client; Web Manager reports Active only while a valid heartbeat is no older than 90 seconds
 - `GET /v1/manager/connection` — loopback-only connection diagnostics for Web Manager (pairing state, last heartbeat, age and remote address)
+
+The Android client must call `/v1/heartbeat` periodically (recommended every 30 seconds) using the same HMAC headers as command requests. Until that client integration is installed, the manager correctly shows the device as paired but unavailable; it does not infer an active connection from discovery or stored credentials.
 - `POST /v1/pair`
 - `POST /v1/command/lock`
 - `POST /v1/command/shutdown`
