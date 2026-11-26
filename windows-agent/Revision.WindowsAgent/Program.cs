@@ -26,6 +26,7 @@ builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(Port));
 builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 var app = builder.Build();
 var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
+var pendingSshKeyRequests = new ConcurrentDictionary<string, PendingSshKeyRequest>();
 
 app.MapGet("/", (HttpContext context) =>
 {
@@ -191,6 +192,100 @@ app.MapPost("/v1/manager/voice-corrections", async (HttpContext context) =>
     var updated = catalog.Select(x => x.Id == target.Id ? x with { Aliases = aliases } : x).ToList();
     CommandCatalog.Save(commandsPath, updated);
     return Results.Json(new { saved = true, alreadyKnown = false, command = target.Name, aliasCount = aliases.Count });
+});
+
+
+app.MapPost("/v1/ssh-key-requests", async (HttpContext context) =>
+{
+    if (!IsPrivateLan(context)) return Results.NotFound();
+    string raw;
+    using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8))
+        raw = await reader.ReadToEndAsync();
+    if (raw.Length is < 2 or > 8192) return Results.BadRequest(new { error = "Некорректный размер запроса." });
+    string? deviceName = null, deviceId = null, username = null, publicKey = null;
+    try
+    {
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        deviceName = root.TryGetProperty("deviceName", out var n) ? n.GetString() : null;
+        deviceId = root.TryGetProperty("deviceId", out var d) ? d.GetString() : null;
+        username = root.TryGetProperty("username", out var u) ? u.GetString() : null;
+        publicKey = root.TryGetProperty("publicKey", out var k) ? k.GetString() : null;
+    }
+    catch { return Results.BadRequest(new { error = "Некорректный JSON." }); }
+    deviceName = (deviceName ?? "").Trim();
+    deviceId = (deviceId ?? "").Trim();
+    username = (username ?? "").Trim();
+    publicKey = (publicKey ?? "").Trim();
+    if (deviceName.Length is < 1 or > 80 || deviceId.Length is < 1 or > 128 ||
+        !Regex.IsMatch(username, @"^[A-Za-z0-9._-]{1,64}$") ||
+        publicKey.Length is < 40 or > 2048 || publicKey.Contains('\r') || publicKey.Contains('\n'))
+        return Results.BadRequest(new { error = "Проверь имя устройства, пользователя и открытый ключ." });
+    var parts = Regex.Split(publicKey, @"\s+");
+    if (parts.Length < 2 || parts[0] is not ("ecdsa-sha2-nistp256" or "ssh-ed25519" or "ssh-rsa"))
+        return Results.BadRequest(new { error = "Формат открытого SSH-ключа не поддерживается." });
+    byte[] keyBlob;
+    try { keyBlob = Convert.FromBase64String(parts[1]); }
+    catch { return Results.BadRequest(new { error = "Открытый ключ содержит неверный Base64." }); }
+    if (keyBlob.Length < 32 || keyBlob.Length > 1024)
+        return Results.BadRequest(new { error = "Недопустимый размер открытого ключа." });
+    var remote = context.Connection.RemoteIpAddress;
+    var id = Guid.NewGuid().ToString("N");
+    var fingerprint = "SHA256:" + Convert.ToBase64String(SHA256.HashData(keyBlob)).TrimEnd('=');
+    var item = new PendingSshKeyRequest(id, deviceName, deviceId, username, publicKey,
+        fingerprint, remote?.ToString() ?? "LAN", DateTimeOffset.UtcNow);
+    foreach (var old in pendingSshKeyRequests.Where(x => DateTimeOffset.UtcNow - x.Value.CreatedUtc > TimeSpan.FromMinutes(10)).ToArray())
+        pendingSshKeyRequests.TryRemove(old.Key, out _);
+    if (pendingSshKeyRequests.Count >= 20)
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+    pendingSshKeyRequests[id] = item;
+    return Results.Json(new { requestId = id, status = "pending", message = "Ожидается подтверждение в веб-интерфейсе Windows Agent." });
+});
+
+app.MapGet("/v1/ssh-key-requests", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var now = DateTimeOffset.UtcNow;
+    foreach (var old in pendingSshKeyRequests.Where(x => now - x.Value.CreatedUtc > TimeSpan.FromMinutes(10)).ToArray())
+        pendingSshKeyRequests.TryRemove(old.Key, out _);
+    return Results.Json(pendingSshKeyRequests.Values.OrderByDescending(x => x.CreatedUtc)
+        .Select(x => new { x.Id, x.DeviceName, x.DeviceId, x.Username, x.Fingerprint, x.RemoteAddress, createdUtc = x.CreatedUtc }));
+});
+
+app.MapPost("/v1/ssh-key-requests/{id}/approve", (HttpContext context, string id) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    if (!pendingSshKeyRequests.TryRemove(id, out var item)) return Results.NotFound(new { error = "Запрос истёк или уже обработан." });
+    try
+    {
+        var sshDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ssh");
+        Directory.CreateDirectory(sshDirectory);
+        var authorizedKeys = Path.Combine(sshDirectory, "administrators_authorized_keys");
+        if (!File.Exists(authorizedKeys)) File.WriteAllText(authorizedKeys, "", Encoding.ASCII);
+        var existing = File.ReadAllLines(authorizedKeys, Encoding.ASCII);
+        if (!existing.Contains(item.PublicKey, StringComparer.Ordinal))
+            File.AppendAllText(authorizedKeys, item.PublicKey + Environment.NewLine, Encoding.ASCII);
+        var acl = new ProcessStartInfo("icacls.exe") { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var arg in new[] { authorizedKeys, "/inheritance:r", "/grant:r", "*S-1-5-32-544:F", "*S-1-5-18:F" })
+            acl.ArgumentList.Add(arg);
+        using var process = Process.Start(acl);
+        process?.WaitForExit(10000);
+        if (process is null || process.ExitCode != 0)
+            return Results.Problem("Не удалось назначить ACL для authorized_keys. Проверь права службы Windows Agent.");
+        return Results.Json(new { approved = true, username = item.Username, deviceName = item.DeviceName,
+            message = "Ключ добавлен в administrators_authorized_keys. Перезапуск sshd обычно не требуется." });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem("Не удалось установить ключ: " + ex.Message);
+    }
+});
+
+app.MapPost("/v1/ssh-key-requests/{id}/reject", (HttpContext context, string id) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var removed = pendingSshKeyRequests.TryRemove(id, out _);
+    return Results.Json(new { rejected = removed });
 });
 
 app.MapGet("/v1/status", () => Results.Json(new {
@@ -1024,6 +1119,22 @@ static bool LockActiveConsoleSession()
 static bool IsLocal(HttpContext context) =>
     context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
 
+static bool IsPrivateLan(HttpContext context)
+{
+    var address = context.Connection.RemoteIpAddress;
+    if (address is null) return false;
+    if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+    if (IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.IsIPv6SiteLocal) return true;
+    var b = address.GetAddressBytes();
+    if (b.Length == 4)
+        return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
+            (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
+    return b.Length == 16 && (b[0] & 0xFE) == 0xFC;
+}
+
+record PendingSshKeyRequest(string Id, string DeviceName, string DeviceId, string Username,
+    string PublicKey, string Fingerprint, string RemoteAddress, DateTimeOffset CreatedUtc);
+
 static string? GetAuthenticationFailureReason(string secretBase64, string method, string path, string timestamp, string nonce, string body, string signature)
 {
     if (!long.TryParse(timestamp, out var unix)) return "invalid_timestamp";
@@ -1055,7 +1166,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 @media(max-width:800px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
 <header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">SSH по ключу · OpenSSH</span></header>
-<main><section class="panel"><h2 id="formTitle">Добавить SSH-команду</h2>
+<main><section class="panel pairing"><h2>Запросы на SSH-подключение</h2><div id="sshRequests" class="muted">Проверка запросов…</div><div class="status" id="sshRequestStatus"></div></section><section class="panel"><h2 id="formTitle">Добавить SSH-команду</h2>
 <label>Название команды</label><input id="name" maxlength="80" placeholder="Например, Запуск Mixxx">
 <label>Точная голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Запусти Mixxx">
 <label>Оболочка</label><select id="shell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select>
@@ -1079,7 +1190,32 @@ function render(){const root=el('commands');root.replaceChildren();if(!commands.
 commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.shell==='cmd'?'CMD':'PowerShell')+' · '+c.command;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
 async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
 async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
-loadCommands();
+
+async function loadSshRequests(){
+ try{
+  const r=await fetch('/v1/ssh-key-requests',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);
+  const items=await r.json(),root=el('sshRequests');root.replaceChildren();
+  if(!items.length){root.textContent='Новых запросов нет.';return}
+  items.forEach(x=>{
+   const card=document.createElement('div');card.className='item';
+   const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.deviceName+' просит SSH-доступ';
+   const details=document.createElement('small');details.textContent='Пользователь Windows: '+x.username+' · IP: '+x.remoteAddress+'\nОтпечаток: '+x.fingerprint;
+   info.append(title,details);
+   const actions=document.createElement('div');actions.className='actions';
+   const yes=document.createElement('button');yes.textContent='Разрешить';yes.onclick=()=>handleSshRequest(x.id,'approve');
+   const no=document.createElement('button');no.className='danger';no.textContent='Отклонить';no.onclick=()=>handleSshRequest(x.id,'reject');
+   actions.append(yes,no);card.append(info,actions);root.append(card);
+  });
+ }catch(e){el('sshRequestStatus').textContent='Не удалось проверить запросы: '+e.message}
+}
+async function handleSshRequest(id,action){
+ try{const r=await fetch('/v1/ssh-key-requests/'+encodeURIComponent(id)+'/'+action,{method:'POST'});
+ const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+ el('sshRequestStatus').textContent=action==='approve'?'Подключение разрешено.':'Запрос отклонён.';
+ await loadSshRequests();
+ }catch(e){el('sshRequestStatus').textContent=e.message}
+}
+loadCommands();loadSshRequests();setInterval(loadSshRequests,2500);
 </script></body></html>
 """;
 
