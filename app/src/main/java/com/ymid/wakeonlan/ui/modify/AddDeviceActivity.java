@@ -7,6 +7,7 @@ import android.view.MenuItem;
 import androidx.annotation.NonNull;
 
 import com.ymid.wakeonlan.R;
+import com.ymid.wakeonlan.crash.CrashReporter;
 import com.ymid.wakeonlan.persistence.models.Device;
 
 import java.util.List;
@@ -15,8 +16,11 @@ import java.util.regex.Pattern;
 
 public class AddDeviceActivity extends ModifyDeviceActivity {
 
+    private boolean saveStarted;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        CrashReporter.setOperation("device_creation.form");
         super.onCreate(savedInstanceState);
         // Never query Room on the UI thread. Populate a safe initial value, then
         // calculate the next number from the repository's background executor.
@@ -58,12 +62,21 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
         }
 
         return super.onOptionsItemSelected(item);
-
     }
 
     @Override
     protected void persistDevice(Device device) {
-        deviceRepository.insertAllAsync(device);
+        saveStarted = true;
+        CrashReporter.setOperation("device_creation.database_insert");
+        deviceRepository.insertAllAsync("device_creation.database_insert", device);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (!saveStarted) {
+            CrashReporter.clearOperation();
+        }
+        super.onDestroy();
     }
 
     @Override
