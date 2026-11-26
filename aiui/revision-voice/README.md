@@ -14,12 +14,10 @@ aix pack ./aiui/revision-voice -o ./dist/RE-Vision.aix
 The GitHub Actions workflow packages this directory and publishes the resulting `.aix` as a downloadable workflow artifact.
 
 ## Import to AIUI Studio
-Import the GitHub subdirectory:
-- Repository: `remorerus/Janus`
-- Branch: `revision-voicebridge-tap-ssh-manager-2026-11-25`
-- Directory: `aiui/revision-voice`
+Import `RE-Vision.aix` as an update to the existing agent «Ревижн», not as a new agent. Preserve the existing Agent ID:
+`c54c14a5-db8e-4db5-9ca5-cccdfc11c74a`.
 
-Bind the imported project to a new AIUI Agent named RE:Vision, then package/upload it in AIUI Studio. Update the glasses resource package through the Rokid app.
+Keep the existing intents and commands. Publish/update the existing agent resource in AIUI Studio, then synchronize the glasses resources through Hi Rokid.
 
 ## Current milestone
 The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
