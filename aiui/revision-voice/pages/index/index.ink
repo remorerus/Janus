@@ -325,7 +325,7 @@ export default {
     // A spoken target at the end of the phrase selects the paired PC by its RE:Vision name.
     // The name is only a selector; the native registry still authenticates by stable device ID.
     const localStudioTarget = /\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)[\s,;:.!?-]*$/i.exec(String(transcript || ''));
-    const requestedWindowsDevice = localStudioTarget ? 'Studio Local' : 'STUDIO PC';
+    const requestedWindowsDevice = localStudioTarget ? 'студио локал' : 'STUDIO PC';
     const commandTranscript = localStudioTarget
       ? String(transcript || '').slice(0, localStudioTarget.index).replace(/[\s,;:.!?-]+$/g, '').trim()
       : String(transcript || '').trim();
