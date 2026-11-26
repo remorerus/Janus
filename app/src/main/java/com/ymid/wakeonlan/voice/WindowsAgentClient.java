@@ -300,6 +300,51 @@ public final class WindowsAgentClient {
         registry.addPairedDevice(device, device.isDefault);
     }
 
+    /**
+     * Sends a public SSH key to a discovered Windows Agent for owner approval in its local web manager.
+     * No pairing secret or private key is transmitted.
+     */
+    public static JSONObject requestSshKeyApproval(Context context,
+            com.ymid.wakeonlan.persistence.models.Device device, String username, String keyAlias) throws Exception {
+        if (device == null) throw new IllegalArgumentException("Карточка устройства не загружена.");
+        if (username == null || !username.trim().matches("[A-Za-z0-9._-]{1,64}"))
+            throw new IllegalArgumentException("Укажи корректное имя пользователя Windows в карточке устройства.");
+        if (keyAlias == null || keyAlias.trim().isEmpty())
+            throw new IllegalStateException("SSH-ключ ещё не создан.");
+        String publicKey = com.ymid.wakeonlan.security.SshKeyManager.getOpenSshPublicKey(keyAlias);
+        if (publicKey == null || publicKey.trim().isEmpty())
+            throw new IllegalStateException("Не удалось прочитать открытый ключ из Android Keystore.");
+        List<JSONObject> found = discover(context);
+        String wanted = normalizeDeviceName(device.name);
+        String savedHost = endpointHost(device.sshAddress);
+        if (savedHost.isEmpty()) savedHost = endpointHost(device.statusIp);
+        List<JSONObject> matches = new ArrayList<>();
+        for (JSONObject candidate : found) {
+            String address = candidate.optString("address", "").trim();
+            String agentName = normalizeDeviceName(candidate.optString("name", ""));
+            boolean sameName = !wanted.isEmpty() && (wanted.equals(agentName) ||
+                    (wanted.contains("studio") && agentName.contains("studio")));
+            boolean sameAddress = !savedHost.isEmpty() && savedHost.equals(address);
+            if (sameName || sameAddress) matches.add(candidate);
+        }
+        if (matches.isEmpty() && found.size() == 1) matches.add(found.get(0));
+        if (matches.isEmpty())
+            throw new IllegalStateException("Windows Agent не найден. Проверь, что компьютер включён и очки находятся в той же локальной сети.");
+        if (matches.size() > 1)
+            throw new IllegalStateException("Найдено несколько Windows Agent. Уточни имя или IP компьютера в карточке устройства.");
+        JSONObject target = matches.get(0);
+        String base = normalizeBase(target.optString("baseUrl", ""));
+        JSONObject body = new JSONObject();
+        body.put("deviceName", device.name == null || device.name.trim().isEmpty() ? "RE:Vision" : device.name.trim());
+        body.put("deviceId", "revision-device-" + Integer.toHexString((device.name + "|" + savedHost).hashCode()));
+        body.put("username", username.trim());
+        body.put("publicKey", publicKey.trim());
+        JSONObject response = request(base, "POST", "/v1/ssh-key-requests", body.toString(), null);
+        response.put("agentName", target.optString("name", "Windows PC"));
+        response.put("agentAddress", target.optString("address", ""));
+        return response;
+    }
+
     /** Executes an allow-listed command on a specifically selected paired computer. */
     public static JSONObject command(Context context, String deviceId, String action) throws Exception {
         if (deviceId == null || deviceId.trim().isEmpty())
