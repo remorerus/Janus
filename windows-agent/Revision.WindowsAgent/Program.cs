@@ -60,19 +60,50 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
         return Results.BadRequest(new { error = "Некорректный список SSH-команд (максимум 100)." });
 
     var normalized = new List<SshCommandEntry>();
+    var registeredPhrases = new HashSet<string>(StringComparer.Ordinal);
     foreach (var item in request.Commands)
     {
         var id = string.IsNullOrWhiteSpace(item.Id) ? Guid.NewGuid().ToString("N") : item.Id.Trim();
         var name = (item.Name ?? "").Trim();
         var phrase = (item.Phrase ?? "").Trim();
-        var shell = (item.Shell ?? "").Trim().ToLowerInvariant();
-        var command = item.Command ?? "";
+        var kind = (item.Kind ?? "").Trim().ToLowerInvariant();
+        var target = (item.Target ?? "").Trim();
+        var arguments = item.Arguments ?? "";
+        var aliases = (item.Aliases ?? new List<string>())
+            .Select(x => (x ?? "").Trim()).Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
-            command.Trim().Length is < 1 or > 12000 || shell is not ("powershell" or "cmd"))
-            return Results.BadRequest(new { error = "Проверь название, голосовую фразу, оболочку и команду." });
-        if (normalized.Any(x => string.Equals(x.Phrase, phrase, StringComparison.OrdinalIgnoreCase)))
-            return Results.BadRequest(new { error = $"Голосовая фраза повторяется: {phrase}" });
-        normalized.Add(new SshCommandEntry(id, name, phrase, shell, command));
+            aliases.Count > 12 || aliases.Any(x => x.Length > 160) ||
+            target.Length > 500 || arguments.Length > 500 ||
+            kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
+            return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты (максимум 12), тип и параметры." });
+
+        foreach (var spoken in new[] { phrase }.Concat(aliases))
+        {
+            var normalizedPhrase = NormalizeVoicePhrase(spoken);
+            if (normalizedPhrase.Length == 0) continue;
+            if (!registeredPhrases.Add(normalizedPhrase))
+                return Results.BadRequest(new { error = $"Голосовая фраза или вариант уже используется другой командой: {spoken}" });
+        }
+        if ((kind is "app" or "bat" or "restart") && target.Length == 0)
+            return Results.BadRequest(new { error = "Укажи полный путь к EXE или BAT-файлу." });
+        if (kind == "close" && target.Length == 0)
+            return Results.BadRequest(new { error = "Укажи имя процесса или окна." });
+        if (kind == "media")
+        {
+            var mediaActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN", "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
+            if (!mediaActions.Contains(arguments, StringComparer.Ordinal))
+                return Results.BadRequest(new { error = "Выбери поддерживаемое действие мультимедиа." });
+        }
+        if (kind == "hotkey" && !TryNormalizeHotkey(target, out var hotkey))
+            return Results.BadRequest(new { error = "Недопустимое сочетание клавиш. Пример: CTRL+SHIFT+ESC." });
+        else if (kind == "hotkey") target = hotkey;
+        if (kind == "window" && arguments is not ("focus" or "minimize" or "maximize" or "restore" or "close" or "next" or "previous"))
+            return Results.BadRequest(new { error = "Выбери действие управления окном." });
+        if (kind == "window" && arguments is not ("next" or "previous") && target.Length == 0)
+            return Results.BadRequest(new { error = "Укажи имя процесса или часть заголовка окна." });
+
+        normalized.Add(new SshCommandEntry(id, name, phrase, kind, target, arguments, aliases));
     }
 
     SshCommandCatalog.Save(sshCommandsPath, normalized);
@@ -1152,66 +1183,77 @@ static string? GetAuthenticationFailureReason(string secretBase64, string method
 
 static string GetSshManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Win SSH Agent</title><style>
-:root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1180px;margin:auto}
+<title>RE:Vision SSH Agent</title><style>
+:root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1240px;margin:auto}
 header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
-main{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(360px,1.1fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
-label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:190px;resize:vertical;font:13px Consolas,monospace}
+main{display:grid;grid-template-columns:minmax(300px,.95fr) minmax(360px,1.05fr);gap:18px}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
+label{display:block;color:#cbd5e1;margin:12px 0 6px}input,select,textarea{width:100%;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb}textarea{min-height:90px;resize:vertical;font:13px Segoe UI,Arial}
 button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:white;font-weight:600;cursor:pointer;margin:8px 6px 0 0}button.secondary{background:#4b5563}button.danger{background:#991b1b}
-.pairing{grid-column:1/-1}.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
-@media(max-width:800px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+.full{grid-column:1/-1}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}.item button{margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
+@media(max-width:820px){body{padding:14px}main{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
-<header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">SSH по ключу · OpenSSH</span></header>
-<main><section class="panel pairing"><h2>Запросы на SSH-подключение</h2><div id="sshRequests" class="muted">Проверка запросов…</div><div class="status" id="sshRequestStatus"></div></section><section class="panel"><h2 id="formTitle">Добавить SSH-команду</h2>
-<label>Название команды</label><input id="name" maxlength="80" placeholder="Например, Запуск Mixxx">
-<label>Точная голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Запусти Mixxx">
-<label>Оболочка</label><select id="shell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select>
-<label>Команда или сценарий</label><textarea id="command" maxlength="12000" spellcheck="false" placeholder="Start-Process 'C:\Program Files\Mixxx\mixxx.exe'"></textarea>
-<div class="actions"><button onclick="saveEditor()">Сохранить команду</button><button class="secondary" onclick="clearEditor()">Новая</button></div>
-<div class="status" id="status"></div>
-<div class="note">Команда выполняется на STUDIO PC от имени SSH-пользователя Windows. Доступ к панели есть только с самого компьютера. Сохраняй только доверенные команды.</div>
-</section><section class="panel"><h2>Сохранённые SSH-команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить каталог</button><button class="secondary" onclick="loadCommands()">Обновить список</button><div class="muted" style="margin-top:14px;font-size:12px">Файл: %ProgramData%\\WinSshAgent\\commands.json</div></section></main>
+<header><div><h1>RE:Vision · SSH Agent</h1><div class="muted">Компьютер, привязка RE:Vision и каталог голосовых SSH-команд</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">OpenSSH · ключевая авторизация</span></header>
+<main>
+<section class="panel full"><h2>Имя компьютера в сети</h2>
+<div class="grid2"><div><label>Постоянный ID</label><input id="deviceId" readonly></div><div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, Студио Локал"></div></div>
+<button onclick="saveIdentity()">Сохранить имя</button><button class="secondary" onclick="loadIdentity()">Обновить состояние</button><div class="status" id="identityStatus"></div>
+<h2 style="margin-top:22px">Привязка RE:Vision</h2><div id="pairingStatus" class="muted">Проверка привязки…</div><div class="status" id="pairingMessage"></div>
+</section>
+<section class="panel full"><h2>Запросы на SSH-подключение</h2><div id="sshRequests" class="muted">Проверка запросов…</div><div class="status" id="sshRequestStatus"></div></section>
+<section class="panel"><h2 id="formTitle">Добавить команду в каталог</h2>
+<label>Название команды</label><input id="name" maxlength="80" placeholder="Например, Запуск AIMP">
+<label>Голосовая фраза</label><input id="phrase" maxlength="160" placeholder="Воспроизведи AIMP">
+<label>Варианты распознавания через запятую</label><input id="aliases" maxlength="2000" placeholder="Включи AIMP, Запусти плеер">
+<label>Тип действия</label><select id="kind" onchange="updateFields()">
+<option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option>
+</select>
+<label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" maxlength="500" placeholder="C:\Program Files\AIMP\AIMP.exe">
+<label id="argumentsLabel">Аргументы запуска (необязательно)</label><input id="arguments" maxlength="500" placeholder="Параметры запуска или действие">
+<div class="note" id="kindHint">Для запуска укажи полный путь к EXE.</div>
+<div class="actions"><button onclick="saveEditor()">Сохранить команду</button><button class="secondary" onclick="clearEditor()">Новая команда</button></div><div class="status" id="status"></div>
+<div class="note">Команды выполняются по SSH от имени указанного Windows-пользователя. Добавляй только доверенные приложения и действия.</div>
+</section>
+<section class="panel"><h2>Сохранённые SSH-команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить каталог</button><button class="secondary" onclick="loadCommands()">Обновить список</button><div class="muted" style="margin-top:14px;font-size:12px">Файл: %ProgramData%\\WinSshAgent\\commands.json</div></section>
+</main>
 <script>
 let commands=[],editingId=null;
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
-function clearEditor(){editingId=null;['name','phrase','command'].forEach(x=>el(x).value='');el('shell').value='powershell';el('formTitle').textContent='Добавить SSH-команду'}
-function saveEditor(){const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),shell:el('shell').value,command:el('command').value};
-if(!c.name||!c.phrase||!c.command.trim()){msg('Заполни название, точную фразу и команду.');return}
-const duplicate=commands.some(x=>x.phrase.toLowerCase()===c.phrase.toLowerCase()&&x.id!==editingId);if(duplicate){msg('Такая голосовая фраза уже есть.');return}
-if(editingId){const i=commands.findIndex(x=>x.id===editingId);if(i>=0)commands[i]=c}else commands.push(c);render();clearEditor();msg('Изменение внесено. Нажми «Сохранить каталог».')}
-function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('shell').value=c.shell;el('command').value=c.command;el('formTitle').textContent='Изменить SSH-команду';window.scrollTo({top:0,behavior:'smooth'})}
+function splitAliases(s){return [...new Set((s||'').split(',').map(x=>x.trim()).filter(Boolean))]}
+function updateFields(){
+ const k=el('kind').value;
+ el('targetLabel').textContent=k==='hotkey'?'Сочетание клавиш':k==='window'?'Имя процесса / часть заголовка окна':k==='media'?'Плеер (необязательно для системного действия)':'Полный путь к файлу / имя процесса';
+ el('argumentsLabel').textContent=k==='media'?'Действие мультимедиа':k==='window'?'Действие с окном':'Аргументы запуска (необязательно)';
+ const hints={app:'Укажи полный путь к EXE, например C:\\Program Files\\AIMP\\AIMP.exe.',close:'Укажи имя процесса без .exe, например aimp.',restart:'Укажи полный путь к EXE и имя процесса в аргументах, если оно отличается от имени файла.',bat:'Укажи полный путь к BAT-файлу.',media:'Выбери действие: GLOBAL_PLAYPAUSE, GLOBAL_NEXT, GLOBAL_PREV, GLOBAL_STOP, GLOBAL_MUTE, GLOBAL_VOLUP или GLOBAL_VOLDWN.',hotkey:'Примеры: CTRL+C, ALT+F4, WIN+D, CTRL+SHIFT+ESC.',window:'Действие: focus, minimize, maximize, restore, close, next или previous.'};
+ el('kindHint').textContent=hints[k]||'';
+}
+function clearEditor(){editingId=null;['name','phrase','aliases','target','arguments'].forEach(x=>el(x).value='');el('kind').value='app';el('formTitle').textContent='Добавить команду в каталог';updateFields()}
+function saveEditor(){
+ const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases:splitAliases(el('aliases').value),kind:el('kind').value,target:el('target').value.trim(),arguments:el('arguments').value.trim()};
+ if(!c.name||!c.phrase){msg('Заполни название и основную голосовую фразу.');return}
+ if(c.aliases.length>12){msg('Можно добавить не более 12 вариантов произнесения.');return}
+ const all=new Set();for(const x of commands){if(x.id===editingId)continue;for(const p of [x.phrase,...(x.aliases||[])])all.add(p.trim().toLocaleLowerCase('ru'))}
+ for(const p of [c.phrase,...c.aliases])if(all.has(p.toLocaleLowerCase('ru'))){msg('Эта фраза уже назначена другой команде: '+p);return}
+ if(['app','bat','restart'].includes(c.kind)&&!c.target){msg('Укажи полный путь к EXE или BAT-файлу.');return}
+ if(['close','window'].includes(c.kind)&&!c.target&&!(c.kind==='window'&&['next','previous'].includes(c.arguments))){msg('Укажи имя процесса или окна.');return}
+ if(c.kind==='media'&&!c.arguments){msg('Выбери действие мультимедиа в поле «Действие».');return}
+ if(c.kind==='hotkey'&&!c.target){msg('Укажи сочетание клавиш.');return}
+ if(c.kind==='window'&&!c.arguments){msg('Укажи действие с окном в поле «Действие».');return}
+ if(editingId){const i=commands.findIndex(x=>x.id===editingId);if(i>=0)commands[i]=c}else commands.push(c);
+ render();clearEditor();msg('Изменение внесено. Нажми «Сохранить каталог».')
+}
+function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('arguments').value=c.arguments||'';el('formTitle').textContent='Изменить команду';updateFields();window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(id){commands=commands.filter(x=>x.id!==id);if(editingId===id)clearEditor();render();msg('Команда удалена из редактора. Нажми «Сохранить каталог».')}
 function render(){const root=el('commands');root.replaceChildren();if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+' · '+(c.shell==='cmd'?'CMD':'PowerShell')+' · '+c.command;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
-async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands');if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
-async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд: '+data.count)}catch(e){msg(e.message)}}
-
-async function loadSshRequests(){
- try{
-  const r=await fetch('/v1/ssh-key-requests',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);
-  const items=await r.json(),root=el('sshRequests');root.replaceChildren();
-  if(!items.length){root.textContent='Новых запросов нет.';return}
-  items.forEach(x=>{
-   const card=document.createElement('div');card.className='item';
-   const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.deviceName+' просит SSH-доступ';
-   const details=document.createElement('small');details.textContent='Пользователь Windows: '+x.username+' · IP: '+x.remoteAddress+'\nОтпечаток: '+x.fingerprint;
-   info.append(title,details);
-   const actions=document.createElement('div');actions.className='actions';
-   const yes=document.createElement('button');yes.textContent='Разрешить';yes.onclick=()=>handleSshRequest(x.id,'approve');
-   const no=document.createElement('button');no.className='danger';no.textContent='Отклонить';no.onclick=()=>handleSshRequest(x.id,'reject');
-   actions.append(yes,no);card.append(info,actions);root.append(card);
-  });
- }catch(e){el('sshRequestStatus').textContent='Не удалось проверить запросы: '+e.message}
-}
-async function handleSshRequest(id,action){
- try{const r=await fetch('/v1/ssh-key-requests/'+encodeURIComponent(id)+'/'+action,{method:'POST'});
- const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);
- el('sshRequestStatus').textContent=action==='approve'?'Подключение разрешено.':'Запрос отклонён.';
- await loadSshRequests();
- }catch(e){el('sshRequestStatus').textContent=e.message}
-}
-loadCommands();loadSshRequests();setInterval(loadSshRequests,2500);
+ commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+(c.aliases?.length?' · '+c.aliases.join(', '):'')+' · '+c.kind+' · '+c.target;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
+async function loadCommands(){try{const r=await fetch('/v1/ssh-manager/commands',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);commands=await r.json();render();msg('Каталог загружен: '+commands.length)}catch(e){msg('Не удалось загрузить SSH-каталог: '+e.message)}}
+async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const d=await r.json();if(!r.ok)throw Error(d.error||'Ошибка сохранения');msg('Сохранено. Команд: '+d.count)}catch(e){msg(e.message)}}
+async function loadIdentity(){try{const r=await fetch('/v1/manager/identity',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('deviceName').value=d.name;el('identityStatus').textContent='Имя и постоянный ID загружены.'}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
+async function saveIdentity(){try{const r=await fetch('/v1/manager/identity',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el('deviceName').value.trim()})});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('identityStatus').textContent='Отображаемое имя сохранено: '+d.name}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
+async function loadPairing(){try{const r=await fetch('/v1/manager/pairing',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('pairingStatus').textContent=d.paired?'Устройство уже привязано. Повторная привязка не требуется.':d.message;el('pairingMessage').textContent=d.paired?'Привязка активна.':(d.codeAvailable?'Код доступен для первичной привязки.':'Активного кода нет или он истёк.')}catch(e){el('pairingStatus').textContent='Не удалось проверить привязку: '+e.message}}
+async function loadSshRequests(){try{const r=await fetch('/v1/ssh-key-requests',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const items=await r.json(),root=el('sshRequests');root.replaceChildren();if(!items.length){root.textContent='Новых запросов нет.';return}items.forEach(x=>{const card=document.createElement('div');card.className='item';const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.deviceName+' просит SSH-доступ';const details=document.createElement('small');details.textContent='Пользователь Windows: '+x.username+' · IP: '+x.remoteAddress+'\\nОтпечаток: '+x.fingerprint;info.append(title,details);const actions=document.createElement('div');actions.className='actions';const yes=document.createElement('button');yes.textContent='Разрешить';yes.onclick=()=>handleSshRequest(x.id,'approve');const no=document.createElement('button');no.className='danger';no.textContent='Отклонить';no.onclick=()=>handleSshRequest(x.id,'reject');actions.append(yes,no);card.append(info,actions);root.append(card)})}catch(e){el('sshRequestStatus').textContent='Не удалось проверить запросы: '+e.message}}
+async function handleSshRequest(id,action){try{const r=await fetch('/v1/ssh-key-requests/'+encodeURIComponent(id)+'/'+action,{method:'POST'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('sshRequestStatus').textContent=action==='approve'?'Подключение разрешено.':'Запрос отклонён.';await loadSshRequests()}catch(e){el('sshRequestStatus').textContent=e.message}}
+updateFields();loadIdentity();loadPairing();loadCommands();loadSshRequests();setInterval(loadSshRequests,2500);
 </script></body></html>
 """;
 
@@ -1380,8 +1422,10 @@ static class NativeMethods
 }
 
 sealed record SshCommandCatalogRequest(List<SshCommandInput>? Commands);
-sealed record SshCommandInput(string? Id, string? Name, string? Phrase, string? Shell, string? Command);
-sealed record SshCommandEntry(string Id, string Name, string Phrase, string Shell, string Command);
+sealed record SshCommandInput(string? Id, string? Name, string? Phrase, string? Kind, string? Target,
+    string? Arguments, List<string>? Aliases = null);
+sealed record SshCommandEntry(string Id, string Name, string Phrase, string Kind, string Target,
+    string Arguments, List<string>? Aliases = null);
 
 sealed class SshCommandCatalog
 {
