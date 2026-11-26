@@ -417,6 +417,14 @@ public final class WindowsAgentClient {
         if (liveScanIps.size() > 1)
             throw new IllegalStateException("Сканирование RE:Vision нашло несколько компьютеров с таким именем.");
 
+        java.util.LinkedHashSet<String> scannedEndpointHosts = new java.util.LinkedHashSet<>(liveScanIps);
+        for (com.ymid.wakeonlan.persistence.models.Device saved : scannedMatches) {
+            String statusHost = endpointHost(saved.statusIp);
+            String sshHost = endpointHost(saved.sshAddress);
+            if (!statusHost.isEmpty()) scannedEndpointHosts.add(statusHost);
+            if (!sshHost.isEmpty()) scannedEndpointHosts.add(sshHost);
+        }
+
         java.util.List<JSONObject> discovered = new java.util.ArrayList<>();
         try { discovered = discover(context); } catch (Exception ignored) { }
 
@@ -461,6 +469,15 @@ public final class WindowsAgentClient {
                 }
             }
 
+            // UDP discovery is subnet-local. If the RE:Vision scanner knows a
+            // candidate address, verify the stable Windows Agent ID directly over
+            // HTTP on 47821. Only an exact ID match can refresh this paired endpoint.
+            if (!match && !scannedEndpointHosts.isEmpty()) {
+                match = refreshEndpointForDevice(context, pairedDevice, scannedEndpointHosts);
+            } else if (match && !scannedEndpointHosts.isEmpty()) {
+                refreshEndpointForDevice(context, pairedDevice, scannedEndpointHosts);
+            }
+
             if (match) resolved.add(pairedDevice);
         }
 
@@ -472,6 +489,37 @@ public final class WindowsAgentClient {
                     + "» найдено сканированием RE:Vision, но для него не найден соответствующий сопряжённый Windows Agent.");
         throw new IllegalStateException("Устройство «" + requestedName
                 + "» не найдено среди устройств RE:Vision и обнаруженных Windows Agent.");
+    }
+
+    private static boolean refreshEndpointForDevice(Context context,
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device,
+            java.util.Set<String> candidateHosts) {
+        for (String host : candidateHosts) {
+            try {
+                String base = normalizeBase("http://" + host + ":47821");
+                JSONObject identity = request(base, "GET", "/v1/discovery", "", null);
+                if (!device.deviceId.equals(identity.optString("deviceId", ""))) continue;
+
+                org.json.JSONArray endpoints = new org.json.JSONArray();
+                endpoints.put(base);
+                try {
+                    org.json.JSONArray old = new org.json.JSONArray(
+                            device.endpointUrlsJson == null ? "[]" : device.endpointUrlsJson);
+                    for (int i = 0; i < old.length(); i++) {
+                        String previous = old.optString(i, "");
+                        if (!previous.isEmpty() && !previous.equals(base)) endpoints.put(previous);
+                    }
+                } catch (Exception ignored) { }
+                device.baseUrl = base;
+                device.endpointUrlsJson = endpoints.toString();
+                device.lastSeenAt = System.currentTimeMillis();
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
+                return true;
+            } catch (Exception ignored) {
+                // A stale scanner result or a host without Windows Agent is not a match.
+            }
+        }
+        return false;
     }
 
     private static String endpointHost(String endpoint) {
