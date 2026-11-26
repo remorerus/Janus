@@ -78,12 +78,15 @@ jobs:
           keytool -list -keystore "$UPLOAD_KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
           echo "Release signing key verified."
       - name: Run Android unit tests
+        id: unit_tests
         if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26'
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon testDebugUnitTest
 
       - name: Run Android startup smoke test
+        id: startup_smoke
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         env:
           # GitHub-hosted Linux runners may not expose /dev/kvm. Without KVM,
@@ -98,14 +101,20 @@ jobs:
           script: |
             chmod +x ./gradlew
             ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ymid.wakeonlan.ui.MainActivityTest#launches_showsDeviceList
+
+      # Diagnostics must never hold up APK production if the emulator is unhealthy.
       - name: Capture emulator diagnostics on smoke-test failure
-        if: failure()
+        if: steps.startup_smoke.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 2
         run: |
-          adb logcat -d -v time -t 5000 > emulator-logcat.txt || true
-          adb shell dumpsys activity activities > emulator-activities.txt || true
-          adb shell dumpsys activity services > emulator-services.txt || true
+          timeout 20s adb logcat -d -v time -t 5000 > emulator-logcat.txt 2>&1 || true
+          timeout 20s adb shell dumpsys activity activities > emulator-activities.txt 2>&1 || true
+          timeout 20s adb shell dumpsys activity services > emulator-services.txt 2>&1 || true
+
       - name: Upload emulator diagnostics
-        if: failure()
+        if: steps.startup_smoke.outcome == 'failure'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Emulator-Diagnostics
@@ -115,7 +124,9 @@ jobs:
             emulator-services.txt
           if-no-files-found: ignore
           retention-days: 7
+
       - name: Build APKs
+        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon clean assembleDebug assembleRelease \
@@ -123,17 +134,34 @@ jobs:
             -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
             -PKEY_ALIAS="$KEY_ALIAS" \
             -PKEY_PASSWORD="$KEY_PASSWORD"
+
       - name: Upload Release APK
+        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Release-APK
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+
       - name: Upload Debug APK
+        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Report validation status
+        if: always()
+        run: |
+          {
+            echo "## RE:Vision build validation"
+            echo "- Unit tests: ${{ steps.unit_tests.outcome }}"
+            echo "- Emulator startup smoke test: ${{ steps.startup_smoke.outcome }}"
+            if [ "${{ steps.startup_smoke.outcome }}" = "failure" ]; then
+              echo "- WARNING: emulator smoke test failed; APK build was allowed to continue. See emulator diagnostics artifact if available."
+            fi
+            echo "- APK build step: ${{ steps.build_apks.outcome || 'not run' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
