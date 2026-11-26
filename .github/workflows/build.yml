@@ -17,6 +17,7 @@ on:
       - revision-device-card-ssh-approval-2026-11-26
       - revision-dynamic-agent-ip-2026-11-26
       - revision-crash-folder-2026-11-27
+      - revision-clean-diagnostic-2026-11-27
     paths:
       - "app/**"
       - "*.gradle"
@@ -131,7 +132,7 @@ jobs:
         if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon clean assembleDebug assembleRelease \
+          ./gradlew --no-daemon clean assembleDebug assembleRelease assembleDiagnostic \
             -PUPLOAD_KEYSTORE_PATH="$UPLOAD_KEYSTORE_PATH" \
             -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
             -PKEY_ALIAS="$KEY_ALIAS" \
@@ -154,6 +155,15 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload isolated diagnostic APK
+        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-Clean-Diagnostic-APK
+          path: app/build/outputs/apk/diagnostic/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Report validation status
         if: always()
