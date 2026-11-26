@@ -7,6 +7,7 @@ import com.google.common.base.Strings;
 import java.util.Optional;
 
 import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
 
 public class ShutdownModelFactory {
 
@@ -14,7 +15,8 @@ public class ShutdownModelFactory {
 
     public static Optional<ShutdownModel> fromDevice(Device device) {
         boolean shutdownEnabled = device.remoteShutdownEnabled;
-        String address = getValueOrFallback(device.sshAddress, device.statusIp);
+        String profileFallback = DeviceNetworkProfiles.statusAddresses(device).stream().findFirst().orElse(null);
+        String address = getValueOrFallback(device.sshAddress, profileFallback);
         int port = getSshPortOrFallback(device.sshPort);
         String username = getValueOrFallback(device.sshUsername, null);
         String command = getValueOrFallback(device.sshCommand, null);
