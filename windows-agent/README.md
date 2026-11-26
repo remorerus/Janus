@@ -21,8 +21,9 @@ Windows-компонент для STUDIO PC. Windows Agent предоставл�
 1. Пользователь произносит фразу для RE:Vision.
 2. Android-клиент подключается напрямую к Windows OpenSSH Server по SSH с ключом из Android Keystore.
 3. Android вызывает установленный runner: `C:\Program Files\REVision Windows Agent\run-ssh-command.ps1`.
-4. Runner находит точное совпадение фразы в `%ProgramData%\WinSshAgent\commands.json` и запускает сохранённый сценарий от имени SSH-пользователя.
-5. SSH-сессия завершается. Win SSH Agent не является фоновым SSH-сервером; постоянно открывать веб-панель не нужно.
+4. Runner передаёт фразу локальному Windows Agent на `127.0.0.1:47821`. Служба находит основную фразу или один из вариантов в `%ProgramData%\\WinSshAgent\\commands.json`.
+5. Действия запуска, мультимедиа, горячих клавиш и окон выполняются в активной пользовательской сессии Windows тем же механизмом, что и команды Windows Agent. Для старых PowerShell/CMD-сценариев сохранена совместимость.
+6. SSH-сессия завершается. Win SSH Agent не является фоновым SSH-сервером; постоянно открывать веб-панель не нужно.
 
 Требуется включённый Windows OpenSSH Server и публичный ключ RE:Vision в `authorized_keys` именно того Windows-пользователя, под которым выполняется SSH-вход. Парольная SSH-аутентификация не используется: Android применяет приватный ключ, который остаётся в Android Keystore.
 
