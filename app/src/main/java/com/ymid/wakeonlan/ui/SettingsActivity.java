@@ -308,10 +308,27 @@ public class SettingsActivity extends AppCompatActivity {
                                                                 for (int i = 0; i < savedAliases.length(); i++) aliasValues.add(savedAliases.optString(i));
                                                                 aliases.setText(android.text.TextUtils.join(", ", aliasValues));
                                                             } catch (Exception ignored) { }
+                                                            EditText endpoints = new EditText(requireContext());
+                                                            endpoints.setSingleLine(false);
+                                                            endpoints.setMinLines(3);
+                                                            endpoints.setHint("Адреса Windows Agent — по одному на строку, например http://192.168.1.10:47821");
+                                                            java.util.LinkedHashSet<String> endpointValues = new java.util.LinkedHashSet<>();
+                                                            try {
+                                                                org.json.JSONArray savedEndpoints = new org.json.JSONArray(
+                                                                        selectedDevice.endpointUrlsJson == null ? "[]" : selectedDevice.endpointUrlsJson);
+                                                                for (int i = 0; i < savedEndpoints.length(); i++) {
+                                                                    String value = savedEndpoints.optString(i, "").trim();
+                                                                    if (!value.isEmpty()) endpointValues.add(value);
+                                                                }
+                                                            } catch (Exception ignored) { }
+                                                            if (selectedDevice.baseUrl != null && !selectedDevice.baseUrl.trim().isEmpty())
+                                                                endpointValues.add(selectedDevice.baseUrl.trim());
+                                                            endpoints.setText(android.text.TextUtils.join("\n", endpointValues));
                                                             editFields.addView(displayName);
                                                             editFields.addView(aliases);
+                                                            editFields.addView(endpoints);
                                                             new AlertDialog.Builder(requireContext())
-                                                                    .setTitle("Имя и голосовые псевдонимы")
+                                                                    .setTitle("Имя, голосовые имена и IP-адреса")
                                                                     .setView(editFields)
                                                                     .setPositiveButton("Сохранить", (saveDialog, which) -> {
                                                                         String newName = displayName.getText().toString().trim();
@@ -324,8 +341,26 @@ public class SettingsActivity extends AppCompatActivity {
                                                                             String value = alias.trim();
                                                                             if (!value.isEmpty()) aliasJson.put(value);
                                                                         }
+                                                                        org.json.JSONArray endpointJson = new org.json.JSONArray();
+                                                                        java.util.LinkedHashSet<String> uniqueEndpoints = new java.util.LinkedHashSet<>();
+                                                                        for (String line : endpoints.getText().toString().split("[\\r\\n,;]+")) {
+                                                                            String value = line.trim();
+                                                                            if (value.isEmpty()) continue;
+                                                                            try {
+                                                                                uniqueEndpoints.add(com.ymid.wakeonlan.voice.WindowsAgentClient.normalizeEndpoint(value));
+                                                                            } catch (Exception invalid) {
+                                                                                Toast.makeText(appContext, "Некорректный адрес: " + value, Toast.LENGTH_LONG).show();
+                                                                                return;
+                                                                            }
+                                                                        }
+                                                                        if (uniqueEndpoints.isEmpty() && selectedDevice.baseUrl != null
+                                                                                && !selectedDevice.baseUrl.trim().isEmpty())
+                                                                            uniqueEndpoints.add(selectedDevice.baseUrl.trim());
+                                                                        for (String endpoint : uniqueEndpoints) endpointJson.put(endpoint);
                                                                         selectedDevice.displayName = newName;
                                                                         selectedDevice.voiceAliasesJson = aliasJson.toString();
+                                                                        selectedDevice.endpointUrlsJson = endpointJson.toString();
+                                                                        if (endpointJson.length() > 0) selectedDevice.baseUrl = endpointJson.optString(0);
                                                                         new Thread(() -> {
                                                                             try {
                                                                                 new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext).update(selectedDevice);
