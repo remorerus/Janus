@@ -95,9 +95,12 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
             if (!mediaActions.Contains(arguments, StringComparer.Ordinal))
                 return Results.BadRequest(new { error = "Выбери поддерживаемое действие мультимедиа." });
         }
-        if (kind == "hotkey" && !TryNormalizeHotkey(target, out var hotkey))
-            return Results.BadRequest(new { error = "Недопустимое сочетание клавиш. Пример: CTRL+SHIFT+ESC." });
-        else if (kind == "hotkey") target = hotkey;
+        if (kind == "hotkey")
+        {
+            if (!TryNormalizeHotkey(target, out var normalizedHotkey))
+                return Results.BadRequest(new { error = "Недопустимое сочетание клавиш. Пример: CTRL+SHIFT+ESC." });
+            target = normalizedHotkey;
+        }
         if (kind == "window" && arguments is not ("focus" or "minimize" or "maximize" or "restore" or "close" or "next" or "previous"))
             return Results.BadRequest(new { error = "Выбери действие управления окном." });
         if (kind == "window" && arguments is not ("next" or "previous") && target.Length == 0)
