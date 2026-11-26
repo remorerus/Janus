@@ -387,8 +387,12 @@ public final class WindowsAgentClient {
     }
 
     private static String normalizeDeviceName(String value) {
-        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT)
+        if (value == null) return "";
+        String normalized = value.toLowerCase(java.util.Locale.ROOT)
                 .replace('ё', 'е').replaceAll("[^a-zа-я0-9]", "");
+        // Treat the spoken Cyrillic alias "студио локал" as the same RE:Vision
+        // device name as its Latin display form "Studio Local".
+        return normalized.replace("студиолокал", "studiolocal");
     }
 
     public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase) throws Exception {
