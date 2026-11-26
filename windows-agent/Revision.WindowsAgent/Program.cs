@@ -1282,7 +1282,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 let commands=[],editingId=null;
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
-function splitAliases(s){return [...new Set((s||'').split(/[,;\\n]+/).map(x=>x.trim()).filter(Boolean))]}
+function splitAliases(s){return [...new Set((s||'').split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean))]}
 function updateFields(){
  const k=el('kind').value,media=k==='media',hotkey=k==='hotkey',win=k==='window',script=k==='script';
  el('scriptFields').style.display=script?'block':'none';el('mediaOptions').style.display=media?'block':'none';el('hotkeyOptions').style.display=hotkey?'block':'none';el('windowOptions').style.display=win?'block':'none';
@@ -1330,7 +1330,7 @@ updateFields();loadIdentity();loadPairing();loadCommands();loadSshRequests();set
 
 static string GetManagerHtml() => """
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RE:Vision Windows Agent</title><style>
+<title>RE:Vision · Центр управления агентами</title><style>
 :root{color-scheme:dark;font:15px Segoe UI,Arial;background:#111827;color:#e5e7eb}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1100px;margin:auto}
 header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.muted{color:#9ca3af}.pill{padding:6px 10px;border-radius:20px;background:#263449;color:#a7f3d0}.manager-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.manager-nav a{color:#bfdbfe;text-decoration:none;border:1px solid #475569;border-radius:8px;padding:7px 11px}.manager-nav a:hover{background:#334155}
 main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.full{grid-column:1/-1}.agent-heading{grid-column:1/-1;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:13px 16px;margin-top:4px;border-bottom:1px solid #475569;background:#182334;border-radius:10px}.agent-heading h2{margin:0;font-size:18px;letter-spacing:1.4px}.agent-kicker{font-size:11px;color:#93c5fd;letter-spacing:1px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}textarea{width:100%;min-height:110px;padding:11px;border-radius:8px;border:1px solid #4b5563;background:#111827;color:#f9fafb;font:13px Consolas,monospace}.actions{display:flex;gap:6px;flex-wrap:wrap}.item{align-items:center}.item small{white-space:pre-wrap;overflow-wrap:anywhere}.agent-heading+.panel{margin-top:0}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:20px}h1{font-size:23px;margin:0}h2{font-size:18px;margin:0 0 16px}
@@ -1339,7 +1339,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 .item{padding:12px;border:1px solid #374151;border-radius:9px;margin:8px 0;display:flex;justify-content:space-between;gap:12px;align-items:center}.item small{display:block;color:#9ca3af;margin-top:4px}.item button{margin:0}.note{font-size:13px;line-height:1.5;color:#fcd34d;margin-top:16px}.status{min-height:24px;color:#a7f3d0;margin-top:10px}
 @media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
-<header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div></div><span class="pill">Локальная панель</span></header>
+<header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Windows Agent и SSH Agent · единая страница управления</div></div><span class="pill">Локальная панель</span></header>
 <main><div class="agent-heading full" id="win-agent"><span class="agent-kicker">РАЗДЕЛ 01</span><h2>WIN AGENT</h2><span class="muted">Управление Windows Agent и командами локального компьютера</span></div><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
 <div id="pairingState" class="status">Проверка состояния привязки…</div>
 <div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
