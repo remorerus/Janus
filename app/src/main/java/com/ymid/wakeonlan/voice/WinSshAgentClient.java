@@ -40,8 +40,17 @@ public final class WinSshAgentClient {
         // address as an SSH route. The SSH username and Android Keystore key remain unchanged.
         try {
             String wanted = normalizeName(device.name);
+            com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
             for (JSONObject discovered : WindowsAgentClient.discover(context)) {
-                if (wanted.equals(normalizeName(discovered.optString("name", "")))) {
+                String agentId = discovered.optString("deviceId", "");
+                com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity paired =
+                        registry.get(agentId);
+                if (paired == null || !paired.enabled) continue;
+                String agentName = normalizeName(discovered.optString("name", ""));
+                boolean sameNamedPc = wanted.equals(agentName)
+                        || (wanted.contains("studio") && agentName.contains("studio"));
+                if (sameNamedPc) {
                     String address = discovered.optString("address", "").trim();
                     if (!address.isEmpty()) hosts.add(address);
                 }
