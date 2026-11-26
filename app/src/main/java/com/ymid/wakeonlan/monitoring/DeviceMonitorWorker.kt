@@ -23,8 +23,8 @@ class DeviceMonitorWorker(
         val devices = DeviceRepository.getInstance(appContext).all
 
         for (device in devices) {
-            val host = HostReachability.statusHost(device) ?: continue
-            val nowOnline = HostReachability.isReachable(host)
+            if (HostReachability.statusHost(device) == null) continue
+            val nowOnline = HostReachability.isDeviceReachable(device)
             val stateKey = stateKey(device.id)
             val hasPreviousState = prefs.contains(stateKey)
             val previouslyOnline = prefs.getBoolean(stateKey, false)
