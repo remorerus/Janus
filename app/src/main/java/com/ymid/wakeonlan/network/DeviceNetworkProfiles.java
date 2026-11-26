@@ -21,9 +21,29 @@ public final class DeviceNetworkProfiles {
 
     public static List<String> statusAddresses(Device device) {
         LinkedHashSet<String> values = new LinkedHashSet<>();
-        add(values, device == null ? null : device.statusIp);
-        read(device, values, "statusIp");
+        if (device == null) return new ArrayList<>();
+        // This app's existing Broadcast/IP field is also used by some setups as the PC's
+        // unicast address. Use it for status checks when a dedicated Status IP is omitted.
+        add(values, hasText(device.statusIp) ? device.statusIp : device.broadcastAddress);
+        if (device.networkProfilesJson != null) {
+            try {
+                JSONArray profiles = new JSONArray(device.networkProfilesJson);
+                for (int i = 0; i < profiles.length(); i++) {
+                    JSONObject profile = profiles.optJSONObject(i);
+                    if (profile == null) continue;
+                    String status = profile.optString("statusIp", "");
+                    String broadcast = profile.optString("broadcastAddress", "");
+                    add(values, hasText(status) ? status : broadcast);
+                }
+            } catch (Exception ignored) {
+                // Ignore malformed optional profile data; legacy device fields remain usable.
+            }
+        }
         return new ArrayList<>(values);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private static void read(Device device, LinkedHashSet<String> values, String key) {
