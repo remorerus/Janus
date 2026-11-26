@@ -65,6 +65,9 @@ public class DeviceEntity {
     @ColumnInfo(name = "wan_port")
     public Integer wanPort;
 
+    @ColumnInfo(name = "network_profiles_json", defaultValue = "'[]'")
+    public String networkProfilesJson = "[]";
+
     @Ignore
     public DeviceEntity(int id, String name, String macAddress, String broadcastAddress, int port, String statusIp,
                         String secureOnPassword, boolean enableRemoteShutdown, String sshAddress, Integer sshPort,
