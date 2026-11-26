@@ -27,6 +27,16 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
                     "$rootProject.projectDir/proguard-rules.pro"
         }
+        diagnostic {
+            initWith release
+            applicationIdSuffix ".diagnostic"
+            versionNameSuffix "-diagnostic"
+            debuggable true
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+            matchingFallbacks = ['release']
+        }
     }
 
     defaultConfig {
