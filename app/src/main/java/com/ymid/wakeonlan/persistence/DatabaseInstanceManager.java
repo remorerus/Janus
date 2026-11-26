@@ -20,6 +20,7 @@ import com.ymid.wakeonlan.persistence.migrations.MigrationFrom7To8;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom8To9;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom9To10;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom10To11;
+import com.ymid.wakeonlan.persistence.migrations.MigrationFrom11To12;
 
 public class DatabaseInstanceManager {
 
@@ -51,7 +52,8 @@ public class DatabaseInstanceManager {
                             new MigrationFrom7To8(),
                             new MigrationFrom8To9(),
                             new MigrationFrom9To10(),
-                            new MigrationFrom10To11()
+                            new MigrationFrom10To11(),
+                            new MigrationFrom11To12()
                     )
                     .build();
         }
