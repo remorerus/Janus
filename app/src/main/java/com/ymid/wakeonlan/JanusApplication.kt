@@ -15,10 +15,11 @@ import java.util.concurrent.Executors
 class JanusApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Prepare crash-log folders before any service or database initialization.
+        // Prepare local report locations and install the crash handler before
+        // starting services or touching the encrypted database.
         CrashLogDirectory.ensure(this)
+        CrashReporter.initialize(this)
         LauncherIconManager.register(this)
-        CrashReporter.initialize()
         RemoteConfigManager.initialize()
         NotificationHelper.createChannels(this)
         MonitoringScheduler.scheduleIfEnabled(this)
