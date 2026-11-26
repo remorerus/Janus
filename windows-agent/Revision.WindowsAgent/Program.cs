@@ -269,8 +269,7 @@ app.MapPost("/v1/ssh-key-requests/{id}/approve", (HttpContext context, string id
         foreach (var arg in new[] { authorizedKeys, "/inheritance:r", "/grant:r", "*S-1-5-32-544:F", "*S-1-5-18:F" })
             acl.ArgumentList.Add(arg);
         using var process = Process.Start(acl);
-        process?.WaitForExit(10000);
-        if (process is null || process.ExitCode != 0)
+        if (process is null || !process.WaitForExit(10000) || process.ExitCode != 0)
             return Results.Problem("Не удалось назначить ACL для authorized_keys. Проверь права службы Windows Agent.");
         return Results.Json(new { approved = true, username = item.Username, deviceName = item.DeviceName,
             message = "Ключ добавлен в administrators_authorized_keys. Перезапуск sshd обычно не требуется." });
