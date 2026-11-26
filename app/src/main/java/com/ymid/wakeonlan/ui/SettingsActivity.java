@@ -220,6 +220,20 @@ public class SettingsActivity extends AppCompatActivity {
                 fields.setOrientation(LinearLayout.VERTICAL);
                 int pad = (int) (20 * getResources().getDisplayMetrics().density);
                 fields.setPadding(pad, pad / 2, pad, 0);
+                android.widget.Button infoButton = new android.widget.Button(requireContext());
+                infoButton.setText("Сведения о Windows Agent");
+                fields.addView(infoButton);
+                infoButton.setOnClickListener(view -> new AlertDialog.Builder(requireContext())
+                        .setTitle("Сведения о Windows Agent")
+                        .setMessage("Windows Agent связывает RE:Vision с компьютерами Windows в вашей локальной сети.\\n\\n"
+                                + "1. Запусти Windows Agent на компьютере.\\n"
+                                + "2. Убедись, что компьютер и очки подключены к одной частной Wi-Fi сети.\\n"
+                                + "3. Нажми «Найти компьютеры в локальной сети» и выбери нужный ПК. Адрес можно ввести вручную.\\n"
+                                + "4. При первом сопряжении введи одноразовый 8-значный код из файла agent.pairing-code.txt на компьютере и нажми «Сопрячь». Для уже сопряжённого компьютера повторно вводить код не требуется.\\n\\n"
+                                + "«Мои подключённые компьютеры» позволяет выбрать компьютер по умолчанию и изменить его имя и голосовые псевдонимы. «Проверить связь» проверяет доступность агента.\\n\\n"
+                                + "Для обнаружения и связи должны быть доступны UDP-порт 47822 и TCP-порт 47821. Используй только доверенную частную сеть.")
+                        .setPositiveButton("Назад", null)
+                        .show());
                 EditText host = new EditText(requireContext());
                 host.setSingleLine(true);
                 host.setHint("http://192.168.1.10:47821");
@@ -410,7 +424,6 @@ public class SettingsActivity extends AppCompatActivity {
                 });
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Подключить Windows Agent")
-                        .setMessage("Найди компьютер в локальной сети или введи его адрес. Одноразовый код берётся из agent.pairing-code.txt только при первом сопряжении и не сохраняется в приложении. Существующее сопряжение не будет заменено привязкой к другому компьютеру. Используй только доверенную частную Wi-Fi сеть.")
                         .setView(fields)
                         .setNeutralButton("Проверить связь", (dialog, which) -> {
                             String address = host.getText().toString().trim();
