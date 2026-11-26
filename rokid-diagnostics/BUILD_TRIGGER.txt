@@ -1,0 +1,1 @@
+Trigger the Rokid Diagnostics GitHub Actions build.
