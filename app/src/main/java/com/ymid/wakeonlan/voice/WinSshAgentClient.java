@@ -17,6 +17,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 
 /** Executes a saved phrase through Windows OpenSSH and the Win SSH Agent command runner. */
 public final class WinSshAgentClient {
@@ -31,7 +34,20 @@ public final class WinSshAgentClient {
         if (phrase == null || phrase.trim().isEmpty()) throw new IllegalArgumentException("Voice phrase is empty.");
         String host = device.sshAddress == null || device.sshAddress.trim().isEmpty()
                 ? device.statusIp : device.sshAddress;
-        if (host == null || host.trim().isEmpty()) throw new IllegalStateException("SSH address is missing.");
+        LinkedHashSet<String> hosts = new LinkedHashSet<>();
+        if (host != null && !host.trim().isEmpty()) hosts.add(host.trim());
+        // Resolve the same named, already paired Windows Agent and add its current LAN
+        // address as an SSH route. The SSH username and Android Keystore key remain unchanged.
+        try {
+            String wanted = normalizeName(device.name);
+            for (JSONObject discovered : WindowsAgentClient.discover(context)) {
+                if (wanted.equals(normalizeName(discovered.optString("name", "")))) {
+                    String address = discovered.optString("address", "").trim();
+                    if (!address.isEmpty()) hosts.add(address);
+                }
+            }
+        } catch (Exception ignored) { }
+        if (hosts.isEmpty()) throw new IllegalStateException("SSH address is missing.");
         if (device.sshUsername == null || device.sshUsername.trim().isEmpty())
             throw new IllegalStateException("SSH Windows username is missing.");
         if (device.sshKeyAlias == null || device.sshKeyAlias.trim().isEmpty())
@@ -43,41 +59,51 @@ public final class WinSshAgentClient {
         String remoteCommand = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \""
                 + RUNNER + "\" -PhraseBase64 " + encodedPhrase;
 
-        TofuHostKeyVerifier verifier = new TofuHostKeyVerifier(context);
-        DefaultConfig config = new DefaultConfig();
-        config.setKeyAlgorithms(com.ymid.wakeonlan.security.KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
-        try (SSHClient client = new SSHClient(config)) {
-            client.addHostKeyVerifier(verifier);
-            client.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            client.connect(host.trim(), port);
-            client.authPublickey(device.sshUsername.trim(), new AndroidKeyStoreKeyProvider(device.sshKeyAlias));
-            try (Session session = client.startSession()) {
-                Session.Command command = session.exec(remoteCommand);
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                copyLimited(command.getInputStream(), output);
-                command.join(COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                Integer exit = command.getExitStatus();
-                String result = output.toString(StandardCharsets.UTF_8.name()).trim();
-                if (exit != null && exit != 0) {
-                    throw new IllegalStateException(result.isEmpty()
-                            ? "Win SSH Agent command failed with exit code " + exit : result);
+        Exception lastError = null;
+        for (String candidateHost : hosts) {
+            TofuHostKeyVerifier verifier = new TofuHostKeyVerifier(context);
+            DefaultConfig config = new DefaultConfig();
+            config.setKeyAlgorithms(com.ymid.wakeonlan.security.KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
+            try (SSHClient client = new SSHClient(config)) {
+                client.addHostKeyVerifier(verifier);
+                client.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                client.connect(candidateHost, port);
+                client.authPublickey(device.sshUsername.trim(), new AndroidKeyStoreKeyProvider(device.sshKeyAlias));
+                try (Session session = client.startSession()) {
+                    Session.Command command = session.exec(remoteCommand);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    copyLimited(command.getInputStream(), output);
+                    command.join(COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    Integer exit = command.getExitStatus();
+                    String result = output.toString(StandardCharsets.UTF_8.name()).trim();
+                    if (exit != null && exit != 0) {
+                        throw new IllegalStateException(result.isEmpty()
+                                ? "Win SSH Agent command failed with exit code " + exit : result);
+                    }
+                    JSONObject response = new JSONObject();
+                    response.put("ok", true);
+                    response.put("accepted", true);
+                    response.put("phrase", phrase.trim());
+                    response.put("output", result);
+                    response.put("connectedHost", candidateHost);
+                    return response;
                 }
-                JSONObject response = new JSONObject();
-                response.put("ok", true);
-                response.put("accepted", true);
-                response.put("phrase", phrase.trim());
-                response.put("output", result);
-                return response;
+            } catch (Exception error) {
+                TofuHostKeyVerifier.Mismatch mismatch = verifier.getMismatch();
+                if (mismatch != null) {
+                    throw new IllegalStateException("SSH host key changed for " + mismatch.getHost()
+                            + ". Stored fingerprint: " + mismatch.getStoredFingerprint()
+                            + "; presented fingerprint: " + mismatch.getPresentedFingerprint(), error);
+                }
+                lastError = error;
             }
-        } catch (Exception error) {
-            TofuHostKeyVerifier.Mismatch mismatch = verifier.getMismatch();
-            if (mismatch != null) {
-                throw new IllegalStateException("SSH host key changed for " + mismatch.getHost()
-                        + ". Stored fingerprint: " + mismatch.getStoredFingerprint()
-                        + "; presented fingerprint: " + mismatch.getPresentedFingerprint(), error);
-            }
-            throw error;
         }
+        throw lastError == null ? new IllegalStateException("No SSH route is available.") : lastError;
+    }
+
+    private static String normalizeName(String value) {
+        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT)
+                .replace('ё', 'е').replaceAll("[^a-zа-я0-9]", "");
     }
 
     private static void copyLimited(InputStream input, ByteArrayOutputStream output) throws Exception {
