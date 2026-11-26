@@ -86,11 +86,16 @@ jobs:
 
       - name: Run Android startup smoke test
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # GitHub-hosted Linux runners may not expose /dev/kvm. Without KVM,
+          # the emulator exits unless software CPU emulation is explicitly enabled.
+          ANDROID_I_WANT_MY_TCG: "yes"
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          emulator-boot-timeout: 900
           script: |
             chmod +x ./gradlew
             ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ymid.wakeonlan.ui.MainActivityTest#launches_showsDeviceList
