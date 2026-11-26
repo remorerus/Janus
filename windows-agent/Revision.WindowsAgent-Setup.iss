@@ -1,9 +1,9 @@
 [Setup]
-AppId={{7C8C8D4A-0D0D-4D6E-9C4C-REVISIONWINAGENT}
+AppId={{7C8C8D4A-0D0D-4D6E-9C4C-7A6D8B0C1E2F}
 AppName=RE:Vision Windows Agent
 AppVersion=1.0.0
 AppPublisher=RE:Vision
-DefaultDirName={autopf}\REVision Windows Agent Setup
+DefaultDirName={autopf}\REVision Windows Agent
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
