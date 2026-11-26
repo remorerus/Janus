@@ -26,6 +26,8 @@ public class Device implements Parcelable {
     public String groupName;
     public String wanIp;
     public Integer wanPort;
+    /** Additional named network profiles, stored as a JSON array for backward compatibility. */
+    public String networkProfilesJson = "[]";
 
     public Device(int id, String name, String macAddress, String broadcastAddress, int port, String statusIp,
                   String secureOnPassword, boolean remoteShutdownEnabled, String sshAddress, Integer sshPort,
@@ -50,6 +52,7 @@ public class Device implements Parcelable {
         this.groupName = groupName;
         this.wanIp = wanIp;
         this.wanPort = wanPort;
+        this.networkProfilesJson = "[]";
     }
 
     public Device() {
@@ -85,6 +88,7 @@ public class Device implements Parcelable {
         this.wanIp = in.readString();
         int wanPortVal = in.readInt();
         this.wanPort = wanPortVal == -1 ? null : wanPortVal;
+        this.networkProfilesJson = in.readString();
     }
 
     @Override
@@ -111,5 +115,6 @@ public class Device implements Parcelable {
         dest.writeString(groupName);
         dest.writeString(wanIp);
         dest.writeInt(wanPort == null ? -1 : wanPort);
+        dest.writeString(networkProfilesJson == null ? "[]" : networkProfilesJson);
     }
 }
