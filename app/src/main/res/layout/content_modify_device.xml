@@ -448,7 +448,7 @@
                 android:layout_marginEnd="24dp"
                 android:text="@string/ssh_key_find_and_connect"
                 android:visibility="gone"
-                app:layout_constraintTop_toBottomOf="@id/device_ssh_connect_status" />
+                app:layout_constraintTop_toBottomOf="@id/device_button_copy_ssh_key" />
 
             <TextView
                 android:id="@+id/device_ssh_connect_status"
@@ -472,7 +472,7 @@
                 android:layout_marginTop="8dp"
                 android:text="@string/add_device_shutdown_os"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/device_button_copy_ssh_key" />
+                app:layout_constraintTop_toBottomOf="@id/device_ssh_connect_status" />
 
             <Spinner
                 android:id="@+id/device_shutdown_os"
