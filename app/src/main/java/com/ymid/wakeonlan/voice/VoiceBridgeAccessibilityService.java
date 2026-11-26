@@ -584,9 +584,11 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
         } else if ("GET".equals(method) && "/windows/status".equals(path)) {
             JsonObject response = new JsonObject();
             response.addProperty("ok", true);
-            response.addProperty("configured", WindowsAgentClient.isConfigured(this));
-            if (WindowsAgentClient.isConfigured(this)) {
-                try { response.add("agent", JsonParser.parseString(WindowsAgentClient.status(this).toString()).getAsJsonObject()); }
+            boolean configured = WindowsAgentClient.isAnyConfigured(this);
+            response.addProperty("configured", configured);
+            if (configured) {
+                try { response.add("agent", JsonParser.parseString(
+                        WindowsAgentClient.statusForDeviceName(this, "").toString()).getAsJsonObject()); }
                 catch (Exception e) { response.addProperty("reachable", false); response.addProperty("error", safeError(e)); }
             } else { response.addProperty("reachable", false); response.addProperty("error", "windows_agent_not_paired"); }
             writeResponse(socket.getOutputStream(), 200, response);
