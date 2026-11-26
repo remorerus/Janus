@@ -345,7 +345,7 @@ export default {
       if (value && value.length <= 160 && !commandCandidates.includes(value)) commandCandidates.push(value);
     });
     const attachCommandCandidates = () => {
-      if (params && params.action === 'windows_launch' && commandCandidates.length) {
+      if (params && params.action === 'windows_launch' && commandCandidates.length && !params.commandAlternatives) {
         params.commandAlternatives = commandCandidates.slice(0, 5);
       }
     };
@@ -364,6 +364,25 @@ export default {
     // Voice Bridge maintenance commands take priority over generic device routing.
     if (!params && bridgePhrase) {
       params = { action: 'bridge_settings' };
+    }
+
+    // AIMP playback requests addressed to STUDIO are Windows Agent catalog
+    // commands, not media playback on the Android phone. Remove the spoken
+    // computer name from the catalog phrase and route to the paired STUDIO PC.
+    const aimpPlaybackIntent = /(?:воспроизведи|воспроизвести|проиграй|проиграть|поставь|включи)\\s+(?:трек\\s+)?(?:aimp|аимп|аип)(?:\\s|$)/i.test(compact);
+    const explicitStudioTarget = /(?:studio\\s*pc|studio|студио|студия|студийный\\s*пк|на\\s+студио)(?:\\s|$)/i.test(compact);
+    if (!params && aimpPlaybackIntent && explicitStudioTarget) {
+      const commandPhrase = String(transcript || '')
+        .replace(/\\s+(?:на\\s+)?(?:studio\\s*pc|studio|студио|студия|студийный\\s+пк)\\s*$/i, '')
+        .replace(/[.!?]+$/g, '')
+        .replace(/\\s+/g, ' ')
+        .trim();
+      params = {
+        action: 'windows_launch',
+        deviceName: 'STUDIO PC',
+        commandPhrase,
+        commandAlternatives: [commandPhrase]
+      };
     }
 
     // Wi-Fi radio controls are explicit independent actions, never Settings or a toggle intent.
