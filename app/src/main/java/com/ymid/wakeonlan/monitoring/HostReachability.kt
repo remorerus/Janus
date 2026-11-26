@@ -12,11 +12,17 @@ object HostReachability {
     private const val PING_ATTEMPTS = 2
 
     /** The address the list pings for this device, or null when it has none. */
-    fun statusHost(device: Device): String? = DeviceNetworkProfiles.statusAddresses(device).firstOrNull()
+    fun statusHost(device: Device): String? =
+        DeviceNetworkProfiles.statusAddresses(device).firstOrNull()
+            ?: device.sshAddress?.takeIf { it.isNotBlank() }
 
-    /** A device is online when any of its saved network profile addresses responds. */
-    fun isDeviceReachable(device: Device): Boolean =
-        DeviceNetworkProfiles.statusAddresses(device).any { isReachable(it) }
+    /** A device is online when any saved profile IP responds; legacy SSH fallback remains supported. */
+    fun isDeviceReachable(device: Device): Boolean {
+        val hosts = DeviceNetworkProfiles.statusAddresses(device).ifEmpty {
+            listOfNotNull(device.sshAddress?.takeIf { it.isNotBlank() })
+        }
+        return hosts.any { isReachable(it) }
+    }
 
     fun isReachable(host: String): Boolean {
         val address = try {
