@@ -24,6 +24,11 @@ public class WindowsAgentDeviceEntity {
     @NonNull
     public String baseUrl = "";
 
+    /** Known LAN routes for this stable deviceId; IP changes never create duplicate devices. */
+    @NonNull
+    @ColumnInfo(defaultValue = "'[]'")
+    public String endpointUrlsJson = "[]";
+
     /** Per-device HMAC secret; protected at rest by the SQLCipher-encrypted Room database. */
     @NonNull
     public String clientSecret = "";
