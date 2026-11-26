@@ -116,6 +116,56 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
     return Results.Json(new { saved = true, count = normalized.Count });
 });
 
+app.MapPost("/v1/ssh-manager/execute", async (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    ExecuteRequest? request;
+    try { request = await context.Request.ReadFromJsonAsync<ExecuteRequest>(); }
+    catch { return Results.BadRequest(new { error = "Некорректный запрос SSH-команды." }); }
+    var phrase = (request?.Phrase ?? "").Trim();
+    if (phrase.Length is < 1 or > 160)
+        return Results.BadRequest(new { error = "Не указана голосовая фраза." });
+
+    var normalizedPhrase = NormalizeVoicePhrase(phrase);
+    var catalog = SshCommandCatalog.Load(sshCommandsPath);
+    var matches = catalog.Where(item => new[] { item.Phrase }.Concat(item.Aliases ?? new List<string>())
+        .Any(saved => string.Equals(NormalizeVoicePhrase(saved), normalizedPhrase, StringComparison.Ordinal)))
+        .ToList();
+    if (matches.Count == 0)
+        return Results.NotFound(new { error = "В SSH Agent нет команды для фразы: " + phrase });
+    if (matches.Count > 1)
+        return Results.Conflict(new { error = "Фраза совпала с несколькими SSH-командами. Ничего не выполнено.",
+            candidates = matches.Select(x => x.Name).ToArray() });
+
+    var item = matches[0];
+    bool executed;
+    if (string.Equals(item.Kind, "script", StringComparison.OrdinalIgnoreCase))
+    {
+        const uint InvalidSessionId = 0xFFFFFFFF;
+        var sessionId = NativeMethods.WTSGetActiveConsoleSessionId();
+        if (sessionId == InvalidSessionId)
+            return Results.Problem("Нет активной пользовательской сессии Windows.");
+        var script = item.Command ?? "";
+        if (string.Equals(item.Shell, "cmd", StringComparison.OrdinalIgnoreCase))
+        {
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            script = "$cmdText = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encoded +
+                "')); & $env:ComSpec /d /s /c $cmdText";
+        }
+        executed = !string.IsNullOrWhiteSpace(script) && RunPowerShellInSession(sessionId, script);
+    }
+    else
+    {
+        var command = new AgentCommand(item.Id, item.Name, item.Phrase, item.Kind, item.Target,
+            item.Arguments, item.Aliases);
+        executed = LaunchCatalogCommand(command);
+    }
+
+    if (!executed)
+        return Results.Problem("Windows Agent не смог выполнить SSH-команду. Проверь активную пользовательскую сессию, путь и параметры.");
+    return Results.Json(new { accepted = true, command = item.Name, phrase, executed = true });
+});
+
 app.MapGet("/v1/manager/commands", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
