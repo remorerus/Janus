@@ -16,6 +16,7 @@ import java.util.Objects;
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
 import com.ymid.wakeonlan.security.TofuHostKeyVerifier;
+import com.ymid.wakeonlan.security.SshKeyManager;
 import com.ymid.wakeonlan.voice.WindowsAgentClient;
 import org.json.JSONObject;
 
