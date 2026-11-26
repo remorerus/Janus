@@ -538,7 +538,7 @@ export default {
             const reachable = result.configured && result.agent && result.agent.paired === true;
             message = reachable ? 'Windows Agent компьютера ' + (requestedName || 'по умолчанию') + ' доступен и сопряжён.' : 'Windows Agent не настроен или недоступен. Проверь сопряжение и сеть.';
           } else {
-            message = result.accepted === true ? (windowsAction === 'launch' ? 'Команда запуска передана Windows Agent.' : windowsAction === 'ssh_launch' ? 'Команда передана Win SSH Agent по защищённому SSH-соединению.' : 'Команда Windows передана компьютеру.') : 'Windows Agent не подтвердил выполнение команды.';
+            message = result.accepted === true ? (windowsAction === 'launch' ? 'Windows Agent принял команду.' : windowsAction === 'ssh_launch' ? 'Команда передана Win SSH Agent по защищённому SSH-соединению.' : 'Команда Windows передана компьютеру.') : 'Windows Agent не подтвердил выполнение команды.';
           }
           this.setData({ statusText: message, detailText: windowsAction === 'ssh_launch' ? (requestedName || 'Компьютер по умолчанию') + ' · Win SSH Agent' : (requestedName || 'Компьютер по умолчанию') + ' · Windows Agent', resultText: message, busy: false });
           speakAndReturn(this, message);
