@@ -40,7 +40,15 @@ export default {
     }
   },
 
-  onVoiceWakeup(event) {\n    const keyword = String(event && event.keyword || '');\n    if (event && typeof event.preventDefault === 'function') event.preventDefault();\n    console.log('[RE:Vision] voice/touch wakeup intercepted', { keyword });\n    if (this.voiceListening) return;\n    this.startListening();\n  },\n\n  onKeyDown(event) {
+  onVoiceWakeup(event) {
+    const keyword = String(event && event.keyword || '');
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    console.log('[RE:Vision] voice/touch wakeup intercepted', { keyword });
+    if (this.voiceListening) return;
+    this.startListening();
+  },
+
+  onKeyDown(event) {
     if (event && event.code === 'GlobalHook') {
       this.globalHookPressedAt = Date.now();
       console.log('[RE:Vision] temple GlobalHook down');
