@@ -301,7 +301,7 @@ export default {
     [transcript].concat(Array.isArray(alternatives) ? alternatives : []).forEach(candidate => {
       let value = String(candidate || '')
         .replace(/(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/ig, ' ')
-        .replace(/\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)\s*$/i, '')
+        .replace(/\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)[\s,;:.!?-]*$/i, '')
         .replace(/^\s*(?:ревижн|ревижен|ревижин|ревиж)\s*[,:.\-;]?\s*/i, '')
         .replace(/^\s*(?:пожалуйста\s*)?(?:выполни\s*)?(?:команду\s*)?/i, '')
         .replace(/[.!?]+$/g, '')
@@ -324,7 +324,7 @@ export default {
 
     // A spoken target at the end of the phrase selects the paired PC by its RE:Vision name.
     // The name is only a selector; the native registry still authenticates by stable device ID.
-    const localStudioTarget = /\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)\s*$/i.exec(String(transcript || ''));
+    const localStudioTarget = /\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)[\s,;:.!?-]*$/i.exec(String(transcript || ''));
     const requestedWindowsDevice = localStudioTarget ? 'Studio Local' : 'STUDIO PC';
     const commandTranscript = localStudioTarget
       ? String(transcript || '').slice(0, localStudioTarget.index).replace(/[\s,;:.!?-]+$/g, '').trim()
