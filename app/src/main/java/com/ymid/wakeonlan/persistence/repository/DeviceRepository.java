@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import com.ymid.wakeonlan.crash.CrashReporter;
 import com.ymid.wakeonlan.persistence.DatabaseInstanceManager;
 import com.ymid.wakeonlan.persistence.DeviceDao;
 import com.ymid.wakeonlan.persistence.entities.DeviceEntity;
@@ -97,7 +98,22 @@ public class DeviceRepository {
     }
 
     public void insertAllAsync(Device... devices) {
-        EXECUTOR.execute(() -> insertAll(devices));
+        insertAllAsync("device_save.database_insert", devices);
+    }
+
+    public void insertAllAsync(String operation, Device... devices) {
+        EXECUTOR.execute(() -> {
+            CrashReporter.setOperation(operation);
+            try {
+                insertAll(devices);
+                CrashReporter.clearOperation();
+            } catch (RuntimeException | Error failure) {
+                // Leave the operation marker in place so the uncaught-exception
+                // handler writes a report with the exact failing save stage.
+                CrashReporter.log("asynchronous database insert failed");
+                throw failure;
+            }
+        });
     }
 
     public void update(Device device) {
