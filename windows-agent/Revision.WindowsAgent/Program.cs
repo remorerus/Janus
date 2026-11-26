@@ -93,9 +93,13 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
             return Results.BadRequest(new { error = "Укажи имя процесса или окна." });
         if (kind == "media")
         {
-            var mediaActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN", "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
-            if (!mediaActions.Contains(arguments, StringComparer.Ordinal))
-                return Results.BadRequest(new { error = "Выбери поддерживаемое действие мультимедиа." });
+            var globalActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
+            var playerActions = new[] { "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
+            var globalAction = target.Length == 0 && globalActions.Contains(arguments, StringComparer.Ordinal);
+            var playerAction = string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase)
+                && playerActions.Contains(arguments, StringComparer.Ordinal);
+            if (!globalAction && !playerAction)
+                return Results.BadRequest(new { error = "Выбери системное мультимедиа-действие или укажи EXE плеера и его действие." });
         }
         if (kind == "hotkey")
         {
