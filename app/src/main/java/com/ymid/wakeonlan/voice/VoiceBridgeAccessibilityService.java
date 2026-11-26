@@ -1293,7 +1293,7 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             }
         }
         normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFKC);
-        return normalized.replaceAll("\\s+", " ").trim();
+        return normalized.replaceAll("\\s+", " ").trim().toLowerCase(java.util.Locale.ROOT)\n                .replace("студиолокал", "studiolocal");
     }
 
     private static String queryParameter(String target, String name) throws Exception {
