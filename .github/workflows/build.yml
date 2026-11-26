@@ -14,6 +14,7 @@ on:
       - revision-voicebridge-tap-ssh-manager-2026-11-25
       - revision-win-ssh-web-manager-2026-11-25
       - revision-voice-windows-controls-2026-11-25
+      - revision-device-card-ssh-approval-2026-11-26
     paths:
       - "app/**"
       - "*.gradle"
