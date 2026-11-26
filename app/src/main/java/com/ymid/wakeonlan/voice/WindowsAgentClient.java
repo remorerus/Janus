@@ -220,12 +220,8 @@ public final class WindowsAgentClient {
      */
     private static JSONObject findAgentOnCurrentWifi(Context context, String expectedDeviceId) {
         if (expectedDeviceId == null || expectedDeviceId.trim().isEmpty()) return null;
-        try {
-            for (JSONObject item : discover(context)) {
-                if (expectedDeviceId.equals(item.optString("deviceId", ""))) return item;
-            }
-        } catch (Exception ignored) { }
-
+        // Probe the active Wi-Fi subnet first: on the same LAN this normally
+        // finds the Agent immediately and avoids waiting for broadcast timeouts.
         ExecutorService pool = Executors.newFixedThreadPool(32);
         ExecutorCompletionService<JSONObject> completion = new ExecutorCompletionService<>(pool);
         int submitted = 0;
@@ -267,6 +263,13 @@ public final class WindowsAgentClient {
         } finally {
             pool.shutdownNow();
         }
+
+        // Some access points suppress directed subnet traffic but permit UDP broadcast.
+        try {
+            for (JSONObject item : discover(context)) {
+                if (expectedDeviceId.equals(item.optString("deviceId", ""))) return item;
+            }
+        } catch (Exception ignored) { }
         return null;
     }
 
