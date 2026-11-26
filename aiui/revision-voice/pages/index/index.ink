@@ -57,23 +57,9 @@ export default {
 
   onKeyUp(event) {
     if (!event || event.code !== 'GlobalHook') return;
-    const startedAt = Number(this.globalHookPressedAt || 0);
-    this.globalHookPressedAt = 0;
-    const heldMs = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
-
-    // A tap without a measured long press is never allowed to start commands.
-    // The initial two-finger system gesture is handled by the onLoad startup.
-    if (!startedAt || heldMs < 700) {
-      console.log('[RE:Vision] short or unpaired temple tap ignored', { heldMs });
-      this.setData({
-        statusText: 'Короткое касание проигнорировано.',
-        detailText: 'Удерживай сенсор двумя пальцами для вызова Ревижна.'
-      });
-      return;
-    }
     if (this.voiceListening) return;
-    console.log('[RE:Vision] hold accepted; starting one-shot Russian recognition', { heldMs });
+    console.log('[RE:Vision] temple input accepted; starting Russian recognition');
     this.startListening();
   },
 
@@ -136,7 +122,7 @@ export default {
     if (typeof SpeechRecognition === 'undefined') {
       this.setData({
         statusText: 'Распознавание речи недоступно.',
-        detailText: 'В этой версии AIUI нет SpeechRecognition. Закрою Ревижн.'
+        detailText: 'AIUI runtime не предоставил SpeechRecognition. Проверь версию прошивки и разрешение RECORD_AUDIO.'
       });
       this.scheduleAgentClose(3500);
       return;
