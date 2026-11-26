@@ -472,14 +472,9 @@ export default {
     const requestedText = String(rawRequestedName).trim();
     const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
-    // Windows commands must target the name spoken by the user. Never fall back
-    // to a default PC when the voice intent omitted or failed to recognize it.
-    if (action.startsWith('windows_') && !requestedName) {
-      const message = 'Не расслышал имя компьютера. Повтори команду, назвав устройство в конце.';
-      this.setData({ statusText: message, detailText: 'Например: «Пауза AIMP, студио локал».', busy: false });
-      speakAndReturn(this, message);
-      return;
-    }
+    // A spoken device name always wins. When the user omits it, use only the
+    // explicitly configured default paired Windows Agent. WindowsAgentClient
+    // resolves that saved pairing; it never sends a command to an arbitrary host.
 
     this.setData({
       statusText: 'Проверяю связь с RE:Vision…',
@@ -516,17 +511,26 @@ export default {
 
       if (action.startsWith('windows_')) {
         const windowsAction = action.substring('windows_'.length);
+        const requestedCommandPhrase = decodeQueryValue(
+          query && (query.commandPhrase || query.phrase || query.command || query.transcript) || ''
+        ).trim();
+        if ((windowsAction === 'launch' || windowsAction === 'ssh_launch') && !requestedCommandPhrase) {
+          const message = 'Не получил фразу команды. Повтори её так, как она сохранена в каталоге команд.';
+          this.setData({ statusText: message, detailText: 'Действие не отправлено на компьютер.', busy: false });
+          speakAndReturn(this, message);
+          return;
+        }
         try {
           const result = windowsAction === 'status'
             ? await request('/windows/status', 'GET', token, null)
             : windowsAction === 'launch'
               ? await request('/windows/execute', 'POST', token, {
-                  phrase: decodeQueryValue(query && query.commandPhrase || '').trim(),
+                  phrase: requestedCommandPhrase,
                   deviceName: requestedName,
-                  alternatives: parseCommandAlternatives(query && query.commandAlternatives)
+                  alternatives: parseCommandAlternatives(query && (query.commandAlternatives || query.alternatives))
                 })
               : windowsAction === 'ssh_launch'
-                ? await request('/windows/ssh/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
+                ? await request('/windows/ssh/execute', 'POST', token, { phrase: requestedCommandPhrase, deviceName: requestedName || 'STUDIO' })
                 : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, { deviceName: requestedName });
           if (!result || result.ok !== true) throw new Error(result && result.error ? result.error : 'Windows Agent вернул неожиданный ответ');
           let message;
