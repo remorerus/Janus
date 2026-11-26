@@ -90,6 +90,7 @@ jobs:
       - name: Run Android startup smoke test
         id: startup_smoke
         continue-on-error: true
+        timeout-minutes: 6
         uses: reactivecircus/android-emulator-runner@v2
         env:
           # GitHub-hosted Linux runners may not expose /dev/kvm. Without KVM,
@@ -100,7 +101,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          emulator-boot-timeout: 900
+          emulator-boot-timeout: 300
           script: |
             chmod +x ./gradlew
             ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ymid.wakeonlan.ui.MainActivityTest#launches_showsDeviceList
