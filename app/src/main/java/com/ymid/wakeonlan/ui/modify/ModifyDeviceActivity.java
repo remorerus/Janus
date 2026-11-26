@@ -107,13 +107,15 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     private static final class NetworkProfileInput {
         final LinearLayout root;
         final TextInputEditText name;
+        final ObfuscatedEditText mac;
         final ObfuscatedEditText broadcast;
         final ObfuscatedEditText status;
 
-        NetworkProfileInput(LinearLayout root, TextInputEditText name,
+        NetworkProfileInput(LinearLayout root, TextInputEditText name, ObfuscatedEditText mac,
                             ObfuscatedEditText broadcast, ObfuscatedEditText status) {
             this.root = root;
             this.name = name;
+            this.mac = mac;
             this.broadcast = broadcast;
             this.status = status;
         }
@@ -159,7 +161,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
 
         sshTestShutdownButton = binding.device.deviceButtonTestShutdown;
         networkProfilesContainer = binding.device.networkProfilesContainer;
-        binding.device.addNetworkProfile.setOnClickListener(v -> addNetworkProfile("", "", "", true));
+        binding.device.addNetworkProfile.setOnClickListener(v -> addNetworkProfile("", getDeviceMacInputText(), "", "", true));
 
         setSupportActionBar(binding.toolbar);
 
@@ -232,6 +234,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
                 JSONObject profile = profiles.optJSONObject(i);
                 if (profile == null) continue;
                 addNetworkProfile(profile.optString("name", "Профиль " + (i + 2)),
+                        profile.optString("macAddress", getDeviceMacInputText()),
                         profile.optString("broadcastAddress", ""),
                         profile.optString("statusIp", ""), false);
             }
@@ -240,7 +243,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         }
     }
 
-    private void addNetworkProfile(String nameValue, String broadcastValue, String statusValue, boolean requestFocus) {
+    private void addNetworkProfile(String nameValue, String macValue, String broadcastValue, String statusValue, boolean requestFocus) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -263,12 +266,14 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         heading.addView(remove);
         card.addView(heading);
 
+        ObfuscatedEditText mac = createProfileMacField(macValue);
         ObfuscatedEditText broadcast = createProfileAddressField("Broadcast/IP Address (optional)", broadcastValue);
         ObfuscatedEditText status = createProfileAddressField("Status IP (optional)", statusValue);
+        card.addView(wrapProfileField("MAC-адрес этого сетевого профиля", mac));
         card.addView(wrapProfileField("Broadcast/IP Address (optional)", broadcast));
         card.addView(wrapProfileField("Status IP (optional)", status));
 
-        NetworkProfileInput input = new NetworkProfileInput(card, name, broadcast, status);
+        NetworkProfileInput input = new NetworkProfileInput(card, name, mac, broadcast, status);
         additionalNetworkProfiles.add(input);
         remove.setOnClickListener(v -> {
             additionalNetworkProfiles.remove(input);
@@ -276,6 +281,17 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         });
         networkProfilesContainer.addView(card);
         if (requestFocus) name.requestFocus();
+    }
+
+    private ObfuscatedEditText createProfileMacField(String value) {
+        ObfuscatedEditText field = new ObfuscatedEditText(this);
+        field.setSingleLine(true);
+        field.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        field.setMinHeight(dp(48));
+        field.setRealText(value);
+        field.addTextChangedListener(new MacValidator(field));
+        field.addTextChangedListener(new MacAddressAutocomplete());
+        return field;
     }
 
     private ObfuscatedEditText createProfileAddressField(String hint, String value) {
@@ -304,12 +320,14 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         JSONArray profiles = new JSONArray();
         for (NetworkProfileInput input : additionalNetworkProfiles) {
             String name = input.name.getText() == null ? "" : input.name.getText().toString().trim();
+            String mac = input.mac.getRealTextValue().trim();
             String broadcast = input.broadcast.getRealTextValue().trim();
             String status = input.status.getRealTextValue().trim();
-            if (name.isEmpty() && broadcast.isEmpty() && status.isEmpty()) continue;
+            if (name.isEmpty() && mac.isEmpty() && broadcast.isEmpty() && status.isEmpty()) continue;
             JSONObject profile = new JSONObject();
             try {
                 profile.put("name", name.isEmpty() ? "Профиль " + (profiles.length() + 2) : name);
+                profile.put("macAddress", mac);
                 profile.put("broadcastAddress", broadcast);
                 profile.put("statusIp", status);
                 profiles.put(profile);
@@ -327,7 +345,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
 
     private boolean areAdditionalProfileAddressesValid() {
         for (NetworkProfileInput input : additionalNetworkProfiles) {
-            if (input.broadcast.getError() != null || input.status.getError() != null) return false;
+            if (input.mac.getError() != null || input.mac.getRealTextValue().trim().isEmpty()
+                    || input.broadcast.getError() != null || input.status.getError() != null) return false;
         }
         return true;
     }
@@ -455,6 +474,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceBroadcastInput);
         for (NetworkProfileInput profile : additionalNetworkProfiles) {
+            profile.mac.setRealText(profile.mac.getRealTextValue());
             profile.broadcast.setRealText(profile.broadcast.getRealTextValue());
             profile.status.setRealText(profile.status.getRealTextValue());
         }
@@ -470,6 +490,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         triggerObfuscatedInputValidators(deviceStatusIpInput);
         triggerObfuscatedInputValidators(deviceSshAddressInput);
         for (NetworkProfileInput profile : additionalNetworkProfiles) {
+            profile.mac.setRealText(profile.mac.getRealTextValue());
             profile.broadcast.setRealText(profile.broadcast.getRealTextValue());
             profile.status.setRealText(profile.status.getRealTextValue());
         }
