@@ -13,6 +13,7 @@ import com.google.common.base.Strings;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
 import com.ymid.wakeonlan.persistence.models.DeviceStatus;
 import com.ymid.wakeonlan.shutdown.ShutdownModelFactory;
 import com.ymid.wakeonlan.security.AuthenticatedDeviceActionActivity;
@@ -76,8 +77,9 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         deviceName.setText(device.name);
         deviceMacAddress.setObfuscatedText(device.macAddress);
         // Without a status IP there is no meaningful address to show; the broadcast address would mislead
-        deviceIp.setText(device.statusIp);
-        deviceIp.setVisibility(Strings.isNullOrEmpty(device.statusIp) ? View.GONE : View.VISIBLE);
+        String displayedIp = DeviceNetworkProfiles.statusAddresses(device).stream().findFirst().orElse(null);
+        deviceIp.setText(displayedIp);
+        deviceIp.setVisibility(Strings.isNullOrEmpty(displayedIp) ? View.GONE : View.VISIBLE);
 
         setOnClickHandler(device);
         setOnEditClickHandler(device);
