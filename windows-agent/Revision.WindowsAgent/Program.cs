@@ -540,7 +540,7 @@ static string? ResolveAimpExecutable()
         try
         {
             using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-            using var appKey = baseKey.OpenSubKey(@"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\AIMP.exe");
+            using var appKey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\AIMP.exe");
             var registered = appKey?.GetValue(null) as string;
             if (!string.IsNullOrWhiteSpace(registered)) candidates.Add(registered.Trim().Trim('"'));
         }
