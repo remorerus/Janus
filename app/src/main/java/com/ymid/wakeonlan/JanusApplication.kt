@@ -2,6 +2,7 @@ package com.ymid.wakeonlan
 
 import android.app.Application
 import com.ymid.wakeonlan.config.RemoteConfigManager
+import com.ymid.wakeonlan.crash.CrashLogDirectory
 import com.ymid.wakeonlan.crash.CrashReporter
 import com.ymid.wakeonlan.monitoring.LauncherIconWorker
 import com.ymid.wakeonlan.monitoring.MonitoringScheduler
@@ -14,6 +15,8 @@ import java.util.concurrent.Executors
 class JanusApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Prepare crash-log folders before any service or database initialization.
+        CrashLogDirectory.ensure(this)
         LauncherIconManager.register(this)
         CrashReporter.initialize()
         RemoteConfigManager.initialize()
