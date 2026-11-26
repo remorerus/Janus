@@ -1,6 +1,7 @@
 package com.ymid.wakeonlan.monitoring
 
 import com.ymid.wakeonlan.persistence.models.Device
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles
 import com.ymid.wakeonlan.ping.Ping
 import java.net.InetAddress
 
@@ -11,8 +12,11 @@ object HostReachability {
     private const val PING_ATTEMPTS = 2
 
     /** The address the list pings for this device, or null when it has none. */
-    fun statusHost(device: Device): String? =
-        device.statusIp?.takeIf { it.isNotBlank() } ?: device.sshAddress?.takeIf { it.isNotBlank() }
+    fun statusHost(device: Device): String? = DeviceNetworkProfiles.statusAddresses(device).firstOrNull()
+
+    /** A device is online when any of its saved network profile addresses responds. */
+    fun isDeviceReachable(device: Device): Boolean =
+        DeviceNetworkProfiles.statusAddresses(device).any { isReachable(it) }
 
     fun isReachable(host: String): Boolean {
         val address = try {
