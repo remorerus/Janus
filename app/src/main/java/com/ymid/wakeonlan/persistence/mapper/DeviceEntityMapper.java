@@ -15,17 +15,28 @@ public class DeviceEntityMapper implements EntityMapper<Device, DeviceEntity> {
                 entity.sshCommand, entity.shutdownOs == null ? "linux" : entity.shutdownOs,
                 entity.sshAuthType == null ? "password" : entity.sshAuthType,
                 entity.sshKeyAlias, entity.groupName, entity.wanIp, entity.wanPort);
+        Device model = new Device(
+                entity.id, entity.name, entity.macAddress, entity.broadcastAddress, entity.port,
+                entity.statusIp, entity.secureOnPassword, entity.enableRemoteShutdown,
+                entity.sshAddress, entity.sshPort, entity.sshUsername, entity.sshPassword,
+                entity.sshCommand, entity.shutdownOs == null ? "linux" : entity.shutdownOs,
+                entity.sshAuthType == null ? "password" : entity.sshAuthType,
+                entity.sshKeyAlias, entity.groupName, entity.wanIp, entity.wanPort);
+        model.networkProfilesJson = entity.networkProfilesJson == null ? "[]" : entity.networkProfilesJson;
+        return model;
     }
 
     @Override
     public DeviceEntity modelToEntity(Device model) {
         if (model == null) return new DeviceEntity();
-        return new DeviceEntity(
+        DeviceEntity entity = new DeviceEntity(
                 model.id, model.name, model.macAddress, model.broadcastAddress, model.port,
                 model.statusIp, model.secureOnPassword, model.remoteShutdownEnabled,
                 model.sshAddress, model.sshPort, model.sshUsername, model.sshPassword,
                 model.sshCommand, model.shutdownOs == null ? "linux" : model.shutdownOs,
                 model.sshAuthType == null ? "password" : model.sshAuthType,
                 model.sshKeyAlias, model.groupName, model.wanIp, model.wanPort);
+        entity.networkProfilesJson = model.networkProfilesJson == null ? "[]" : model.networkProfilesJson;
+        return entity;
     }
 }
