@@ -12,6 +12,7 @@ import android.widget.Button;
 import android.widget.AdapterView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.EditText;
 import android.widget.RadioButton;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -29,6 +30,9 @@ import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 
@@ -97,6 +101,23 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     protected TextView deviceSshOsSuggestion;
     protected Button sshTestShutdownButton;
     protected String sshKeyAlias;
+    private LinearLayout networkProfilesContainer;
+    private final java.util.List<NetworkProfileInput> additionalNetworkProfiles = new java.util.ArrayList<>();
+
+    private static final class NetworkProfileInput {
+        final LinearLayout root;
+        final TextInputEditText name;
+        final ObfuscatedEditText broadcast;
+        final ObfuscatedEditText status;
+
+        NetworkProfileInput(LinearLayout root, TextInputEditText name,
+                            ObfuscatedEditText broadcast, ObfuscatedEditText status) {
+            this.root = root;
+            this.name = name;
+            this.broadcast = broadcast;
+            this.status = status;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -137,6 +158,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceSshOsSuggestion = binding.device.deviceShutdownOsSuggestion;
 
         sshTestShutdownButton = binding.device.deviceButtonTestShutdown;
+        networkProfilesContainer = binding.device.networkProfilesContainer;
+        binding.device.addNetworkProfile.setOnClickListener(v -> addNetworkProfile("", "", "", true));
 
         setSupportActionBar(binding.toolbar);
 
@@ -198,6 +221,109 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
             default:
                 return "sudo shutdown -h now";
         }
+    }
+
+    protected void loadAdditionalNetworkProfiles(String json) {
+        additionalNetworkProfiles.clear();
+        networkProfilesContainer.removeAllViews();
+        try {
+            JSONArray profiles = new JSONArray(json == null || json.trim().isEmpty() ? "[]" : json);
+            for (int i = 0; i < profiles.length(); i++) {
+                JSONObject profile = profiles.optJSONObject(i);
+                if (profile == null) continue;
+                addNetworkProfile(profile.optString("name", "Профиль " + (i + 2)),
+                        profile.optString("broadcastAddress", ""),
+                        profile.optString("statusIp", ""), false);
+            }
+        } catch (Exception ignored) {
+            // A malformed optional profile list must not prevent the device itself from opening.
+        }
+    }
+
+    private void addNetworkProfile(String nameValue, String broadcastValue, String statusValue, boolean requestFocus) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(10), dp(8), dp(10), dp(8));
+        card.setBackgroundResource(com.google.android.material.R.drawable.mtrl_popupmenu_background);
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = dp(8);
+        card.setLayoutParams(cardParams);
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextInputEditText name = new TextInputEditText(this);
+        name.setSingleLine(true);
+        name.setHint("Название профиля (например, Домашний Wi-Fi)");
+        name.setText(nameValue);
+        name.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
+        Button remove = new Button(this);
+        remove.setText("Удалить");
+        heading.addView(name);
+        heading.addView(remove);
+        card.addView(heading);
+
+        ObfuscatedEditText broadcast = createProfileAddressField("Broadcast/IP Address (optional)", broadcastValue);
+        ObfuscatedEditText status = createProfileAddressField("Status IP (optional)", statusValue);
+        card.addView(wrapProfileField("Broadcast/IP Address (optional)", broadcast));
+        card.addView(wrapProfileField("Status IP (optional)", status));
+
+        NetworkProfileInput input = new NetworkProfileInput(card, name, broadcast, status);
+        additionalNetworkProfiles.add(input);
+        remove.setOnClickListener(v -> {
+            additionalNetworkProfiles.remove(input);
+            networkProfilesContainer.removeView(card);
+        });
+        networkProfilesContainer.addView(card);
+        if (requestFocus) name.requestFocus();
+    }
+
+    private ObfuscatedEditText createProfileAddressField(String hint, String value) {
+        ObfuscatedEditText field = new ObfuscatedEditText(this);
+        field.setSingleLine(true);
+        field.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        field.setMinHeight(dp(48));
+        field.setRealText(value);
+        field.addTextChangedListener(new NetworkAddressValidator(field, true));
+        return field;
+    }
+
+    private TextInputLayout wrapProfileField(String hint, ObfuscatedEditText field) {
+        TextInputLayout layout = new TextInputLayout(this);
+        layout.setHint(hint);
+        layout.addView(field, new TextInputLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return layout;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    protected String getAdditionalNetworkProfilesJson() {
+        JSONArray profiles = new JSONArray();
+        for (NetworkProfileInput input : additionalNetworkProfiles) {
+            String name = input.name.getText() == null ? "" : input.name.getText().toString().trim();
+            String broadcast = input.broadcast.getRealTextValue().trim();
+            String status = input.status.getRealTextValue().trim();
+            if (name.isEmpty() && broadcast.isEmpty() && status.isEmpty()) continue;
+            JSONObject profile = new JSONObject();
+            try {
+                profile.put("name", name.isEmpty() ? "Профиль " + (profiles.length() + 2) : name);
+                profile.put("broadcastAddress", broadcast);
+                profile.put("statusIp", status);
+                profiles.put(profile);
+            } catch (Exception ignored) { }
+        }
+        return profiles.toString();
+    }
+
+    private boolean areAdditionalProfileAddressesValid() {
+        for (NetworkProfileInput input : additionalNetworkProfiles) {
+            if (input.broadcast.getError() != null || input.status.getError() != null) return false;
+        }
+        return true;
     }
 
     private void addAutofillClickHandler() {
