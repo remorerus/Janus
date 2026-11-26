@@ -5,7 +5,7 @@ import android.util.Log
 import java.io.File
 
 /**
- * Creates durable locations for future RE:Vision crash reports.
+ * Creates durable locations for RE:Vision crash reports.
  *
  * The external app-specific directory is visible to compatible file managers;
  * the internal directory remains available even when external storage is absent.
@@ -45,7 +45,7 @@ object CrashLogDirectory {
         if (!marker.exists()) {
             marker.writeText(
                 "RE:Vision crash-log folder is ready.\n" +
-                    "Crash reports will be saved here by a future diagnostic update.\n"
+                    "Automatic crash reports and stack traces are saved here.\n"
             )
         }
         Log.i(TAG, "Crash-log directory ready: ${directory.absolutePath}")
