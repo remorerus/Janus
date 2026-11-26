@@ -1,0 +1,44 @@
+name: Package RE:Vision AIUI Resource
+
+on:
+  push:
+    branches:
+      - revision-voice-windows-controls-2026-11-25
+    paths:
+      - "aiui/revision-voice/**"
+      - ".github/workflows/aiui-resource.yml"
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate AIUI resource
+        run: |
+          test -f aiui/revision-voice/app.json
+          test -f aiui/revision-voice/pages/index/index.ink
+          test -f aiui/revision-voice/pages/device-action/index.ink
+          python3 - <<'PY'
+          import json
+          with open("aiui/revision-voice/app.json", encoding="utf-8") as f:
+              app = json.load(f)
+          required = ["pages/index/index", "pages/device-action/index"]
+          missing = [page for page in required if page not in app.get("pages", [])]
+          if missing:
+              raise SystemExit("Missing AIUI pages: " + ", ".join(missing))
+          print("AIUI manifest validated.")
+          PY
+      - name: Package importable resource
+        run: |
+          cd aiui
+          zip -r "$GITHUB_WORKSPACE/RE-Vision-AIUI-Resource.zip" revision-voice
+          unzip -t "$GITHUB_WORKSPACE/RE-Vision-AIUI-Resource.zip"
+      - name: Upload AIUI resource
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-AIUI-Resource
+          path: RE-Vision-AIUI-Resource.zip
+          if-no-files-found: error
+          retention-days: 14
