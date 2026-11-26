@@ -82,6 +82,17 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Run Android startup smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            chmod +x ./gradlew
+            ./gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.ymid.wakeonlan.ui.MainActivityTest#launches_showsDeviceList
       - name: Build APKs
         run: |
           chmod +x ./gradlew
