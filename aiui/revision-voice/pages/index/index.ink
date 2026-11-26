@@ -301,6 +301,7 @@ export default {
     [transcript].concat(Array.isArray(alternatives) ? alternatives : []).forEach(candidate => {
       let value = String(candidate || '')
         .replace(/(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/ig, ' ')
+        .replace(/\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)\s*$/i, '')
         .replace(/^\s*(?:ревижн|ревижен|ревижин|ревиж)\s*[,:.\-;]?\s*/i, '')
         .replace(/^\s*(?:пожалуйста\s*)?(?:выполни\s*)?(?:команду\s*)?/i, '')
         .replace(/[.!?]+$/g, '')
@@ -321,8 +322,16 @@ export default {
       params = { action: 'list' };
     }
 
+    // A spoken target at the end of the phrase selects the paired PC by its RE:Vision name.
+    // The name is only a selector; the native registry still authenticates by stable device ID.
+    const localStudioTarget = /\s+(?:на\s+)?(?:студио\s+локал|studio\s+local)\s*$/i.exec(String(transcript || ''));
+    const requestedWindowsDevice = localStudioTarget ? 'Studio Local' : 'STUDIO PC';
+    const commandTranscript = localStudioTarget
+      ? String(transcript || '').slice(0, localStudioTarget.index).replace(/[\s,;:.!?-]+$/g, '').trim()
+      : String(transcript || '').trim();
+
     const hasWifi = /(wi\s*fi|вай\s*фай|вайфай|вайфая)/i.test(compact);
-    const isStudioPc = /(studio\s*pc|студио\s*писи|студи\s*писи|студия|студийный\s*пк|компьютер|комп|пк)/i.test(compact);
+    const isStudioPc = /(studio\s*pc|studio\s*local|студио\s*локал|студио\s*писи|студи\s*писи|студия|студийный\s*пк|компьютер|комп|пк)/i.test(compact);
     const bridgePhrase = /(voice\s*bridge|войс\s*бридж|голосов\w* мост|настройк\w* ревижн|проверь службу ревижн|служб\w* ревижн|дай доступ к voice bridge|подключись к voice bridge|восстанови voice bridge|почему не работает voice bridge|настройк\w* голосов\w* мост)/i.test(compact);
 
     // Voice Bridge maintenance commands take priority over generic device routing.
@@ -334,16 +343,16 @@ export default {
     // commands, not media playback on the Android phone. Remove the spoken
     // computer name from the catalog phrase and route to the paired STUDIO PC.
     const aimpPlaybackIntent = /(?:воспроизведи|воспроизвести|проиграй|проиграть|поставь|включи)\s+(?:трек\s+)?(?:aimp|аимп|аип)(?:\s|$)/i.test(compact);
-    const explicitStudioTarget = /(?:studio\s*pc|studio|студио|студия|студийный\s*пк|на\s+студио)(?:\s|$)/i.test(compact);
+    const explicitStudioTarget = /(?:studio\s*pc|studio\s+local|студио\s+локал|studio|студио|студия|студийный\s*пк|на\s+студио)(?:\s|$)/i.test(compact);
     if (!params && aimpPlaybackIntent && explicitStudioTarget) {
-      const commandPhrase = String(transcript || '')
-        .replace(/\s+(?:на\s+)?(?:studio\s*pc|studio|студио|студия|студийный\s+пк)\s*$/i, '')
+      const commandPhrase = commandTranscript
+        .replace(/\s+(?:на\s+)?(?:studio\s*pc|studio\s+local|студио\s+локал|studio|студио|студия|студийный\s+пк)\s*$/i, '')
         .replace(/[.!?]+$/g, '')
         .replace(/\s+/g, ' ')
         .trim();
       params = {
         action: 'windows_launch',
-        deviceName: 'STUDIO PC',
+        deviceName: requestedWindowsDevice,
         commandPhrase,
         commandAlternatives: [commandPhrase]
       };
@@ -392,7 +401,7 @@ export default {
       }
       commandPhrase = commandPhrase.replace(/[.!?]+$/g, '').trim();
       if (commandPhrase) {
-        params = { action: 'windows_ssh_launch', deviceName: 'STUDIO PC', commandPhrase };
+        params = { action: 'windows_ssh_launch', deviceName: requestedWindowsDevice, commandPhrase };
       }
     }
 
@@ -409,23 +418,23 @@ export default {
         .replace(/\s+/g, ' ')
         .trim();
       if (commandPhrase) {
-        params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase };
+        params = { action: 'windows_launch', deviceName: requestedWindowsDevice, commandPhrase };
       }
     }
 
     // Windows STUDIO PC commands. Bare "компьютер" refers to the paired STUDIO PC.
     if (!params && /(отмени|отменить|сними отмену).*(выключени|перезагрузк)|отмени выключение|отмени перезагрузку/i.test(compact)) {
-      params = { action: 'windows_cancel_shutdown', deviceName: 'STUDIO PC' };
+      params = { action: 'windows_cancel_shutdown', deviceName: requestedWindowsDevice };
     } else if (!params && isStudioPc && /(заблокируй|заблокировать|блокируй|заблокируй экран)/i.test(compact)) {
-      params = { action: 'windows_lock', deviceName: 'STUDIO PC' };
+      params = { action: 'windows_lock', deviceName: requestedWindowsDevice };
     } else if (!params && isStudioPc && /(перезагрузи|перезагрузить|рестарт|перезапусти компьютер)/i.test(compact)) {
-      params = { action: 'windows_restart', deviceName: 'STUDIO PC' };
+      params = { action: 'windows_restart', deviceName: requestedWindowsDevice };
     } else if (!params && isStudioPc && /(выключи|выключить|отключи|заверши|завершить работу)/i.test(compact)) {
-      params = { action: 'windows_shutdown', deviceName: 'STUDIO PC' };
+      params = { action: 'windows_shutdown', deviceName: requestedWindowsDevice };
     } else if (!params && /(проверь|статус|состояние).*(windows\s*agent|виндовс|студио\s*писи|студия|компьютер|комп)/i.test(compact)) {
-      params = { action: 'windows_status', deviceName: 'STUDIO PC' };
+      params = { action: 'windows_status', deviceName: requestedWindowsDevice };
     } else if (!params && /(запусти|открой|закрой|закрыть|перезапусти|перезапуск).*(mixxx|\.exe|\.bat)/i.test(compact)) {
-      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+      params = { action: 'windows_launch', deviceName: requestedWindowsDevice, commandPhrase: commandTranscript };
     }
 
     if (!params && /(запусти|запустить|открой|открыть|закрой|закрыть|перезапусти|перезапустить|переключись|переключить|сверни|свернуть|разверни|развернуть|восстанови|восстановить)/i.test(compact)) {
