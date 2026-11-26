@@ -65,6 +65,8 @@ GitHub Actions собирает self-contained ZIP для Windows x64. Расп�
 ## Протокол Windows Agent
 
 - `GET /v1/status`
+- `POST /v1/heartbeat` — authenticated heartbeat from the paired RE:Vision client; Web Manager reports Active only while a valid heartbeat is no older than 90 seconds
+- `GET /v1/manager/connection` — loopback-only connection diagnostics for Web Manager (pairing state, last heartbeat, age and remote address)
 - `POST /v1/pair`
 - `POST /v1/command/lock`
 - `POST /v1/command/shutdown`
