@@ -16,6 +16,8 @@ import java.util.Objects;
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
 import com.ymid.wakeonlan.security.TofuHostKeyVerifier;
+import com.ymid.wakeonlan.voice.WindowsAgentClient;
+import org.json.JSONObject;
 
 public class EditDeviceActivity extends ModifyDeviceActivity {
 
@@ -26,6 +28,63 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         populateInputs();
+        configureSshConnectionRequest();
+    }
+
+    private void configureSshConnectionRequest() {
+        sshConnectButton.setVisibility(android.view.View.VISIBLE);
+        sshConnectStatus.setVisibility(android.view.View.VISIBLE);
+        sshConnectButton.setOnClickListener(v -> {
+            String username = deviceSshUsernameInput.getText() == null
+                    ? "" : deviceSshUsernameInput.getText().toString().trim();
+            if (username.isEmpty()) {
+                sshConnectStatus.setText("Сначала укажи имя пользователя Windows в этой карточке.");
+                return;
+            }
+            String alias = sshKeyAlias;
+            if (Strings.isNullOrEmpty(alias)) {
+                alias = SshKeyManager.generateKeyPair();
+                sshKeyAlias = alias;
+                updateSshPublicKeyUi();
+            } else if (SshKeyManager.getOpenSshPublicKey(alias) == null) {
+                sshConnectStatus.setText("Сохранённый ключ не найден в Android Keystore. Существующая привязка не изменена.");
+                return;
+            }
+
+            final String selectedAlias = alias;
+            final Device target = buildDeviceFromInputs();
+            target.sshKeyAlias = selectedAlias;
+            sshConnectButton.setEnabled(false);
+            sshConnectStatus.setText(getString(R.string.ssh_key_searching));
+
+            new Thread(() -> {
+                try {
+                    JSONObject response = WindowsAgentClient.requestSshKeyApproval(
+                            EditDeviceActivity.this, target, username, selectedAlias);
+                    target.sshUsername = username;
+                    if (Strings.isNullOrEmpty(target.sshAddress)) {
+                        target.sshAddress = response.optString("agentAddress", "");
+                    }
+                    if (target.sshPort == null || target.sshPort < 1) target.sshPort = 22;
+                    deviceRepository.updateAsync(target);
+                    runOnUiThread(() -> {
+                        device = target;
+                        sshKeyAlias = selectedAlias;
+                        updateSshPublicKeyUi();
+                        sshConnectStatus.setText(getString(R.string.ssh_key_request_sent));
+                        sshConnectButton.setEnabled(true);
+                        Toast.makeText(this, "Запрос отправлен: " +
+                                response.optString("agentName", "Windows PC"), Toast.LENGTH_LONG).show();
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> {
+                        sshConnectStatus.setText(error.getMessage() == null
+                                ? "Не удалось отправить запрос SSH-подключения." : error.getMessage());
+                        sshConnectButton.setEnabled(true);
+                    });
+                }
+            }, "revision-ssh-key-request").start();
+        });
     }
 
     private void populateInputs() {
