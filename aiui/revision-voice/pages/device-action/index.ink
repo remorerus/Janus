@@ -472,6 +472,15 @@ export default {
     const requestedText = String(rawRequestedName).trim();
     const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
 
+    // Windows commands must target the name spoken by the user. Never fall back
+    // to a default PC when the voice intent omitted or failed to recognize it.
+    if (action.startsWith('windows_') && !requestedName) {
+      const message = 'Не расслышал имя компьютера. Повтори команду, назвав устройство в конце.';
+      this.setData({ statusText: message, detailText: 'Например: «Пауза AIMP, студио локал».', busy: false });
+      speakAndReturn(this, message);
+      return;
+    }
+
     this.setData({
       statusText: 'Проверяю связь с RE:Vision…',
       detailText: requestedName,
