@@ -1267,8 +1267,11 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Тип действия</label><select id="kind" onchange="updateFields()">
 <option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option><option value="script">Сценарий PowerShell / CMD (совместимость)</option>
 </select>
+<div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Используются системные мультимедиа-клавиши Windows.</div></div>
+<div id="hotkeyOptions" style="display:none"><label>Сочетание клавиш</label><input id="hotkeyCombo" maxlength="80" placeholder="CTRL+SHIFT+ESC"></div>
+<div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" maxlength="500" placeholder="C:\Program Files\AIMP\AIMP.exe">
-<label id="argumentsLabel">Аргументы запуска (необязательно)</label><input id="arguments" maxlength="500" placeholder="Параметры запуска или действие">
+<label id="argumentsLabel">Аргументы запуска (необязательно)</label><input id="arguments" maxlength="500" placeholder="--fullscreen">
 <div id="scriptFields" style="display:none"><label>Оболочка сценария</label><select id="scriptShell"><option value="powershell">PowerShell</option><option value="cmd">CMD</option></select><label>Текст сценария</label><textarea id="scriptCommand" maxlength="12000" spellcheck="false"></textarea></div><div class="note" id="kindHint">Для запуска укажи полный путь к EXE.</div>
 <div class="actions"><button onclick="saveEditor()">Сохранить команду</button><button class="secondary" onclick="clearEditor()">Новая команда</button></div><div class="status" id="status"></div>
 <div class="note">Команды выполняются по SSH от имени указанного Windows-пользователя. Добавляй только доверенные приложения и действия.</div>
@@ -1279,32 +1282,36 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 let commands=[],editingId=null;
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
-function splitAliases(s){return [...new Set((s||'').split(',').map(x=>x.trim()).filter(Boolean))]}
+function splitAliases(s){return [...new Set((s||'').split(/[,;\\n]+/).map(x=>x.trim()).filter(Boolean))]}
 function updateFields(){
- const k=el('kind').value;
- el('scriptFields').style.display=k==='script'?'block':'none';
- el('targetLabel').textContent=k==='hotkey'?'Сочетание клавиш':k==='window'?'Имя процесса / часть заголовка окна':k==='media'?'Плеер (необязательно для системного действия)':'Полный путь к файлу / имя процесса';
- el('argumentsLabel').textContent=k==='media'?'Действие мультимедиа':k==='window'?'Действие с окном':'Аргументы запуска (необязательно)';
- const hints={app:'Укажи полный путь к EXE, например C:\\Program Files\\AIMP\\AIMP.exe.',close:'Укажи имя процесса без .exe, например aimp.',restart:'Укажи полный путь к EXE и имя процесса в аргументах, если оно отличается от имени файла.',bat:'Укажи полный путь к BAT-файлу.',media:'Выбери действие: GLOBAL_PLAYPAUSE, GLOBAL_NEXT, GLOBAL_PREV, GLOBAL_STOP, GLOBAL_MUTE, GLOBAL_VOLUP или GLOBAL_VOLDWN.',hotkey:'Примеры: CTRL+C, ALT+F4, WIN+D, CTRL+SHIFT+ESC.',window:'Действие: focus, minimize, maximize, restore, close, next или previous.'};
+ const k=el('kind').value,media=k==='media',hotkey=k==='hotkey',win=k==='window',script=k==='script';
+ el('scriptFields').style.display=script?'block':'none';el('mediaOptions').style.display=media?'block':'none';el('hotkeyOptions').style.display=hotkey?'block':'none';el('windowOptions').style.display=win?'block':'none';
+ el('targetLabel').textContent=hotkey?'':win?'Имя процесса или часть заголовка окна':'Полный путь к файлу';
+ el('targetLabel').style.display=(media||hotkey)?'none':'block';el('target').style.display=(media||hotkey)?'none':'block';
+ el('argumentsLabel').style.display=(media||hotkey||win||script)?'none':'block';el('arguments').style.display=(media||hotkey||win||script)?'none':'block';
+ const hints={app:'Укажи полный путь к EXE.',close:'Укажи полный путь к EXE, процесс которого нужно закрыть.',restart:'Укажи полный путь к EXE.',bat:'Укажи полный путь к BAT-файлу.',media:'Выбери системное мультимедиа-действие.',hotkey:'Примеры: CTRL+C, ALT+F4, WIN+D, CTRL+SHIFT+ESC.',window:'Укажи процесс/часть заголовка и выбери действие с окном.',script:'Старый формат сценария сохранён для совместимости.'};
  el('kindHint').textContent=hints[k]||'';
 }
-function clearEditor(){editingId=null;['name','phrase','aliases','target','arguments','scriptCommand'].forEach(x=>el(x).value='');el('scriptShell').value='powershell';el('kind').value='app';el('formTitle').textContent='Добавить команду в каталог';updateFields()}
+function clearEditor(){editingId=null;['name','phrase','aliases','target','arguments','scriptCommand','hotkeyCombo'].forEach(x=>el(x).value='');el('scriptShell').value='powershell';el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('formTitle').textContent='Добавить команду в каталог';updateFields()}
 function saveEditor(){
- const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases:splitAliases(el('aliases').value),kind:el('kind').value,target:el('target').value.trim(),arguments:el('arguments').value.trim(),shell:el('scriptShell').value,command:el('scriptCommand').value};
+ const kind=el('kind').value,winAction=el('windowAction').value;
+ const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(winAction)?'*':(kind==='media'?'':el('target').value.trim()));
+ const args=kind==='media'?el('mediaAction').value:(kind==='window'?winAction:el('arguments').value.trim());
+ const c={id:editingId||crypto.randomUUID().replaceAll('-',''),name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases:splitAliases(el('aliases').value),kind,target,arguments:args,shell:el('scriptShell').value,command:el('scriptCommand').value};
  if(!c.name||!c.phrase){msg('Заполни название и основную голосовую фразу.');return}
  if(c.aliases.length>12){msg('Можно добавить не более 12 вариантов произнесения.');return}
  const all=new Set();for(const x of commands){if(x.id===editingId)continue;for(const p of [x.phrase,...(x.aliases||[])])all.add(p.trim().toLocaleLowerCase('ru'))}
  for(const p of [c.phrase,...c.aliases])if(all.has(p.toLocaleLowerCase('ru'))){msg('Эта фраза уже назначена другой команде: '+p);return}
- if(['app','bat','restart'].includes(c.kind)&&!c.target){msg('Укажи полный путь к EXE или BAT-файлу.');return}
- if(['close','window'].includes(c.kind)&&!c.target&&!(c.kind==='window'&&['next','previous'].includes(c.arguments))){msg('Укажи имя процесса или окна.');return}
- if(c.kind==='media'&&!c.arguments){msg('Выбери действие мультимедиа в поле «Действие».');return}
- if(c.kind==='hotkey'&&!c.target){msg('Укажи сочетание клавиш.');return}
- if(c.kind==='window'&&!c.arguments){msg('Укажи действие с окном в поле «Действие».');return}
- if(c.kind==='script'&&!c.command.trim()){msg('Вставь текст сценария PowerShell или CMD.');return}
+ if(['app','bat','restart','close'].includes(kind)&&!target){msg('Укажи полный путь к файлу или EXE.');return}
+ if(kind==='media'&&!args){msg('Выбери действие мультимедиа.');return}
+ if(kind==='hotkey'&&!target){msg('Укажи сочетание клавиш.');return}
+ if(kind==='window'&&!args){msg('Выбери действие с окном.');return}
+ if(kind==='window'&&!['next','previous'].includes(args)&&!target){msg('Укажи имя процесса или часть заголовка окна.');return}
+ if(kind==='script'&&!c.command.trim()){msg('Вставь текст сценария PowerShell или CMD.');return}
  if(editingId){const i=commands.findIndex(x=>x.id===editingId);if(i>=0)commands[i]=c}else commands.push(c);
  render();clearEditor();msg('Изменение внесено. Нажми «Сохранить каталог».')
 }
-function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'script';el('target').value=c.target||'';el('arguments').value=c.arguments||'';el('scriptShell').value=c.shell||'powershell';el('scriptCommand').value=c.command||'';el('formTitle').textContent='Изменить команду';updateFields();window.scrollTo({top:0,behavior:'smooth'})}
+function editCommand(id){const c=commands.find(x=>x.id===id);if(!c)return;editingId=id;el('name').value=c.name;el('phrase').value=c.phrase;el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'script';el('target').value=c.target||'';el('arguments').value=c.arguments||'';el('scriptShell').value=c.shell||'powershell';el('scriptCommand').value=c.command||'';el('hotkeyCombo').value=c.kind==='hotkey'?(c.target||''):'';el('mediaAction').value=c.kind==='media'?(c.arguments||'GLOBAL_PLAYPAUSE'):'GLOBAL_PLAYPAUSE';el('windowAction').value=c.kind==='window'?(c.arguments||'focus'):'focus';updateFields();el('formTitle').textContent='Изменить команду';window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(id){commands=commands.filter(x=>x.id!==id);if(editingId===id)clearEditor();render();msg('Команда удалена из редактора. Нажми «Сохранить каталог».')}
 function render(){const root=el('commands');root.replaceChildren();if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
  commands.forEach(c=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');s.textContent=c.phrase+(c.aliases?.length?' · '+c.aliases.join(', '):'')+' · '+c.kind+' · '+c.target;info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(c.id);const del=document.createElement('button');del.className='danger';del.textContent='Удалить';del.onclick=()=>removeCommand(c.id);actions.append(edit,del);d.append(info,actions);root.append(d)})}
