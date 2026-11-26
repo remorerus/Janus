@@ -50,6 +50,7 @@ object CrashReporter {
         log("local crash dump handler initialized")
     }
 
+    @JvmStatic
     fun setOperation(operation: String) {
         val safeOperation = operation
             .filter { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
@@ -59,11 +60,13 @@ object CrashReporter {
         log("operation=$safeOperation")
     }
 
+    @JvmStatic
     fun clearOperation() {
         currentOperation = "idle"
         log("operation=idle")
     }
 
+    @JvmStatic
     fun log(message: String) {
         val safeMessage = message.take(240)
         val line = "${System.currentTimeMillis()} $safeMessage"
@@ -76,6 +79,7 @@ object CrashReporter {
         }
     }
 
+    @JvmStatic
     fun recordException(operation: String, throwable: Throwable) {
         setOperation(operation)
         persistCrashReport(Thread.currentThread(), throwable, operation)
