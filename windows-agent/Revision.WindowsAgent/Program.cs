@@ -27,6 +27,8 @@ builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Pro
 var app = builder.Build();
 var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
 var pendingSshKeyRequests = new ConcurrentDictionary<string, PendingSshKeyRequest>();
+DateTimeOffset? lastRevisionHeartbeatUtc = null;
+string? lastRevisionHeartbeatRemote = null;
 
 app.MapGet("/", (HttpContext context) =>
 {
@@ -384,6 +386,48 @@ app.MapGet("/v1/status", () => Results.Json(new {
     version = "0.2.0-test",
     paired = config.ClientSecret is not null
 }));
+
+// Authenticated heartbeat from the paired RE:Vision client. Discovery and a saved
+// pairing secret alone never mean that the client is currently connected.
+app.MapPost("/v1/heartbeat", async (HttpContext context) =>
+{
+    var body = await new StreamReader(context.Request.Body).ReadToEndAsync();
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path, timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray()) usedNonces.TryRemove(item.Key, out _);
+    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+
+    lastRevisionHeartbeatUtc = now;
+    lastRevisionHeartbeatRemote = context.Connection.RemoteIpAddress?.ToString();
+    return Results.Json(new { accepted = true, serverTimeUtc = now });
+});
+
+app.MapGet("/v1/manager/connection", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var ageSeconds = lastRevisionHeartbeatUtc is null
+        ? (double?)null
+        : Math.Max(0, (DateTimeOffset.UtcNow - lastRevisionHeartbeatUtc.Value).TotalSeconds);
+    var active = config.ClientSecret is not null && ageSeconds is not null && ageSeconds <= 90;
+    return Results.Json(new
+    {
+        paired = config.ClientSecret is not null,
+        active,
+        state = active ? "active" : config.ClientSecret is not null ? "paired-unavailable" : "not-paired",
+        lastHeartbeatUtc = lastRevisionHeartbeatUtc,
+        lastHeartbeatAgeSeconds = ageSeconds,
+        remoteAddress = lastRevisionHeartbeatRemote,
+        heartbeatTimeoutSeconds = 90
+    });
+});
 
 // Read-only LAN discovery. This endpoint and UDP advertisement expose no secrets.
 app.MapGet("/v1/discovery", () => Results.Json(new {
@@ -1320,6 +1364,18 @@ async function saveAll(){try{const r=await fetch('/v1/ssh-manager/commands',{met
 async function loadIdentity(){try{const r=await fetch('/v1/manager/identity',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('deviceName').value=d.name;el('identityStatus').textContent='Имя и постоянный ID загружены.'}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
 async function saveIdentity(){try{const r=await fetch('/v1/manager/identity',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el('deviceName').value.trim()})});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('deviceId').value=d.deviceId;el('identityStatus').textContent='Отображаемое имя сохранено: '+d.name}catch(e){el('identityStatus').textContent='Ошибка: '+e.message}}
 async function refreshDeviceState(){await loadIdentity();await loadPairing()}
+async function loadConnectionState(){
+ try{
+  const r=await fetch('/v1/manager/connection',{cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();
+  const state=el('connectionState'),details=el('connectionDetails');
+  if(d.active){state.textContent='Активно · очки на связи';state.style.color='#86efac';}
+  else if(d.paired){state.textContent='Сопряжено, но сейчас недоступно';state.style.color='#fcd34d';}
+  else{state.textContent='Не сопряжено';state.style.color='#fca5a5';}
+  details.textContent=d.lastHeartbeatUtc?'Последний heartbeat: '+new Date(d.lastHeartbeatUtc).toLocaleString()+' · '+Math.round(d.lastHeartbeatAgeSeconds)+' сек. назад'+(d.remoteAddress?' · IP: '+d.remoteAddress:''):'Heartbeat ещё не получен. Сохранённая привязка сама по себе не считается активным соединением.';
+ }catch(e){el('connectionState').textContent='Не удалось проверить соединение: '+e.message;}
+}
 async function loadPairing(){try{const r=await fetch('/v1/manager/pairing',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('pairingStatus').textContent=d.paired?'Устройство уже привязано. Повторная привязка не требуется.':d.message;el('pairingMessage').textContent=d.paired?'Привязка активна.':(d.codeAvailable?'Код доступен для первичной привязки.':'Активного кода нет или он истёк.')}catch(e){el('pairingStatus').textContent='Не удалось проверить привязку: '+e.message}}
 async function loadSshRequests(){try{const r=await fetch('/v1/ssh-key-requests',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const items=await r.json(),root=el('sshRequests');root.replaceChildren();if(!items.length){root.textContent='Новых запросов нет.';return}items.forEach(x=>{const card=document.createElement('div');card.className='item';const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.deviceName+' просит SSH-доступ';const details=document.createElement('small');details.textContent='Пользователь Windows: '+x.username+' · IP: '+x.remoteAddress+'\\nОтпечаток: '+x.fingerprint;info.append(title,details);const actions=document.createElement('div');actions.className='actions';const yes=document.createElement('button');yes.textContent='Разрешить';yes.onclick=()=>handleSshRequest(x.id,'approve');const no=document.createElement('button');no.className='danger';no.textContent='Отклонить';no.onclick=()=>handleSshRequest(x.id,'reject');actions.append(yes,no);card.append(info,actions);root.append(card)})}catch(e){el('sshRequestStatus').textContent='Не удалось проверить запросы: '+e.message}}
 async function handleSshRequest(id,action){try{const r=await fetch('/v1/ssh-key-requests/'+encodeURIComponent(id)+'/'+action,{method:'POST'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('sshRequestStatus').textContent=action==='approve'?'Подключение разрешено.':'Запрос отклонён.';await loadSshRequests()}catch(e){el('sshRequestStatus').textContent=e.message}}
@@ -1340,7 +1396,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 @media(max-width:760px){body{padding:14px}main{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 </style></head><body>
 <header><div><h1>RE:Vision · Центр управления</h1><div class="muted">Единая панель подключений и команд компьютера</div><nav class="manager-nav"><a href="/manager">Windows Agent</a><a href="/ssh-manager">SSH Agent</a></nav></div><span class="pill">Локальная панель</span></header>
-<main><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
+<main><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Состояние соединения с очками</h2><div id="connectionState" class="status">Проверка соединения…</div><div id="connectionDetails" class="muted">Ожидание подтверждённого heartbeat от RE:Vision.</div><button type="button" class="secondary" onclick="loadConnectionState()">Обновить состояние</button></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
 <div id="pairingState" class="status">Проверка состояния привязки…</div>
 <div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
 <button type="button" onclick="generatePairingCode()">Сгенерировать новый код</button><button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
@@ -1440,6 +1496,8 @@ async function saveCorrection(){const status=el('correctionStatus');try{const he
 loadCommands();
 loadIdentity();
 loadPairing();
+loadConnectionState();
+setInterval(loadConnectionState,5000);
 </script></body></html>
 """;
 
