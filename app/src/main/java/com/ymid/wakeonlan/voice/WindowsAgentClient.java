@@ -354,16 +354,28 @@ public final class WindowsAgentClient {
         return authenticatedRequestForDevice(context, device, "/v1/command/execute", body.toString());
     }
 
-    /** Resolves a saved Windows Agent by exact display name or exact voice alias. */
+    /**
+     * Resolves a Windows Agent from the device name already known to RE:Vision.
+     * First use the paired-agent display name/aliases; if the spoken name is a
+     * saved scanner entry, associate it with the paired agent by its current
+     * discovered identity or matching saved endpoint. Pairing secrets remain
+     * keyed only by the Windows Agent's stable deviceId.
+     */
     private static com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity resolveRegisteredDevice(
             Context context, String requestedName) throws Exception {
         com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
                 new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
         String wanted = normalizeDeviceName(requestedName);
-        if (wanted.isEmpty()) return registry.getDefault();
-        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices = registry.getAll();
-        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> matches = new java.util.ArrayList<>();
-        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : devices) {
+        if (wanted.isEmpty()) {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice = registry.getDefault();
+            if (defaultDevice != null) return defaultDevice;
+            throw new IllegalStateException("Не указано имя компьютера и не выбрано устройство по умолчанию.");
+        }
+
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> paired = registry.getAll();
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> exact =
+                new java.util.ArrayList<>();
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : paired) {
             if (!device.enabled) continue;
             boolean match = wanted.equals(normalizeDeviceName(device.displayName));
             try {
@@ -371,13 +383,83 @@ public final class WindowsAgentClient {
                 for (int i = 0; !match && i < aliases.length(); i++)
                     match = wanted.equals(normalizeDeviceName(aliases.optString(i, "")));
             } catch (Exception ignored) { }
-            if (match) matches.add(device);
+            if (match) exact.add(device);
         }
-        if (matches.size() > 1)
-            throw new IllegalStateException("Имя компьютера неоднозначно. Уточни голосовое имя устройства.");
-        if (matches.isEmpty())
-            throw new IllegalStateException("Компьютер «" + requestedName + "» не найден среди сопряжённых Windows Agent.");
-        return matches.get(0);
+        if (exact.size() == 1) return exact.get(0);
+        if (exact.size() > 1)
+            throw new IllegalStateException("Имя компьютера неоднозначно. Уточни имя устройства.");
+
+        // The spoken label may be the friendly name stored by RE:Vision's own
+        // network scanner, while the Windows Agent advertises the Windows host name.
+        java.util.List<com.ymid.wakeonlan.persistence.models.Device> scanned =
+                com.ymid.wakeonlan.persistence.repository.DeviceRepository.getInstance(context).getAll();
+        java.util.List<com.ymid.wakeonlan.persistence.models.Device> scannedMatches =
+                new java.util.ArrayList<>();
+        for (com.ymid.wakeonlan.persistence.models.Device item : scanned) {
+            if (item != null && wanted.equals(normalizeDeviceName(item.name))) scannedMatches.add(item);
+        }
+        if (scannedMatches.size() > 1)
+            throw new IllegalStateException("В списке RE:Vision несколько устройств с таким именем.");
+
+        java.util.List<JSONObject> discovered = new java.util.ArrayList<>();
+        try { discovered = discover(context); } catch (Exception ignored) { }
+
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> resolved =
+                new java.util.ArrayList<>();
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity pairedDevice : paired) {
+            if (!pairedDevice.enabled) continue;
+            JSONObject live = null;
+            for (JSONObject candidate : discovered) {
+                if (pairedDevice.deviceId.equals(candidate.optString("deviceId", ""))) {
+                    live = candidate;
+                    break;
+                }
+            }
+
+            boolean match = live != null
+                    && wanted.equals(normalizeDeviceName(live.optString("name", "")));
+
+            if (!match && !scannedMatches.isEmpty()) {
+                com.ymid.wakeonlan.persistence.models.Device saved = scannedMatches.get(0);
+                String savedName = normalizeDeviceName(saved.name);
+                String agentName = normalizeDeviceName(pairedDevice.displayName);
+                String discoveredName = live == null ? "" : normalizeDeviceName(live.optString("name", ""));
+                match = savedName.equals(agentName) || savedName.equals(discoveredName);
+
+                if (!match) {
+                    String savedStatusHost = endpointHost(saved.statusIp);
+                    String savedSshHost = endpointHost(saved.sshAddress);
+                    String liveHost = live == null ? "" : endpointHost(live.optString("address", ""));
+                    String pairedHost = endpointHost(pairedDevice.baseUrl);
+                    match = (!savedStatusHost.isEmpty()
+                                    && (savedStatusHost.equals(liveHost) || savedStatusHost.equals(pairedHost)))
+                            || (!savedSshHost.isEmpty()
+                                    && (savedSshHost.equals(liveHost) || savedSshHost.equals(pairedHost)));
+                }
+            }
+
+            if (match) resolved.add(pairedDevice);
+        }
+
+        if (resolved.size() == 1) return resolved.get(0);
+        if (resolved.size() > 1)
+            throw new IllegalStateException("Имя устройства соответствует нескольким сопряжённым компьютерам.");
+        if (!scannedMatches.isEmpty())
+            throw new IllegalStateException("Устройство «" + requestedName
+                    + "» найдено в списке RE:Vision, но для него не найден соответствующий сопряжённый Windows Agent.");
+        throw new IllegalStateException("Устройство «" + requestedName
+                + "» не найдено среди устройств RE:Vision и обнаруженных Windows Agent.");
+    }
+
+    private static String endpointHost(String endpoint) {
+        if (endpoint == null || endpoint.trim().isEmpty()) return "";
+        try {
+            String value = endpoint.trim();
+            if (!value.contains("://")) value = "http://" + value;
+            return new URL(value).getHost().toLowerCase(Locale.ROOT);
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private static boolean isLegacyStudioAlias(String value) {
