@@ -18,6 +18,7 @@ on:
       - revision-dynamic-agent-ip-2026-11-26
       - revision-crash-folder-2026-11-27
       - revision-clean-diagnostic-2026-11-27
+      - revision-crashdump-device-create-2026-11-27
     paths:
       - "app/**"
       - "*.gradle"
