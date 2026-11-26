@@ -101,8 +101,9 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
             deviceNameInput.setText(device.name);
             deviceGroupInput.setText(com.google.common.base.Strings.nullToEmpty(device.groupName));
             deviceStatusIpInput.setRealText(device.statusIp);
-            loadAdditionalNetworkProfiles(device.networkProfilesJson);
             deviceMacInput.setRealText(device.macAddress);
+            // Legacy profiles without their own MAC inherit the device's original MAC.
+            loadAdditionalNetworkProfiles(device.networkProfilesJson);
             deviceBroadcastInput.setRealText(device.broadcastAddress);
             devicePorts.setText(String.valueOf(device.port));
             deviceWanAddressInput.setRealText(device.wanIp);
