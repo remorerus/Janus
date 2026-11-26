@@ -369,13 +369,13 @@ export default {
     // AIMP playback requests addressed to STUDIO are Windows Agent catalog
     // commands, not media playback on the Android phone. Remove the spoken
     // computer name from the catalog phrase and route to the paired STUDIO PC.
-    const aimpPlaybackIntent = /(?:воспроизведи|воспроизвести|проиграй|проиграть|поставь|включи)\\s+(?:трек\\s+)?(?:aimp|аимп|аип)(?:\\s|$)/i.test(compact);
-    const explicitStudioTarget = /(?:studio\\s*pc|studio|студио|студия|студийный\\s*пк|на\\s+студио)(?:\\s|$)/i.test(compact);
+    const aimpPlaybackIntent = /(?:воспроизведи|воспроизвести|проиграй|проиграть|поставь|включи)\s+(?:трек\s+)?(?:aimp|аимп|аип)(?:\s|$)/i.test(compact);
+    const explicitStudioTarget = /(?:studio\s*pc|studio|студио|студия|студийный\s*пк|на\s+студио)(?:\s|$)/i.test(compact);
     if (!params && aimpPlaybackIntent && explicitStudioTarget) {
       const commandPhrase = String(transcript || '')
-        .replace(/\\s+(?:на\\s+)?(?:studio\\s*pc|studio|студио|студия|студийный\\s+пк)\\s*$/i, '')
+        .replace(/\s+(?:на\s+)?(?:studio\s*pc|studio|студио|студия|студийный\s+пк)\s*$/i, '')
         .replace(/[.!?]+$/g, '')
-        .replace(/\\s+/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
       params = {
         action: 'windows_launch',
