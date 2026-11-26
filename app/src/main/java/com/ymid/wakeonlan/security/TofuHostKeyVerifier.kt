@@ -34,7 +34,16 @@ class TofuHostKeyVerifier(context: Context) : HostKeyVerifier {
 
         val stored = prefs.getString(entryKey, null)
         if (stored == null) {
-            prefs.edit().putString(entryKey, "$keyType $fingerprint").apply()
+            // A Windows PC may be reached through Ethernet and Wi-Fi with different IPs.
+            // Reuse an already pinned host key only when the presented key fingerprint
+            // exactly matches a key trusted previously for another address.
+            val candidate = "$keyType $fingerprint"
+            val knownSameKey = prefs.all.values.any { it == candidate }
+            if (knownSameKey) {
+                prefs.edit().putString(entryKey, candidate).apply()
+                return true
+            }
+            prefs.edit().putString(entryKey, candidate).apply()
             return true
         }
 
