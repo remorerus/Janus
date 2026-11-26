@@ -44,7 +44,7 @@ public class AddDeviceValidationTest {
         onView(withId(R.id.device_name)).perform(typeText("My PC"), closeSoftKeyboard());
         onView(withId(R.id.add_device_menu_save)).perform(click());
         // Name field is valid — error must be absent
-        onView(withId(R.id.device_name)).check(matches(hasErrorText(null)));
+        onView(withId(R.id.device_name)).check(matches(hasErrorText((String) null)));
     }
 
     // ── MAC validation ────────────────────────────────────────────────────────
@@ -71,14 +71,14 @@ public class AddDeviceValidationTest {
     public void mac_withValidColonSeparator_noMacError() {
         onView(withId(R.id.device_mac))
                 .perform(click(), replaceText("AB:12:CD:34:EF:56"), closeSoftKeyboard());
-        onView(withId(R.id.device_mac)).check(matches(hasErrorText(null)));
+        onView(withId(R.id.device_mac)).check(matches(hasErrorText((String) null)));
     }
 
     @Test
     public void mac_withValidDashSeparator_noMacError() {
         onView(withId(R.id.device_mac))
                 .perform(click(), replaceText("AB-12-CD-34-EF-56"), closeSoftKeyboard());
-        onView(withId(R.id.device_mac)).check(matches(hasErrorText(null)));
+        onView(withId(R.id.device_mac)).check(matches(hasErrorText((String) null)));
     }
 
     @Test
