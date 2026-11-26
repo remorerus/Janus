@@ -52,9 +52,6 @@ public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost
             return;
         }
 
-        // Start the lightweight foreground recovery endpoint when the app opens.
-        VoiceBridgeRecoveryService.start(getApplicationContext());
-
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
@@ -67,6 +64,12 @@ public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost
         initializeShortcuts();
         InAppUpdateManager.attach(this);
         InAppUpdateManager.checkForUpdate(this);
+
+        // Do not let optional recovery-service startup delay or prevent the main
+        // activity from reaching RESUMED. The bridge has its own accessibility
+        // service; this endpoint is only a recovery fallback.
+        binding.getRoot().post(() ->
+                VoiceBridgeRecoveryService.start(getApplicationContext()));
     }
 
 
