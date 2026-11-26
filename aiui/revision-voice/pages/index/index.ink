@@ -410,7 +410,7 @@ export default {
     // saved command phrase so "... AIMP через виндовс агент" uses the PC catalog.
     if (!params && /(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/i.test(compact)) {
       const marker = /(?:через|по)\s+(?:windows|виндовс)\s*агент|(?:windows|виндовс)\s*агент/i;
-      const commandPhrase = transcript
+      const commandPhrase = commandTranscript
         .replace(marker, ' ')
         .replace(/^\s*ревижн[\s,.:;-]*/i, '')
         .replace(/^\s*выполни[\s,.:;-]*(?:команду[\s,.:;-]*)?/i, '')
@@ -440,11 +440,11 @@ export default {
     if (!params && /(запусти|запустить|открой|открыть|закрой|закрыть|перезапусти|перезапустить|переключись|переключить|сверни|свернуть|разверни|развернуть|восстанови|восстановить)/i.test(compact)) {
       // User-defined commands live in the Windows Agent catalog. Forward the
       // recognized phrase unchanged so the Windows Agent can match it safely.
-      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+      params = { action: 'windows_launch', deviceName: requestedWindowsDevice, commandPhrase: commandTranscript };
     }
 
     if (!params && /(chrome|хром|браузер|aimp|аимп|аип|плеер|музык|окно|приложен|скриншот|ctrl|control|alt|shift|win|клавиш)/i.test(compact)) {
-      params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+      params = { action: 'windows_launch', deviceName: requestedWindowsDevice, commandPhrase: commandTranscript };
     }
 
     if (!params) {
@@ -460,7 +460,7 @@ export default {
         params = { action: verb, deviceName };
       } else {
         // Any other phrase is a user-defined Windows Agent command candidate.
-        params = { action: 'windows_launch', deviceName: 'STUDIO PC', commandPhrase: transcript };
+        params = { action: 'windows_launch', deviceName: requestedWindowsDevice, commandPhrase: commandTranscript };
       }
     }
     if (!params) {
