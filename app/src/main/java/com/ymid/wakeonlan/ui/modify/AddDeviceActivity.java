@@ -103,6 +103,7 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
                 getDeviceSshAddress().isEmpty() && getDeviceSshPort() == -1 && getDeviceSshUsername().isEmpty() &&
                 getDeviceSshCommand().isEmpty() &&
                 "key".equals(getDeviceSshAuthType()) && getDeviceSshKeyAlias() == null
-                && getDeviceGroupInputText().isEmpty();
+                && getDeviceGroupInputText().isEmpty() &&
+                "[]".equals(getAdditionalNetworkProfilesJson());
     }
 }
