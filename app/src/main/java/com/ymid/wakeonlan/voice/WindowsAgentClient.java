@@ -234,11 +234,13 @@ public final class WindowsAgentClient {
                     .getSystemService(Context.WIFI_SERVICE);
             DhcpInfo dhcp = wifi == null ? null : wifi.getDhcpInfo();
             if (dhcp == null || dhcp.ipAddress == 0 || dhcp.netmask == 0) return null;
-            int local = dhcp.ipAddress;
-            int mask = dhcp.netmask;
+            // DhcpInfo stores IPv4 integers in little-endian byte order; convert
+            // before doing subnet arithmetic or the scan would walk the wrong octets.
+            int local = Integer.reverseBytes(dhcp.ipAddress);
+            int mask = Integer.reverseBytes(dhcp.netmask);
             int network = local & mask;
             int broadcast = network | ~mask;
-            long hostCount = Integer.toUnsignedLong(broadcast - network - 1);
+            long hostCount = (long) broadcast - (long) network - 1L;
             if (hostCount < 1 || hostCount > 1024) return null;
 
             for (int candidate = network + 1; candidate != broadcast; candidate++) {
