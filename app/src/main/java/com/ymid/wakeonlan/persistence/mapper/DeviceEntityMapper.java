@@ -8,13 +8,6 @@ public class DeviceEntityMapper implements EntityMapper<Device, DeviceEntity> {
     @Override
     public Device entityToModel(DeviceEntity entity) {
         if (entity == null) return new Device();
-        return new Device(
-                entity.id, entity.name, entity.macAddress, entity.broadcastAddress, entity.port,
-                entity.statusIp, entity.secureOnPassword, entity.enableRemoteShutdown,
-                entity.sshAddress, entity.sshPort, entity.sshUsername, entity.sshPassword,
-                entity.sshCommand, entity.shutdownOs == null ? "linux" : entity.shutdownOs,
-                entity.sshAuthType == null ? "password" : entity.sshAuthType,
-                entity.sshKeyAlias, entity.groupName, entity.wanIp, entity.wanPort);
         Device model = new Device(
                 entity.id, entity.name, entity.macAddress, entity.broadcastAddress, entity.port,
                 entity.statusIp, entity.secureOnPassword, entity.enableRemoteShutdown,
