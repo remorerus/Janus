@@ -23,7 +23,6 @@ public final class DeviceNetworkProfiles {
         LinkedHashSet<String> values = new LinkedHashSet<>();
         add(values, device == null ? null : device.statusIp);
         read(device, values, "statusIp");
-        if (values.isEmpty() && device != null) add(values, device.sshAddress);
         return new ArrayList<>(values);
     }
 
