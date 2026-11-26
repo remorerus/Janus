@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 using System.Linq;
 using Microsoft.AspNetCore.Http.Json;
 
@@ -411,16 +412,36 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
         .ToList();
 
         if (candidates.Count == 0)
-            return Results.NotFound(new { error = "No matching command in the local catalog", heard = phrase,
-                alternatives = hypotheses.Skip(1).ToArray() });
-        var bestScore = candidates[0].Best!.Score;
-        var best = candidates.Where(x => x.Best!.Score == bestScore).ToList();
-        if (best.Count != 1)
-            return Results.Conflict(new { error = "Several commands sound similar; no action was executed.", heard = phrase,
-                candidates = best.Select(x => x.Command.Name).ToArray() });
-        command = best[0].Command;
-        matchedHeard = best[0].Best!.Heard;
-        matchedBy = best[0].Best!.HypothesisIndex > 0 ? "alternative-tolerant" : "tolerant";
+        {
+            // AIMP is a built-in safe launch fallback: older/empty command catalogs
+            // must not make the standard "open AIMP" voice command unusable.
+            if (IsAimpLaunchPhrase(phrase))
+            {
+                var aimpPath = ResolveAimpExecutable();
+                if (aimpPath is not null)
+                {
+                    command = new AgentCommand("builtin-aimp", "AIMP", "аимп", "app", aimpPath, "");
+                    matchedBy = "built-in";
+                    matchedHeard = phrase;
+                }
+            }
+
+            if (command is null)
+                return Results.NotFound(new { error = "No matching command in the local catalog", heard = phrase,
+                    alternatives = hypotheses.Skip(1).ToArray() });
+        }
+        if (command is null)
+        {
+            var bestScore = candidates[0].Best!.Score;
+            var best = candidates.Where(x => x.Best!.Score == bestScore).ToList();
+            if (best.Count != 1)
+                return Results.Conflict(new { error = "Several commands sound similar; no action was executed.", heard = phrase,
+                    candidates = best.Select(x => x.Command.Name).ToArray() });
+            command = best[0].Command;
+            matchedHeard = best[0].Best!.Heard;
+            matchedBy = best[0].Best!.HypothesisIndex > 0 ? "alternative-tolerant" : "tolerant";
+        }
+
     }
 
     var launched = LaunchCatalogCommand(command);
@@ -497,6 +518,46 @@ static bool StopCatalogProcess(string target, uint sessionId)
         }
     }
     return found;
+}
+
+static bool IsAimpLaunchPhrase(string phrase)
+{
+    var tokens = NormalizeVoicePhrase(phrase).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    if (!tokens.Contains("аимп", StringComparer.Ordinal)) return false;
+    var allowed = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "аимп", "открой", "открыть", "запусти", "запустить", "включи", "включить",
+        "стартуй", "старт", "запуск", "программу", "приложение"
+    };
+    return tokens.All(allowed.Contains);
+}
+
+static string? ResolveAimpExecutable()
+{
+    var candidates = new List<string>();
+    foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+            using var appKey = baseKey.OpenSubKey(@"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\AIMP.exe");
+            var registered = appKey?.GetValue(null) as string;
+            if (!string.IsNullOrWhiteSpace(registered)) candidates.Add(registered.Trim().Trim('"'));
+        }
+        catch { }
+    }
+
+    foreach (var root in new[]
+    {
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+    }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+    {
+        candidates.Add(Path.Combine(root, "AIMP", "AIMP.exe"));
+        candidates.Add(Path.Combine(root, "AIMP", "AIMP64.exe"));
+    }
+
+    return candidates.FirstOrDefault(path => File.Exists(path));
 }
 
 static string NormalizeVoicePhrase(string value)
