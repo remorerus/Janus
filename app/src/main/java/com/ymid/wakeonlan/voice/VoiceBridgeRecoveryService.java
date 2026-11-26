@@ -74,10 +74,18 @@ public final class VoiceBridgeRecoveryService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification());
-        startServer();
-        mainHandler.postDelayed(supervisor, 20_000L);
+        try {
+            createNotificationChannel();
+            // This is a recovery-only endpoint. A failure to promote it to a
+            // foreground service must never crash the user's main RE:Vision UI.
+            startForeground(NOTIFICATION_ID, buildNotification());
+            startServer();
+            mainHandler.postDelayed(supervisor, 20_000L);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Recovery endpoint could not start; Accessibility bridge remains independent", e);
+            running = false;
+            stopSelf();
+        }
     }
 
     @Override
