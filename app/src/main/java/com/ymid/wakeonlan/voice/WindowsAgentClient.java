@@ -215,6 +215,16 @@ public final class WindowsAgentClient {
         }
     }
 
+    /** True when either the multi-device registry or the legacy STUDIO profile has a pairing. */
+    public static boolean isAnyConfigured(Context context) {
+        try {
+            com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+            if (registry.getDefault() != null) return true;
+        } catch (Exception ignored) { }
+        return isConfigured(context);
+    }
+
     /** Returns the saved STUDIO PC address without exposing the pairing secret. */
     public static String getConfiguredBaseUrl(Context context) {
         try {
