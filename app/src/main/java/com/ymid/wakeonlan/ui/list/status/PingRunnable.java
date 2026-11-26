@@ -30,6 +30,9 @@ public class PingRunnable implements Runnable {
     @Override
     public void run() {
         List<String> candidates = DeviceNetworkProfiles.statusAddresses(device);
+        if (candidates.isEmpty() && device.sshAddress != null && !device.sshAddress.trim().isEmpty()) {
+            candidates = java.util.Collections.singletonList(device.sshAddress.trim());
+        }
         if (candidates.isEmpty()) {
             notifyDeviceStatusListeners(new DeviceStatusSnapshot(DeviceStatus.UNKNOWN, null));
             return;
