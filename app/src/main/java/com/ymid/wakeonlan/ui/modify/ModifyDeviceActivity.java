@@ -244,7 +244,6 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(10), dp(8), dp(10), dp(8));
-        card.setBackgroundResource(com.google.android.material.R.drawable.mtrl_popupmenu_background);
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         cardParams.bottomMargin = dp(8);
@@ -376,6 +375,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
                 deviceSshAddressInput.getError() == null &&
                 deviceSshUsernameInput.getError() == null &&
                 deviceSshCommandInput.getError() == null &&
+                areAdditionalProfileAddressesValid() &&
                 (!deviceEnableRemoteShutdown.isChecked() || !Strings.isNullOrEmpty(sshKeyAlias));
     }
 
