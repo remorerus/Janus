@@ -65,6 +65,7 @@ public class NetworkScanFragment extends Fragment {
         scanning = true;
         scannedAddresses.set(0);
         networkScanAdapter.clearDataset();
+        NetworkScanCache.clear();
         networkScanAdapter.setScanning(true);
         binding.scanRescan.setVisibility(View.GONE);
         updateProgress();
@@ -123,6 +124,7 @@ public class NetworkScanFragment extends Fragment {
                 }
 
                 runOnUiThread(() -> {
+                    NetworkScanCache.put(ip, hostName);
                     networkScanAdapter.addDevice(networkScanDevice);
                     updateHeader();
                 });
