@@ -19,5 +19,8 @@ Import `RE-Vision.aix` as an update to the existing agent «Ревижн», not 
 
 Keep the existing intents and commands. Publish/update the existing agent resource in AIUI Studio, then synchronize the glasses resources through Hi Rokid.
 
+
+The stable existing Agent ID is stored in `.aix/agent-id` and is retained by the GitHub Actions pack step; keep this file in source control for future updates.
+
 ## Current milestone
 The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
