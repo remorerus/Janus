@@ -790,6 +790,11 @@ public final class WindowsAgentClient {
         prefs(context).edit().remove(KEY_BASE).remove(KEY_SECRET).remove(KEY_DEVICE_ID).commit();
     }
 
+    /** Validates and canonicalizes a saved private-LAN Windows Agent endpoint. */
+    public static String normalizeEndpoint(String input) throws Exception {
+        return normalizeBase(input);
+    }
+
     private static String normalizeBase(String input) throws Exception {
         if (input == null) throw new IllegalArgumentException("Укажи IP-адрес STUDIO PC.");
         String value = input.trim();
