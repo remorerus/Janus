@@ -71,6 +71,7 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
         Device device = new Device();
         device.name = getDeviceNameInputText();
         device.statusIp = getDeviceStatusIpText();
+        device.networkProfilesJson = getAdditionalNetworkProfilesJson();
         device.macAddress = getDeviceMacInputText();
         device.broadcastAddress = getDeviceBroadcastAddressText();
         device.port = getPort();
