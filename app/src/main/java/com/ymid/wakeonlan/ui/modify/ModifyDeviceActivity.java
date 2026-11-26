@@ -91,6 +91,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     protected TextView sshPublicKeyHint;
     protected TextView sshPublicKeyText;
     protected Button copySshKeyButton;
+    protected Button sshConnectButton;
+    protected TextView sshConnectStatus;
     protected Spinner deviceSshOsSpinner;
     protected TextView deviceSshOsSuggestion;
     protected Button sshTestShutdownButton;
@@ -129,6 +131,8 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         sshPublicKeyHint = binding.device.deviceSshPublicKeyHint;
         sshPublicKeyText = binding.device.deviceSshPublicKey;
         copySshKeyButton = binding.device.deviceButtonCopySshKey;
+        sshConnectButton = binding.device.deviceButtonSshConnect;
+        sshConnectStatus = binding.device.deviceSshConnectStatus;
         deviceSshOsSpinner = binding.device.deviceShutdownOs;
         deviceSshOsSuggestion = binding.device.deviceShutdownOsSuggestion;
 
