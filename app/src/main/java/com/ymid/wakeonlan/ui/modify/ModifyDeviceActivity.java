@@ -320,7 +320,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
 
     private boolean hasAdditionalStatusAddress() {
         for (NetworkProfileInput input : additionalNetworkProfiles) {
-            if (!input.status.getRealTextValue().trim().isEmpty()) return true;
+            if (!input.status.getRealTextValue().trim().isEmpty() || !input.broadcast.getRealTextValue().trim().isEmpty()) return true;
         }
         return false;
     }
@@ -360,7 +360,7 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceSecureOnPassword.addTextChangedListener(new SecureOnPasswordValidator(deviceSecureOnPassword));
 
         List<Supplier<Boolean>> remoteShutdownEnabledSupplier = Collections.singletonList(() -> deviceEnableRemoteShutdown.isChecked());
-        List<Supplier<Boolean>> statusIpFallbackAvailable = Arrays.asList(() -> deviceEnableRemoteShutdown.isChecked(), () -> isEmpty(deviceStatusIpInput) && !hasAdditionalStatusAddress());
+        List<Supplier<Boolean>> statusIpFallbackAvailable = Arrays.asList(() -> deviceEnableRemoteShutdown.isChecked(), () -> isEmpty(deviceStatusIpInput) && isEmpty(deviceBroadcastInput) && !hasAdditionalStatusAddress());
 
         deviceSshAddressInput.addTextChangedListener(new ConditionalInputNotEmptyValidator(deviceSshAddressInput,
                 R.string.add_device_error_ssh_address_empty, statusIpFallbackAvailable));
