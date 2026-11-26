@@ -33,7 +33,7 @@ class LauncherIconWorker(
         // Without an address there is no status to show; leave the icon as it is
         val host = HostReachability.statusHost(device) ?: return@withContext Result.success()
 
-        LauncherIconManager.updateLauncherIcon(appContext, HostReachability.isReachable(host))
+        LauncherIconManager.updateLauncherIcon(appContext, HostReachability.isDeviceReachable(device))
         Result.success()
     }
 
