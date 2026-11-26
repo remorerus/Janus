@@ -24,5 +24,7 @@ The stable existing Agent ID is stored in `.aix/agent-id` and is retained by the
 
 Windows media commands use the native Rokid AIUI voice route and the saved default paired Windows Agent when no computer name is spoken; the original command phrase is passed unchanged as `commandPhrase`.
 
+The action page reports command acceptance generically, so playback actions are not mislabeled as application launches.
+
 ## Current milestone
 The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
