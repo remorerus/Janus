@@ -47,7 +47,7 @@ public class MainActivityTest {
     @Test
     public void launches_showsFab() {
         try (ActivityScenario<MainActivity> ignored = ActivityScenario.launch(MainActivity.class)) {
-            onView(withId(R.id.add_device_fab)).check(matches(isDisplayed()));
+            onView(withId(R.id.add_device_button)).check(matches(isDisplayed()));
         }
     }
 
@@ -63,7 +63,7 @@ public class MainActivityTest {
     @Test
     public void fabClick_opensAddDeviceActivity() {
         try (ActivityScenario<MainActivity> ignored = ActivityScenario.launch(MainActivity.class)) {
-            onView(withId(R.id.add_device_fab)).perform(click());
+            onView(withId(R.id.add_device_button)).perform(click());
             intended(hasComponent(AddDeviceActivity.class.getName()));
         }
     }
