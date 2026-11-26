@@ -231,6 +231,22 @@ app.MapGet("/v1/manager/pairing", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
     var paired = config.ClientSecret is not null;
+
+    // Make the pairing code visible as soon as the local manager is opened.
+    // Older installations may have an empty or expired code in agent.json.
+    // Generate a fresh one automatically rather than requiring the operator
+    // to discover and press the separate generate button first.
+    if (!paired &&
+        (string.IsNullOrWhiteSpace(config.PairingCode) || DateTimeOffset.UtcNow > config.PairingExpiresUtc))
+    {
+        config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+        config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+        config.Save(configPath);
+        var codePath = Path.ChangeExtension(configPath, ".pairing-code.txt");
+        File.WriteAllText(codePath,
+            $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Run this file locally on this PC and keep the code private.");
+    }
+
     var codeAvailable = !paired && !string.IsNullOrWhiteSpace(config.PairingCode) && DateTimeOffset.UtcNow <= config.PairingExpiresUtc;
     return Results.Json(new
     {
@@ -239,7 +255,7 @@ app.MapGet("/v1/manager/pairing", (HttpContext context) =>
         pairingCode = codeAvailable ? config.PairingCode : null,
         expiresUtc = codeAvailable ? config.PairingExpiresUtc : (DateTimeOffset?)null,
         message = paired ? "Устройство уже привязано. Повторная привязка не требуется." :
-            codeAvailable ? "Код действует до указанного времени." : "Активного кода нет или срок его действия истёк."
+            codeAvailable ? "Код действует до указанного времени." : "Не удалось создать код привязки."
     });
 });
 
