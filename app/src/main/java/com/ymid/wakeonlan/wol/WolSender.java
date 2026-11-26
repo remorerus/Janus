@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
 import com.ymid.wakeonlan.ui.modify.BroadcastHelper;
 
 public class WolSender {
@@ -30,7 +31,9 @@ public class WolSender {
 
     public static void sendWolPacket(Device device) {
         EXECUTOR.execute(() -> {
-            sendPacket(device, device.broadcastAddress);
+            for (String address : DeviceNetworkProfiles.broadcastAddresses(device)) {
+                sendPacket(device, address);
+            }
             new BroadcastHelper().getBroadcastAddress()
                     .ifPresent(addr -> sendPacket(device, addr.getHostAddress()));
 
