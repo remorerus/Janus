@@ -22,5 +22,7 @@ Keep the existing intents and commands. Publish/update the existing agent resour
 
 The stable existing Agent ID is stored in `.aix/agent-id` and is retained by the GitHub Actions pack step; keep this file in source control for future updates.
 
+Windows media commands use the native Rokid AIUI voice route and the saved default paired Windows Agent when no computer name is spoken; the original command phrase is passed unchanged as `commandPhrase`.
+
 ## Current milestone
 The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
