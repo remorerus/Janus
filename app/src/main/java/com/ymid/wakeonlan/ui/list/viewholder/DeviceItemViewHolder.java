@@ -234,7 +234,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                 if (agentResult == 1) {
                     setServiceState(agentLed, agentState, "СОПРЯЖЁН", 1);
                 } else if (agentResult == 0) {
-                    setServiceState(agentLed, agentState, "OFFLINE", 2);
+                    setServiceState(agentLed, agentState, "НЕ ПОДТВЕРЖДЁН", 2);
                 } else {
                     setServiceState(agentLed, agentState, "НЕ ПРИВЯЗАН", 0);
                 }
