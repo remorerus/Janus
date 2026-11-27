@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.ymid.wakeonlan.R;
+import com.ymid.wakeonlan.crash.CrashReporter;
 import com.ymid.wakeonlan.databinding.FragmentListDevicesBinding;
 import com.ymid.wakeonlan.persistence.models.Device;
 import com.ymid.wakeonlan.persistence.repository.DeviceRepository;
@@ -72,20 +73,29 @@ public class DeviceListFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        CrashReporter.setOperation("device_list.repository_init");
         deviceRepository = DeviceRepository.getInstance(getContext());
 
+        CrashReporter.setOperation("device_list.recycler_init");
         instantiateRecyclerView();
         initializeCommandBar();
+        CrashReporter.setOperation("device_list.observe_registration");
         registerLiveDataObserver();
     }
 
     private void registerLiveDataObserver() {
+        // Keep this operation active until Room emits the first list snapshot.
+        // A crash during SQLCipher open, Room query, mapping or first render will
+        // therefore be attributed to the device-list load rather than generic startup.
+        CrashReporter.setOperation("device_list.waiting_for_first_emission");
         deviceRepository.getAllAsObservable()
                 .observe(getViewLifecycleOwner(), devices -> {
+                    CrashReporter.setOperation("device_list.render_first_emission");
                     this.devices = devices == null ? new ArrayList<>() : devices;
-                    deviceListAdapter.updateDataset(devices);
+                    deviceListAdapter.updateDataset(this.devices);
                     updateCommandSuggestions();
                     updateHeader();
+                    CrashReporter.clearOperation();
                 });
         DeviceStatusBoard.getInstance().getChanges()
                 .observe(getViewLifecycleOwner(), change -> updateHeader());
