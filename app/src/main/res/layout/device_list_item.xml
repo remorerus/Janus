@@ -78,6 +78,71 @@
             tools:text="••:••:••:••:••:4F" />
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/device_ip_arrow"
+            android:layout_width="18dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="➜"
+            android:textColor="@color/ledOnlineColor"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/device_ssh_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="SSH"
+            android:textAppearance="@style/TextAppearance.App.Meta" />
+
+        <View
+            android:id="@+id/device_ssh_led"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/device_status_unknown" />
+
+        <TextView
+            android:id="@+id/device_ssh_state"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="ПРОВЕРКА"
+            android:textAppearance="@style/TextAppearance.App.Meta"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/device_agent_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="Windows Agent"
+            android:textAppearance="@style/TextAppearance.App.Meta" />
+
+        <View
+            android:id="@+id/device_agent_led"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/device_status_unknown" />
+
+        <TextView
+            android:id="@+id/device_agent_state"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ПРОВЕРКА"
+            android:textAppearance="@style/TextAppearance.App.Meta"
+            android:textSize="10sp" />
+    </LinearLayout>
+
     <com.ymid.wakeonlan.ui.list.SparklineView
         android:id="@+id/device_latency_sparkline"
         android:layout_width="match_parent"
