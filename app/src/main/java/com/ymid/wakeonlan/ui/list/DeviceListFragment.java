@@ -45,7 +45,7 @@ public class DeviceListFragment extends Fragment {
     private DeviceListAdapter deviceListAdapter;
     private List<Device> devices = new ArrayList<>();
 
-    private static final StatusTesterPool STATUS_TESTER_POOL = PingStatusTesterPool.getInstance();
+    private StatusTesterPool statusTesterPool;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
@@ -59,13 +59,13 @@ public class DeviceListFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
-        PingStatusTesterPool.getInstance().pauseAllForType(StatusTestType.LIST);
+        if (statusTesterPool != null) statusTesterPool.pauseAllForType(StatusTestType.LIST);
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        PingStatusTesterPool.getInstance().resumeAll();
+        if (statusTesterPool != null) statusTesterPool.resumeAll();
         updateHeader();
     }
 
@@ -219,7 +219,8 @@ public class DeviceListFragment extends Fragment {
 
     private void instantiateRecyclerView() {
         List<Device> initialDataset = new ArrayList<>();
-        deviceListAdapter = new DeviceListAdapter(initialDataset, this::onDeviceWakeRequested, STATUS_TESTER_POOL);
+        statusTesterPool = PingStatusTesterPool.getInstance(requireContext().getApplicationContext());
+        deviceListAdapter = new DeviceListAdapter(initialDataset, this::onDeviceWakeRequested, statusTesterPool);
         deviceListAdapter.setHasStableIds(true);
         RecyclerView devicesRecyclerView = binding.machineList;
 
