@@ -1,8 +1,12 @@
 package com.ymid.wakeonlan.shutdown;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 public class ShutdownModel {
 
-    private final String sshAddress;
+    private final List<String> sshAddresses;
     private final int sshPort;
     private final String username;
     private final String password;
@@ -12,7 +16,13 @@ public class ShutdownModel {
 
     public ShutdownModel(String sshAddress, int sshPort, String username, String password, String command,
                          String sshAuthType, String sshKeyAlias) {
-        this.sshAddress = sshAddress;
+        this(Collections.singletonList(sshAddress), sshPort, username, password, command, sshAuthType, sshKeyAlias);
+    }
+
+    public ShutdownModel(List<String> sshAddresses, int sshPort, String username, String password, String command,
+                         String sshAuthType, String sshKeyAlias) {
+        this.sshAddresses = Collections.unmodifiableList(new ArrayList<>(sshAddresses == null
+                ? Collections.emptyList() : sshAddresses));
         this.sshPort = sshPort;
         this.username = username;
         this.password = password;
@@ -25,7 +35,8 @@ public class ShutdownModel {
         this(sshAddress, sshPort, username, password, command, "password", null);
     }
 
-    public String getSshAddress() { return sshAddress; }
+    public String getSshAddress() { return sshAddresses.isEmpty() ? null : sshAddresses.get(0); }
+    public List<String> getSshAddresses() { return sshAddresses; }
     public int getSshPort() { return sshPort; }
     public String getUsername() { return username; }
     public String getPassword() { return password; }
