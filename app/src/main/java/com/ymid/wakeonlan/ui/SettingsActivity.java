@@ -466,25 +466,35 @@ public class SettingsActivity extends AppCompatActivity {
                                 Toast.makeText(requireContext(), "Сначала укажи адрес STUDIO PC.", Toast.LENGTH_LONG).show();
                                 return;
                             }
-                            windowsAgentPreference.setSummary("Проверяем Windows Agent…");
+                            windowsAgentPreference.setSummary("Проверяем доступность и ключ RE:Vision…");
+                            Context appContext = requireContext().getApplicationContext();
                             new Thread(() -> {
                                 try {
-                                    org.json.JSONObject status = com.ymid.wakeonlan.voice.WindowsAgentClient.status(requireContext(), address);
+                                    org.json.JSONObject status =
+                                            com.ymid.wakeonlan.voice.WindowsAgentClient.checkPairing(appContext, address);
                                     boolean paired = status.optBoolean("paired", false);
+                                    boolean agentPaired = status.optBoolean("agentPaired", false);
                                     handler.post(() -> {
-                                        windowsAgentPreference.setSummary(paired
-                                                ? "Сопряжён · " + address
-                                                : "Агент доступен, но не сопряжён · " + address);
-                                        Toast.makeText(requireContext(), paired
-                                                ? "Windows Agent доступен, сопряжение сохранено."
-                                                : "Windows Agent доступен, требуется сопряжение.",
-                                                Toast.LENGTH_LONG).show();
+                                        if (!isAdded()) return;
+                                        String summary = paired
+                                                ? "Сопряжение подтверждено · " + address
+                                                : agentPaired
+                                                    ? "Агент привязан на ПК, ключ RE:Vision не подтверждён · " + address
+                                                    : "Агент доступен, требуется сопряжение · " + address;
+                                        windowsAgentPreference.setSummary(summary);
+                                        String message = paired
+                                                ? "Windows Agent подтвердил сохранённый ключ RE:Vision."
+                                                : agentPaired
+                                                    ? "На ПК Agent уже числится привязанным, но очки не подтвердили свой ключ. Ничего не сбрасывали."
+                                                    : "Windows Agent доступен, но ещё не сопряжён.";
+                                        Toast.makeText(appContext, message, Toast.LENGTH_LONG).show();
                                     });
                                 } catch (Exception e) {
                                     String message = e.getMessage() == null ? "Нет ответа от Windows Agent" : e.getMessage();
                                     handler.post(() -> {
+                                        if (!isAdded()) return;
                                         windowsAgentPreference.setSummary("Нет связи · " + address);
-                                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show();
+                                        Toast.makeText(appContext, message, Toast.LENGTH_LONG).show();
                                     });
                                 }
                             }, "revision-windows-status").start();
