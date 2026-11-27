@@ -102,12 +102,10 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         this.drivesLauncherIcon = drivesLauncherIcon;
 
         deviceName.setText(device.name);
-        deviceMacAddress.setObfuscatedText(device.macAddress);
-        // Never show a configured/first route as if it were active. The IP is populated only
-        // after a successful status check identifies the exact endpoint that answered.
-        deviceIp.setText("");
-        deviceIp.setVisibility(View.GONE);
-        lastActiveAddress = null;
+        // Restore the last verified endpoint immediately. A RecyclerView rebind (Edit,
+        // screen-off/on, or data refresh) must not erase the known active route.
+        lastActiveAddress = statusBoard.getActiveAddress(device.id);
+        updateActiveIp(lastActiveAddress, false);
         deviceIpArrow.setVisibility(View.GONE);
         setServiceState(sshLed, sshState, "ПРОВЕРКА", 0);
         setServiceState(agentLed, agentState, "ПРОВЕРКА", 0);
@@ -163,7 +161,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
     private void updateStatusDetails(int deviceId, DeviceStatusSnapshot statusSnapshot) {
         itemView.post(() -> {
-            statusBoard.record(deviceId, statusSnapshot);
+            boolean addressChanged = statusBoard.record(deviceId, statusSnapshot);
             // The row may have been rebound to another device while the check was running
             if (device == null || device.id != deviceId) {
                 return;
@@ -171,27 +169,32 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
             DeviceStatus status = statusSnapshot.getStatus();
             if (status == DeviceStatus.ONLINE) {
-                String activeAddress = statusSnapshot.getActiveAddress();
-                updateActiveIp(activeAddress);
+                String activeAddress = statusBoard.getActiveAddress(deviceId);
+                updateActiveIp(activeAddress, addressChanged);
                 updateLauncherIconIfNeeded(true);
                 render(RowState.ONLINE, statusSnapshot.getLatencyMs());
             } else if (status == DeviceStatus.OFFLINE) {
-                updateActiveIp(null);
+                // Keep the last confirmed route visible while showing the device as offline.
+                updateActiveIp(statusBoard.getActiveAddress(deviceId), false);
                 updateLauncherIconIfNeeded(false);
                 render(statusBoard.isWaking(deviceId) ? RowState.WAKING : RowState.OFFLINE, null);
             } else {
+                updateActiveIp(statusBoard.getActiveAddress(deviceId), false);
                 render(RowState.UNKNOWN, null);
             }
         });
     }
 
-    private void updateActiveIp(String activeAddress) {
-        String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress;
+    private void updateActiveIp(String activeAddress, boolean addressChanged) {
+        String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress.trim();
         String previous = lastActiveAddress;
         lastActiveAddress = next;
-        deviceIp.setText(next == null ? "" : next);
-        deviceIp.setVisibility(next == null ? View.GONE : View.VISIBLE);
-        if (next != null && previous != null && !previous.equals(next)) {
+        deviceIp.setText(next == null ? "IP не определён" : next);
+        deviceIp.setVisibility(View.VISIBLE);
+        if (device != null) {
+            deviceMacAddress.setObfuscatedText(DeviceNetworkProfiles.macAddressFor(device, next));
+        }
+        if (addressChanged && next != null && previous != null && !previous.equalsIgnoreCase(next)) {
             deviceIpArrow.setVisibility(View.VISIBLE);
             deviceIp.clearAnimation();
             deviceIp.startAnimation(new TranslateAnimation(-dp(18), 0, 0, 0) {{
@@ -225,7 +228,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             int agentResult = probeWindowsAgent(target);
             itemView.post(() -> {
                 if (device == null || device.id != targetId) return;
-                setServiceState(sshLed, sshState, sshOnline ? "ONLINE" : "OFFLINE",
+                setServiceState(sshLed, sshState, sshOnline ? "ПОРТ ОТКРЫТ" : "НЕТ СВЯЗИ",
                         sshOnline ? 1 : 2);
                 if (agentResult == 1) {
                     setServiceState(agentLed, agentState, "ONLINE", 1);
@@ -295,15 +298,9 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         dot.setColor(color);
         led.setBackground(dot);
         label.setTextColor(color);
-        if (state == 1) {
-            AlphaAnimation pulse = new AlphaAnimation(0.55f, 1f);
-            pulse.setDuration(850);
-            pulse.setRepeatMode(Animation.REVERSE);
-            pulse.setRepeatCount(Animation.INFINITE);
-            led.startAnimation(pulse);
-        } else {
-            led.clearAnimation();
-        }
+        // Service indicators remain steady; pulse animation is reserved for actual
+        // wake/action progress, not a successful TCP port probe.
+        led.clearAnimation();
     }
 
     private void render(RowState state, Long latencyMs) {
