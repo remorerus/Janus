@@ -25,14 +25,21 @@ import com.ymid.wakeonlan.ui.list.viewholder.GroupHeaderViewHolder;
 import com.ymid.wakeonlan.ui.list.viewholder.ListViewType;
 
 public class DeviceListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    public interface DeviceOrderCallback {
+        void onMoveDevice(Device device, int direction);
+    }
+
 
     private List<Object> items = Collections.emptyList();
     private final DeviceClickedCallback deviceClickedCallback;
     private final StatusTesterPool statusTesterPool;
+    private final DeviceOrderCallback deviceOrderCallback;
 
-    public DeviceListAdapter(List<Device> initialDataset, DeviceClickedCallback deviceClickedCallback, StatusTesterPool statusTesterPool) {
+    public DeviceListAdapter(List<Device> initialDataset, DeviceClickedCallback deviceClickedCallback,
+                             StatusTesterPool statusTesterPool, DeviceOrderCallback deviceOrderCallback) {
         this.deviceClickedCallback = deviceClickedCallback;
         this.statusTesterPool = statusTesterPool;
+        this.deviceOrderCallback = deviceOrderCallback;
         this.items = buildFlatList(initialDataset);
     }
 
@@ -89,7 +96,7 @@ public class DeviceListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             return new GroupHeaderViewHolder(view);
         } else {
             View view = inflater.inflate(R.layout.device_list_item, viewGroup, false);
-            return new DeviceItemViewHolder(view, deviceClickedCallback, statusTesterPool);
+            return new DeviceItemViewHolder(view, deviceClickedCallback, statusTesterPool, deviceOrderCallback);
         }
     }
 
@@ -124,11 +131,25 @@ public class DeviceListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         return RecyclerView.NO_POSITION;
     }
 
+    private int findNeighborDevicePosition(int position, int direction) {
+        if (position < 0 || position >= items.size() || !(items.get(position) instanceof Device)) return -1;
+        Device current = (Device) items.get(position);
+        String group = Strings.nullToEmpty(current.groupName);
+        for (int i = position + direction; i >= 0 && i < items.size(); i += direction) {
+            Object candidate = items.get(i);
+            if (candidate instanceof Device
+                    && group.equals(Strings.nullToEmpty(((Device) candidate).groupName))) return i;
+        }
+        return -1;
+    }
+
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder viewHolder, int position) {
         int viewType = getItemViewType(position);
         if (viewType == ListViewType.DEVICE.ordinal()) {
-            ((DeviceItemViewHolder) viewHolder).fromDevice((Device) items.get(position), position == firstDevicePosition());
+            ((DeviceItemViewHolder) viewHolder).fromDevice((Device) items.get(position),
+                    position == firstDevicePosition(), findNeighborDevicePosition(position, -1) >= 0,
+                    findNeighborDevicePosition(position, 1) >= 0);
         } else if (viewType == ListViewType.GROUP_HEADER.ordinal()) {
             ((GroupHeaderViewHolder) viewHolder).bind((String) items.get(position));
         }
