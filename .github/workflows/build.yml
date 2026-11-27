@@ -86,6 +86,7 @@ jobs:
         id: unit_tests
         if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26'
         continue-on-error: true
+        timeout-minutes: 2
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon testDebugUnitTest
@@ -93,7 +94,7 @@ jobs:
       - name: Run Android startup smoke test
         id: startup_smoke
         continue-on-error: true
-        timeout-minutes: 6
+        timeout-minutes: 2
         uses: reactivecircus/android-emulator-runner@v2
         env:
           # GitHub-hosted Linux runners may not expose /dev/kvm. Without KVM,
