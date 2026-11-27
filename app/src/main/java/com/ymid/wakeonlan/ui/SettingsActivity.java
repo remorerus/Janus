@@ -167,8 +167,9 @@ public class SettingsActivity extends AppCompatActivity {
             boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isAnyConfigured(requireContext());
             String savedAgentHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
             windowsAgentPreference.setSummary(agentPaired
-                    ? "Сопряжён · " + (savedAgentHost == null ? "адрес сохранён" : savedAgentHost)
-                    : "Не сопряжён · подключение по локальной сети");
+                    ? "Профиль сохранён · требуется проверка подписи · "
+                            + (savedAgentHost == null ? "адрес не определён" : savedAgentHost)
+                    : "Нет сохранённого профиля · подключение по локальной сети");
             getPreferenceScreen().addPreference(windowsAgentPreference);
 
             // Diagnostic action: send a signed lock command directly to Windows Agent,
