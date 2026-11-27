@@ -35,6 +35,7 @@ import com.ymid.wakeonlan.ui.LauncherIconManager;
 import com.ymid.wakeonlan.ui.ObfuscatedTextView;
 import com.ymid.wakeonlan.ui.list.DeviceClickedCallback;
 import com.ymid.wakeonlan.ui.list.SparklineView;
+import com.ymid.wakeonlan.voice.WindowsAgentClient;
 import com.ymid.wakeonlan.ui.list.status.DeviceStatusBoard;
 import com.ymid.wakeonlan.ui.list.status.DeviceStatusListener;
 import com.ymid.wakeonlan.ui.list.status.DeviceStatusSnapshot;
@@ -231,7 +232,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                 setServiceState(sshLed, sshState, sshOnline ? "ПОРТ ОТКРЫТ" : "НЕТ СВЯЗИ",
                         sshOnline ? 1 : 2);
                 if (agentResult == 1) {
-                    setServiceState(agentLed, agentState, "ONLINE", 1);
+                    setServiceState(agentLed, agentState, "СОПРЯЖЁН", 1);
                 } else if (agentResult == 0) {
                     setServiceState(agentLed, agentState, "OFFLINE", 2);
                 } else {
@@ -253,37 +254,13 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         }
     }
 
-    /** 1=online, 0=offline, -1=no paired agent associated with this device name. */
+    /** 1=cryptographically verified pairing, 0=known but unreachable/invalid, -1=no association. */
     private int probeWindowsAgent(Device target) {
         try {
-            List<WindowsAgentDeviceEntity> paired =
-                    new WindowsAgentDeviceRegistry(itemView.getContext()).getAll();
-            WindowsAgentDeviceEntity match = null;
-            for (WindowsAgentDeviceEntity candidate : paired) {
-                if (candidate != null && candidate.enabled && candidate.displayName != null
-                        && target.name != null
-                        && candidate.displayName.trim().equalsIgnoreCase(target.name.trim())) {
-                    match = candidate;
-                    break;
-                }
-            }
-            if (match == null || Strings.isNullOrEmpty(match.baseUrl)) return -1;
-            URL statusUrl = new URL(match.baseUrl.replaceAll("/+$", "") + "/v1/status");
-            HttpURLConnection connection = (HttpURLConnection) statusUrl.openConnection();
-            try {
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(1200);
-                connection.setReadTimeout(1200);
-                int code = connection.getResponseCode();
-                if (code < 200 || code >= 300) return 0;
-                try (java.io.InputStream in = connection.getInputStream()) {
-                    byte[] buffer = new byte[1024];
-                    while (in.read(buffer) != -1) { }
-                }
-                return 1;
-            } finally {
-                connection.disconnect();
-            }
+            WindowsAgentDeviceEntity match =
+                    WindowsAgentClient.findRegisteredDeviceForCard(itemView.getContext(), target);
+            if (match == null) return -1;
+            return WindowsAgentClient.verifyRegisteredPairing(itemView.getContext(), match, target) ? 1 : 0;
         } catch (Exception ignored) {
             return 0;
         }
