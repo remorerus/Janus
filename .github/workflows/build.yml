@@ -1,4 +1,4 @@
-run-name: RE:Vision signed APK build (${{ github.ref_name }}) # Wi-Fi diagnostics rebuild
+run-name: RE:Vision signed APK build (${{ github.ref_name }}) # IP transition arrows and SSH voice routing rebuild
 name: Build RE:Vision APK
 
 on:
