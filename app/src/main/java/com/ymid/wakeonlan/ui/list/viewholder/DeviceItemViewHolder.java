@@ -239,7 +239,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     }
 
     private boolean probeSsh(Device target) {
-        String host = !Strings.isNullOrEmpty(target.sshAddress) ? target.sshAddress.trim() : lastActiveAddress;
+        String host = !Strings.isNullOrEmpty(lastActiveAddress) ? lastActiveAddress : target.sshAddress;
         if (Strings.isNullOrEmpty(host)) return false;
         int port = target.sshPort == null || target.sshPort < 1 ? 22 : target.sshPort;
         try (Socket socket = new Socket()) {
