@@ -1293,7 +1293,10 @@ public final class VoiceBridgeAccessibilityService extends AccessibilityService 
             }
         }
         normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFKC);
-        return normalized.replaceAll("\\s+", " ").trim().toLowerCase(java.util.Locale.ROOT)
+        normalized = normalized.replaceAll("[\\s_-]+", "").toLowerCase(java.util.Locale.ROOT);
+        // Voice transcription commonly hears the brand-like device label as
+        // "студия локал", while the saved profile may say "студио локал".
+        return normalized.replace("студиялокал", "studiolocal")
                 .replace("студиолокал", "studiolocal");
     }
 
