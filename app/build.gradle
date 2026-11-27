@@ -12,7 +12,7 @@ if (firebaseConfigured) {
 
 android {
     defaultConfig {
-        versionCode 131 // Local crash dumps and device-creation diagnostics, release 1.9.25
+        versionCode 132 // Device Agent controls and persistent device ordering, based on release 1.9.25 diagnostics
         buildConfigField 'boolean', 'FIREBASE_CONFIGURED', firebaseConfigured.toString()
     }
     buildFeatures {
