@@ -19,6 +19,7 @@ on:
       - revision-crash-folder-2026-11-27
       - revision-clean-diagnostic-2026-11-27
       - revision-crashdump-device-create-2026-11-27
+      - revision-live-device-card-2026-11-27
     paths:
       - "app/**"
       - "*.gradle"
