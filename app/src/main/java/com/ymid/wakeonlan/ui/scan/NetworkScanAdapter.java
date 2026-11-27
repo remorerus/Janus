@@ -20,6 +20,7 @@ import com.google.common.base.Strings;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
 import com.ymid.wakeonlan.ui.scan.model.NetworkScanDevice;
 import com.ymid.wakeonlan.ui.scan.viewholder.EmptyViewHolder;
 import com.ymid.wakeonlan.ui.scan.viewholder.ListViewType;
@@ -31,13 +32,17 @@ public class NetworkScanAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
     private Map<String, String> knownDeviceNames = new HashMap<>();
     private boolean scanning;
 
-    /** Saved devices by IP address, so results already in the app are marked instead of offered again. */
+    /** All saved primary and additional network addresses, so Scan never creates a duplicate for a known profile. */
     public void setKnownDevices(List<Device> devices) {
         Map<String, String> names = new HashMap<>();
         for (Device device : devices) {
-            for (String address : new String[]{device.statusIp, device.sshAddress, device.broadcastAddress}) {
+            java.util.LinkedHashSet<String> addresses = new java.util.LinkedHashSet<>();
+            if (!Strings.isNullOrEmpty(device.sshAddress)) addresses.add(device.sshAddress.trim());
+            addresses.addAll(DeviceNetworkProfiles.statusAddresses(device));
+            addresses.addAll(DeviceNetworkProfiles.broadcastAddresses(device));
+            for (String address : addresses) {
                 if (!Strings.isNullOrEmpty(address)) {
-                    names.put(address, device.name);
+                    names.put(address.trim(), device.name);
                 }
             }
         }
