@@ -2,6 +2,7 @@ package com.ymid.wakeonlan.ui.list;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -19,7 +20,11 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.crash.CrashReporter;
@@ -39,6 +44,9 @@ import com.ymid.wakeonlan.ui.list.status.pool.StatusTesterPool;
 
 
 public class DeviceListFragment extends Fragment {
+
+    private static final String ORDER_PREFS = "revision_device_order";
+    private static final String ORDER_KEY = "device_ids";
 
     private DeviceRepository deviceRepository;
     private FragmentListDevicesBinding binding;
@@ -91,7 +99,7 @@ public class DeviceListFragment extends Fragment {
         deviceRepository.getAllAsObservable()
                 .observe(getViewLifecycleOwner(), devices -> {
                     CrashReporter.setOperation("device_list.render_first_emission");
-                    this.devices = devices == null ? new ArrayList<>() : devices;
+                    this.devices = applySavedDeviceOrder(devices);
                     deviceListAdapter.updateDataset(this.devices);
                     updateCommandSuggestions();
                     updateHeader();
@@ -99,6 +107,51 @@ public class DeviceListFragment extends Fragment {
                 });
         DeviceStatusBoard.getInstance().getChanges()
                 .observe(getViewLifecycleOwner(), change -> updateHeader());
+    }
+
+    private List<Device> applySavedDeviceOrder(List<Device> source) {
+        List<Device> ordered = source == null ? new ArrayList<>() : new ArrayList<>(source);
+        String saved = requireContext().getSharedPreferences(ORDER_PREFS, Context.MODE_PRIVATE)
+                .getString(ORDER_KEY, "");
+        if (saved == null || saved.trim().isEmpty()) return ordered;
+        Map<Integer, Integer> rank = new HashMap<>();
+        String[] ids = saved.split(",");
+        for (int i = 0; i < ids.length; i++) {
+            try { rank.put(Integer.parseInt(ids[i].trim()), i); }
+            catch (NumberFormatException ignored) { }
+        }
+        Collections.sort(ordered, Comparator.comparingInt(d -> rank.getOrDefault(d.id, Integer.MAX_VALUE)));
+        return ordered;
+    }
+
+    private void persistDeviceOrder() {
+        StringBuilder value = new StringBuilder();
+        for (Device item : devices) {
+            if (value.length() > 0) value.append(',');
+            value.append(item.id);
+        }
+        requireContext().getSharedPreferences(ORDER_PREFS, Context.MODE_PRIVATE)
+                .edit().putString(ORDER_KEY, value.toString()).apply();
+    }
+
+    private void moveDevice(Device selected, int direction) {
+        if (selected == null || direction == 0) return;
+        int from = -1;
+        for (int i = 0; i < devices.size(); i++) {
+            if (devices.get(i).id == selected.id) { from = i; break; }
+        }
+        if (from < 0) return;
+        String group = selected.groupName == null ? "" : selected.groupName;
+        int to = -1;
+        for (int i = from + direction; i >= 0 && i < devices.size(); i += direction) {
+            String candidateGroup = devices.get(i).groupName == null ? "" : devices.get(i).groupName;
+            if (group.equals(candidateGroup)) { to = i; break; }
+        }
+        if (to < 0) return;
+        Collections.swap(devices, from, to);
+        persistDeviceOrder();
+        deviceListAdapter.updateDataset(devices);
+        updateCommandSuggestions();
     }
 
     private void updateHeader() {
@@ -220,7 +273,8 @@ public class DeviceListFragment extends Fragment {
     private void instantiateRecyclerView() {
         List<Device> initialDataset = new ArrayList<>();
         statusTesterPool = PingStatusTesterPool.getInstance(requireContext().getApplicationContext());
-        deviceListAdapter = new DeviceListAdapter(initialDataset, this::onDeviceWakeRequested, statusTesterPool);
+        deviceListAdapter = new DeviceListAdapter(initialDataset, this::onDeviceWakeRequested,
+                statusTesterPool, this::moveDevice);
         deviceListAdapter.setHasStableIds(true);
         RecyclerView devicesRecyclerView = binding.machineList;
 
