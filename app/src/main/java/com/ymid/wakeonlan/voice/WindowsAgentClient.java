@@ -456,7 +456,7 @@ public final class WindowsAgentClient {
             addAgentBase(bases, legacy.getString(KEY_BASE, null));
         } catch (Exception ignored) { }
 
-        boolean reachable = false;
+        boolean statusResponded = false;
         boolean serverPaired = false;
         boolean rejectedSecret = false;
         for (String base : bases) {
@@ -465,10 +465,9 @@ public final class WindowsAgentClient {
                 if (!"revision-discovery-v1".equals(identity.optString("protocol"))) continue;
                 String deviceId = identity.optString("deviceId", "").trim();
                 if (deviceId.isEmpty()) continue;
-                reachable = true;
-
                 JSONObject status = request(base, "GET", "/v1/status", "", null);
                 if (!deviceId.equals(status.optString("deviceId", ""))) continue;
+                statusResponded = true;
                 if (!status.optBoolean("paired", false)) continue;
                 serverPaired = true;
 
@@ -481,7 +480,8 @@ public final class WindowsAgentClient {
                     }
                     rejectedSecret = true;
                 } catch (Exception error) {
-                    if (isUnauthorized(error)) rejectedSecret = true;
+                    // A present key that cannot complete the signed proof is not a verified pairing.
+                    rejectedSecret = true;
                 }
             } catch (Exception ignored) {
                 // Try the remaining known endpoints. No route is trusted without stable-ID validation.
@@ -490,7 +490,7 @@ public final class WindowsAgentClient {
 
         if (rejectedSecret) return 3;
         if (serverPaired) return 2;
-        if (reachable) return -1;
+        if (statusResponded) return -1;
         return 0;
     }
 
