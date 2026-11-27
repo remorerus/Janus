@@ -2,6 +2,11 @@ package com.ymid.wakeonlan.voice;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
+import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
+import com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry;
+import com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity;
+import com.ymid.wakeonlan.persistence.models.Device;
 import android.util.Base64;
 
 import androidx.security.crypto.EncryptedSharedPreferences;
@@ -1091,7 +1096,7 @@ public final class WindowsAgentClient {
         byte[] nonceBytes = new byte[16];
         new SecureRandom().nextBytes(nonceBytes);
         String nonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP | Base64.URL_SAFE);
-        String payload = "GET\\n" + path + "\\n" + timestamp + "\\n" + nonce + "\\n";
+        String payload = "GET\n" + path + "\n" + timestamp + "\n" + nonce + "\n";
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
         String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
