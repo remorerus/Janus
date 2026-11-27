@@ -10,7 +10,7 @@ import com.ymid.wakeonlan.ui.list.status.DeviceStatusListener;
 
 public class StatusTestItem {
 
-    private final Device device;
+    private volatile Device device;
     private ScheduledFuture<?> runnable;
 
     private final Map<StatusTestType, DeviceStatusListener> listeners = new HashMap<>(3);
@@ -56,6 +56,11 @@ public class StatusTestItem {
 
     public Device getDevice() {
         return device;
+    }
+
+    /** Keep the latest saved profile data so resume never reuses an edited stale Device. */
+    public void updateDevice(Device device) {
+        if (device != null) this.device = device;
     }
 
     public void pausePingRunnable(StatusTestType testType) {
