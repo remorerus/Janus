@@ -62,7 +62,7 @@ public class PingRunnable implements Runnable {
                 ping.run();
 
                 if (completed[0] && latency[0] >= 0) {
-                    notifyDeviceStatusListeners(new DeviceStatusSnapshot(DeviceStatus.ONLINE, latency[0]));
+                    notifyDeviceStatusListeners(new DeviceStatusSnapshot(DeviceStatus.ONLINE, latency[0], host));
                     return;
                 }
             } catch (Throwable t) {
