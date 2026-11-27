@@ -13,6 +13,8 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.io.BufferedReader;
+import java.io.FileReader;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.databinding.FragmentNetworkScanBinding;
@@ -106,6 +108,30 @@ public class NetworkScanFragment extends Fragment {
         host.setHeaderCounter(String.valueOf(networkScanAdapter.getFoundCount()), getString(R.string.scan_found_caption));
     }
 
+    /**
+     * Read the neighbor table after a successful local-subnet probe. Android may restrict
+     * access to this table on some versions; in that case Scan still works and MAC stays empty.
+     */
+    @Nullable
+    private String readNeighborMac(String ip) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/net/arp"))) {
+            String line;
+            reader.readLine(); // header
+            while ((line = reader.readLine()) != null) {
+                String[] columns = line.trim().split("\\s+");
+                if (columns.length < 4 || !ip.equals(columns[0])) continue;
+                String mac = columns[3].trim().toUpperCase(java.util.Locale.ROOT);
+                if (mac.matches("(?i)([0-9A-F]{2}:){5}[0-9A-F]{2}")
+                        && !mac.equals("00:00:00:00:00:00")) {
+                    return mac;
+                }
+            }
+        } catch (Exception ignored) {
+            // MAC discovery is best-effort and must never block Scan.
+        }
+        return null;
+    }
+
     private ScanCallback getScanCallback(int generation) {
 
         return new ScanCallback() {
@@ -119,6 +145,7 @@ public class NetworkScanFragment extends Fragment {
             public void onDeviceFound(String ip, String hostName) {
                 NetworkScanDevice networkScanDevice = new NetworkScanDevice();
                 networkScanDevice.setIpAddress(ip);
+                networkScanDevice.setMacAddress(readNeighborMac(ip));
                 if (hostName != null && !ip.equals(hostName) && !hostName.isEmpty()) {
                     networkScanDevice.setName(hostName);
                 }
