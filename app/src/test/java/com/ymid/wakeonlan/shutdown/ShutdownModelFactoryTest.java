@@ -74,6 +74,7 @@ public class ShutdownModelFactoryTest {
     @Test
     public void fromDevice_includesEverySavedNetworkAddressInOrder() {
         Device d = keyAuthDevice();
+        d.id = 987654;
         d.networkProfilesJson = "[{\"name\":\"Local Network\",\"statusIp\":\"10.0.0.25\",\"macAddress\":\"AA:BB:CC:DD:EE:FF\"},"
                 + "{\"name\":\"Studio\",\"statusIp\":\"172.16.1.25\"}]";
         Optional<ShutdownModel> result = ShutdownModelFactory.fromDevice(d);
