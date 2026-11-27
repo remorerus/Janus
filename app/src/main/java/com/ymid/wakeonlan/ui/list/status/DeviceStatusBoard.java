@@ -31,6 +31,8 @@ public final class DeviceStatusBoard {
 
     private final Map<Integer, Deque<Long>> latencyHistory = new HashMap<>();
     private final Map<Integer, DeviceStatus> lastStatus = new HashMap<>();
+    private final Map<Integer, String> lastActiveAddress = new HashMap<>();
+    private final Map<Integer, String> lastActiveMacAddress = new HashMap<>();
     private final Map<Integer, Long> wakeSentAt = new HashMap<>();
     private final MutableLiveData<Long> changes = new MutableLiveData<>(0L);
 
@@ -47,8 +49,9 @@ public final class DeviceStatusBoard {
     }
 
     @MainThread
-    public void record(int deviceId, DeviceStatusSnapshot snapshot) {
+    public boolean record(int deviceId, DeviceStatusSnapshot snapshot) {
         DeviceStatus status = snapshot.getStatus();
+        boolean addressChanged = false;
         if (status == DeviceStatus.ONLINE) {
             wakeSentAt.remove(deviceId);
             Long latency = snapshot.getLatencyMs();
@@ -59,14 +62,38 @@ public final class DeviceStatusBoard {
                     history.removeFirst();
                 }
             }
+            String address = snapshot.getActiveAddress();
+            if (address != null && !address.trim().isEmpty()) {
+                String previousAddress = lastActiveAddress.put(deviceId, address.trim());
+                addressChanged = previousAddress != null && !previousAddress.equalsIgnoreCase(address.trim());
+                String mac = snapshot.getActiveMacAddress();
+                if (mac == null || mac.trim().isEmpty()) {
+                    lastActiveMacAddress.remove(deviceId);
+                } else {
+                    lastActiveMacAddress.put(deviceId, mac.trim());
+                }
+            }
         } else if (status == DeviceStatus.OFFLINE) {
             latencyHistory.remove(deviceId);
+            // Keep the last confirmed address while the PC is asleep or temporarily offline.
+            // It is rendered as the last-known address until a newer successful probe arrives.
         }
 
         DeviceStatus previous = lastStatus.put(deviceId, status);
         if (previous != status || status == DeviceStatus.ONLINE) {
             changes.setValue(SystemClock.elapsedRealtime());
         }
+        return addressChanged;
+    }
+
+    @MainThread
+    public String getLastActiveAddress(int deviceId) {
+        return lastActiveAddress.get(deviceId);
+    }
+
+    @MainThread
+    public String getLastActiveMacAddress(int deviceId) {
+        return lastActiveMacAddress.get(deviceId);
     }
 
     @MainThread
