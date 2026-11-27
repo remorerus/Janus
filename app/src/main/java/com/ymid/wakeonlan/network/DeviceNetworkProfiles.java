@@ -108,7 +108,7 @@ public final class DeviceNetworkProfiles {
                 String broadcast = profile.optString("broadcastAddress", "");
                 if (sameAddress(status, wanted) || sameAddress(broadcast, wanted)) {
                     String mac = profile.optString("macAddress", "").trim();
-                    return hasText(mac) ? mac : device.macAddress;
+                    return hasText(mac) ? mac : null;
                 }
             }
         } catch (Exception ignored) { }
