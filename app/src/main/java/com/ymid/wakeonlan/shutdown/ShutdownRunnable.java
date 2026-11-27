@@ -55,9 +55,9 @@ public class ShutdownRunnable implements Runnable {
      * A host that never answers (timeout) or cannot be routed to fails exactly like a refused
      * connection from the user's point of view, so all three are reported as ConnectException.
      */
-    private void connect(SSHClient sshClient) throws IOException {
+    private void connect(SSHClient sshClient, String host) throws IOException {
         try {
-            sshClient.connect(shutdownModel.getSshAddress(), shutdownModel.getSshPort());
+            sshClient.connect(host, shutdownModel.getSshPort());
         } catch (SocketTimeoutException | NoRouteToHostException e) {
             ConnectException connectException = new ConnectException(e.getMessage());
             connectException.initCause(e);
@@ -73,42 +73,73 @@ public class ShutdownRunnable implements Runnable {
         DefaultConfig config = new DefaultConfig();
         config.setKeyAlgorithms(KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
 
-        try (SSHClient sshClient = new SSHClient(config)) {
+        try {
             if (hostKeyVerifier == null) {
                 throw new IllegalStateException("A host key verifier is required to open SSH connections");
             }
-            sshClient.addHostKeyVerifier(hostKeyVerifier);
-            sshClient.setConnectTimeout(CONNECT_TIMEOUT);
-            connect(sshClient);
-            shutdownExecutorListener.onTargetHostReached();
 
-            sshClient.authPublickey(shutdownModel.getUsername(),
-                    new AndroidKeyStoreKeyProvider(shutdownModel.getSshKeyAlias()));
-            shutdownExecutorListener.onLoginSuccessful();
-
-            Session session = sshClient.startSession();
-            shutdownExecutorListener.onSessionStartSuccessful();
-
-            session.allocateDefaultPTY();
-
-            if (blockDangerousCommands && isDangerousCommand(shutdownModel.getCommand(), os)) {
-                shutdownExecutorListener.onDangerousCommandDetected(shutdownModel);
-                return;
+            SSHClient connectedClient = null;
+            Exception lastConnectError = null;
+            java.util.List<String> hosts = shutdownModel.getSshAddresses();
+            if (hosts == null || hosts.isEmpty()) {
+                hosts = java.util.Collections.singletonList(shutdownModel.getSshAddress());
             }
 
-            Session.Command exec = session.exec(shutdownModel.getCommand());
-            commandSent = true;
-            new StreamCopier(exec.getInputStream(), commandOutputStream, LoggerFactory.DEFAULT)
-                    .bufSize(exec.getLocalMaxPacketSize())
-                    .spawn("stdout");
-
-            exec.join(EXECUTE_TIMEOUT, TimeUnit.MILLISECONDS);
-            Integer exitStatus = exec.getExitStatus();
-            if (exitStatus != null && exitStatus != 0) {
-                throw new CommandExecuteException("Command exited with status code " + exitStatus, exitStatus);
+            // Try the active address first, then every saved network profile for this PC.
+            for (String host : hosts) {
+                if (host == null || host.trim().isEmpty()) continue;
+                SSHClient candidate = new SSHClient(config);
+                candidate.addHostKeyVerifier(hostKeyVerifier);
+                candidate.setConnectTimeout(CONNECT_TIMEOUT);
+                try {
+                    connect(candidate, host.trim());
+                    connectedClient = candidate;
+                    break;
+                } catch (Exception connectError) {
+                    try { candidate.close(); } catch (Exception ignored) { }
+                    if (hostKeyVerifier.getMismatch() != null) {
+                        throw connectError;
+                    }
+                    lastConnectError = connectError;
+                }
             }
 
-            shutdownExecutorListener.onCommandExecuteSuccessful();
+            if (connectedClient == null) {
+                if (lastConnectError != null) throw lastConnectError;
+                throw new ConnectException("No configured SSH address is available");
+            }
+
+            try (SSHClient sshClient = connectedClient) {
+                shutdownExecutorListener.onTargetHostReached();
+
+                sshClient.authPublickey(shutdownModel.getUsername(),
+                        new AndroidKeyStoreKeyProvider(shutdownModel.getSshKeyAlias()));
+                shutdownExecutorListener.onLoginSuccessful();
+
+                Session session = sshClient.startSession();
+                shutdownExecutorListener.onSessionStartSuccessful();
+
+                session.allocateDefaultPTY();
+
+                if (blockDangerousCommands && isDangerousCommand(shutdownModel.getCommand(), os)) {
+                    shutdownExecutorListener.onDangerousCommandDetected(shutdownModel);
+                    return;
+                }
+
+                Session.Command exec = session.exec(shutdownModel.getCommand());
+                commandSent = true;
+                new StreamCopier(exec.getInputStream(), commandOutputStream, LoggerFactory.DEFAULT)
+                        .bufSize(exec.getLocalMaxPacketSize())
+                        .spawn("stdout");
+
+                exec.join(EXECUTE_TIMEOUT, TimeUnit.MILLISECONDS);
+                Integer exitStatus = exec.getExitStatus();
+                if (exitStatus != null && exitStatus != 0) {
+                    throw new CommandExecuteException("Command exited with status code " + exitStatus, exitStatus);
+                }
+
+                shutdownExecutorListener.onCommandExecuteSuccessful();
+            }
         } catch (Exception e) {
             TofuHostKeyVerifier.Mismatch mismatch = hostKeyVerifier == null ? null : hostKeyVerifier.getMismatch();
             if (mismatch != null) {
