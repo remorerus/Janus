@@ -3,7 +3,6 @@ package com.ymid.wakeonlan.ui.list.viewholder;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AlphaAnimation;
-import android.view.animation.TranslateAnimation;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import java.net.Socket;
@@ -21,6 +20,7 @@ import com.ymid.wakeonlan.security.TofuHostKeyVerifier;
 import net.schmizz.sshj.DefaultConfig;
 import net.schmizz.sshj.SSHClient;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.content.ContextCompat;
@@ -53,17 +53,19 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private final TextView deviceName;
     private final ObfuscatedTextView deviceMacAddress;
     private final TextView deviceIp;
-    private final TextView deviceIpPrevious;
     private final TextView deviceIpHint;
     private final TextView deviceStatusDetails;
     private final TextView deviceLatencyUnit;
     private final SparklineView latencySparkline;
     private final TextView wakeLog;
-    private final TextView deviceIpArrow;
     private final View sshLed;
     private final TextView sshState;
     private final View agentLed;
     private final TextView agentState;
+    private final TextView agentConnectButton;
+    private final TextView agentDisconnectButton;
+    private final TextView moveUpButton;
+    private final TextView moveDownButton;
     private static final ScheduledExecutorService SERVICE_PROBES = Executors.newScheduledThreadPool(4);
     private ScheduledFuture<?> serviceProbeFuture;
     private volatile String lastActiveAddress;
@@ -73,6 +75,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private final TextView shutdownButton;
     private final DeviceClickedCallback deviceClickedCallback;
     private final StatusTesterPool statusTesterPool;
+    private final com.ymid.wakeonlan.ui.list.DeviceListAdapter.DeviceOrderCallback deviceOrderCallback;
     private final DeviceStatusBoard statusBoard = DeviceStatusBoard.getInstance();
 
     private Device device;
@@ -80,32 +83,36 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private boolean shutdownAvailable;
     private RowState shownState;
 
-    public DeviceItemViewHolder(View view, DeviceClickedCallback deviceClickedCallback, StatusTesterPool statusTesterPool) {
+    public DeviceItemViewHolder(View view, DeviceClickedCallback deviceClickedCallback, StatusTesterPool statusTesterPool,
+                                com.ymid.wakeonlan.ui.list.DeviceListAdapter.DeviceOrderCallback deviceOrderCallback) {
         super(view);
         deviceStatus = view.findViewById(R.id.device_status);
         deviceName = view.findViewById(R.id.device_name);
         deviceMacAddress = view.findViewById(R.id.device_mac);
         deviceIp = view.findViewById(R.id.device_ip);
-        deviceIpPrevious = view.findViewById(R.id.device_ip_previous);
         deviceIpHint = view.findViewById(R.id.device_ip_hint);
         deviceStatusDetails = view.findViewById(R.id.device_status_details);
         deviceLatencyUnit = view.findViewById(R.id.device_latency_unit);
         latencySparkline = view.findViewById(R.id.device_latency_sparkline);
         wakeLog = view.findViewById(R.id.device_wake_log);
-        deviceIpArrow = view.findViewById(R.id.device_ip_arrow);
         sshLed = view.findViewById(R.id.device_ssh_led);
         sshState = view.findViewById(R.id.device_ssh_state);
         agentLed = view.findViewById(R.id.device_agent_led);
         agentState = view.findViewById(R.id.device_agent_state);
+        agentConnectButton = view.findViewById(R.id.device_agent_connect);
+        agentDisconnectButton = view.findViewById(R.id.device_agent_disconnect);
+        moveUpButton = view.findViewById(R.id.device_move_up);
+        moveDownButton = view.findViewById(R.id.device_move_down);
 
         editButton = view.findViewById(R.id.edit);
         sendWolButton = view.findViewById(R.id.send_wol);
         shutdownButton = view.findViewById(R.id.shutdown);
         this.deviceClickedCallback = deviceClickedCallback;
         this.statusTesterPool = statusTesterPool;
+        this.deviceOrderCallback = deviceOrderCallback;
     }
 
-    public synchronized void fromDevice(Device device, boolean drivesLauncherIcon) {
+    public synchronized void fromDevice(Device device, boolean drivesLauncherIcon, boolean canMoveUp, boolean canMoveDown) {
         this.device = device;
         this.drivesLauncherIcon = drivesLauncherIcon;
 
@@ -117,6 +124,16 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         setServiceState(sshLed, sshState, "ПРОВЕРКА", 0);
         setServiceState(agentLed, agentState, "ПРОВЕРКА", 0);
         startServiceStatusProbes(device);
+        agentConnectButton.setVisibility(View.GONE);
+        agentDisconnectButton.setVisibility(View.GONE);
+        agentConnectButton.setOnClickListener(v -> changeAgentConnection(device, true));
+        agentDisconnectButton.setOnClickListener(v -> changeAgentConnection(device, false));
+        moveUpButton.setEnabled(canMoveUp);
+        moveDownButton.setEnabled(canMoveDown);
+        moveUpButton.setAlpha(canMoveUp ? 1f : 0.35f);
+        moveDownButton.setAlpha(canMoveDown ? 1f : 0.35f);
+        moveUpButton.setOnClickListener(v -> { if (this.device != null && this.deviceOrderCallback != null) this.deviceOrderCallback.onMoveDevice(this.device, -1); });
+        moveDownButton.setOnClickListener(v -> { if (this.device != null && this.deviceOrderCallback != null) this.deviceOrderCallback.onMoveDevice(this.device, 1); });
 
         setOnClickHandler(device);
         setOnEditClickHandler(device);
@@ -198,10 +215,6 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                                 boolean lastKnown, String previousAddress) {
         String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress.trim();
         if (next != null) lastActiveAddress = next;
-        String previous = Strings.isNullOrEmpty(previousAddress) ? null : previousAddress.trim();
-        boolean hasTransition = previous != null && next != null && !previous.equalsIgnoreCase(next);
-        deviceIpPrevious.setText(hasTransition ? previous : "");
-        deviceIpPrevious.setVisibility(hasTransition ? View.VISIBLE : View.GONE);
         deviceIp.setText(next == null ? "" : next);
         deviceIp.setVisibility(next == null ? View.GONE : View.VISIBLE);
         deviceIp.setAlpha(lastKnown ? 0.65f : 1f);
@@ -218,26 +231,6 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             // Do not display the first profile's MAC beside an IP from another network.
             deviceMacAddress.setVisibility(View.GONE);
         }
-
-        if (hasTransition) {
-            deviceIpArrow.setVisibility(View.VISIBLE);
-        } else {
-            deviceIpArrow.setVisibility(View.GONE);
-            deviceIpArrow.clearAnimation();
-        }
-        if (addressChanged && hasTransition) {
-            deviceIp.clearAnimation();
-            TranslateAnimation ipMotion = new TranslateAnimation(-dp(22), 0, 0, 0);
-            ipMotion.setDuration(850);
-            deviceIp.startAnimation(ipMotion);
-
-            deviceIpArrow.clearAnimation();
-            TranslateAnimation arrow = new TranslateAnimation(-dp(8), dp(42), 0, 0);
-            arrow.setDuration(1100);
-            arrow.setRepeatCount(1);
-            arrow.setRepeatMode(Animation.RESTART);
-            deviceIpArrow.startAnimation(arrow);
-        }
     }
 
     private int dp(float value) {
@@ -251,6 +244,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             String activeAddress = lastActiveAddress;
             int sshResult = probeSsh(target, activeAddress);
             int agentResult = probeWindowsAgent(target, activeAddress);
+            boolean agentPaired = WindowsAgentClient.hasPairedDeviceForDevice(itemView.getContext(), target);
             itemView.post(() -> {
                 if (device == null || device.id != targetId) return;
                 if (sshResult == 1) {
@@ -263,6 +257,10 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                     setServiceState(sshLed, sshState, "OFFLINE", 2);
                 }
 
+                agentConnectButton.setVisibility(agentPaired ? View.VISIBLE : View.GONE);
+                agentDisconnectButton.setVisibility(agentPaired ? View.VISIBLE : View.GONE);
+                agentConnectButton.setEnabled(agentPaired && agentResult != 1);
+                agentDisconnectButton.setEnabled(agentPaired && (agentResult == 1 || agentResult == 2 || agentResult == 3));
                 if (agentResult == 1) {
                     setServiceState(agentLed, agentState, "ONLINE", 1);
                 } else if (agentResult == 2) {
@@ -276,6 +274,29 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                 }
             });
         }, 0, 6, TimeUnit.SECONDS);
+    }
+
+    private void changeAgentConnection(Device target, boolean connect) {
+        agentConnectButton.setEnabled(false);
+        agentDisconnectButton.setEnabled(false);
+        Toast.makeText(itemView.getContext(), connect ? "Подключаю Windows Agent…" : "Отключаю Windows Agent…",
+                Toast.LENGTH_SHORT).show();
+        SERVICE_PROBES.execute(() -> {
+            String message;
+            try {
+                message = WindowsAgentClient.setConnectionEnabledForDevice(itemView.getContext(), target, connect);
+            } catch (Exception error) {
+                message = error.getMessage() == null ? "Не удалось изменить состояние Windows Agent." : error.getMessage();
+            }
+            final String result = message;
+            itemView.post(() -> {
+                if (device == null || device.id != target.id) return;
+                agentConnectButton.setEnabled(true);
+                agentDisconnectButton.setEnabled(true);
+                Toast.makeText(itemView.getContext(), result, Toast.LENGTH_LONG).show();
+                startServiceStatusProbes(target);
+            });
+        });
     }
 
     /**
