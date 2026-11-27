@@ -74,6 +74,7 @@ public class DeviceListFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         CrashReporter.setOperation("device_list.repository_init");
+        PingStatusTesterPool.getInstance(requireContext());
         deviceRepository = DeviceRepository.getInstance(getContext());
 
         CrashReporter.setOperation("device_list.recycler_init");
