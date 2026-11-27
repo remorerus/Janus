@@ -6,7 +6,6 @@ import android.view.animation.AlphaAnimation;
 import android.view.animation.TranslateAnimation;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import java.net.Socket;
 import java.net.InetSocketAddress;
 import java.net.HttpURLConnection;
@@ -16,7 +15,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import org.json.JSONObject;
 import com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry;
 import com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity;
 import android.widget.TextView;
@@ -109,6 +107,11 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         // after a successful status check identifies the exact endpoint that answered.
         deviceIp.setText("");
         deviceIp.setVisibility(View.GONE);
+        lastActiveAddress = null;
+        deviceIpArrow.setVisibility(View.GONE);
+        setServiceState(sshLed, sshState, "ПРОВЕРКА", 0);
+        setServiceState(agentLed, agentState, "ПРОВЕРКА", 0);
+        startServiceStatusProbes(device);
 
         setOnClickHandler(device);
         setOnEditClickHandler(device);
@@ -169,13 +172,11 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             DeviceStatus status = statusSnapshot.getStatus();
             if (status == DeviceStatus.ONLINE) {
                 String activeAddress = statusSnapshot.getActiveAddress();
-                deviceIp.setText(activeAddress == null ? "" : activeAddress);
-                deviceIp.setVisibility(Strings.isNullOrEmpty(activeAddress) ? View.GONE : View.VISIBLE);
+                updateActiveIp(activeAddress);
                 updateLauncherIconIfNeeded(true);
                 render(RowState.ONLINE, statusSnapshot.getLatencyMs());
             } else if (status == DeviceStatus.OFFLINE) {
-                deviceIp.setText("");
-                deviceIp.setVisibility(View.GONE);
+                updateActiveIp(null);
                 updateLauncherIconIfNeeded(false);
                 render(statusBoard.isWaking(deviceId) ? RowState.WAKING : RowState.OFFLINE, null);
             } else {
@@ -264,7 +265,6 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                 }
             }
             if (match == null || Strings.isNullOrEmpty(match.baseUrl)) return -1;
-            URL base = new URL(match.baseUrl);
             URL statusUrl = new URL(match.baseUrl.replaceAll("/+$", "") + "/v1/status");
             HttpURLConnection connection = (HttpURLConnection) statusUrl.openConnection();
             try {
@@ -378,6 +378,10 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     }
 
     public void cancelStatusUpdates() {
+        if (serviceProbeFuture != null) {
+            serviceProbeFuture.cancel(true);
+            serviceProbeFuture = null;
+        }
         if (statusTesterPool != null && device != null) {
             statusTesterPool.stopSingle(device, StatusTestType.LIST);
         }
