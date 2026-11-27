@@ -365,6 +365,88 @@ public final class WindowsAgentClient {
         return request(base, "GET", "/v1/status", "", null);
     }
 
+    /**
+     * Checks both public Agent availability and the actual RE:Vision pairing secret.
+     * A public paired=true flag only describes the Windows side; it is not proof
+     * that this Android installation owns the matching secret.
+     */
+    public static JSONObject checkPairing(Context context, String host) throws Exception {
+        String base = normalizeBase(host);
+        JSONObject identity = request(base, "GET", "/v1/discovery", "", null, 1500);
+        String deviceId = identity.optString("deviceId", "").trim();
+        if (deviceId.isEmpty())
+            throw new IllegalStateException("Windows Agent не сообщил постоянный ID компьютера.");
+
+        JSONObject agentStatus = request(base, "GET", "/v1/status", "", null, 1500);
+        boolean agentPaired = agentStatus.optBoolean("paired", false);
+        boolean authenticated = false;
+        String verifiedSecret = null;
+
+        if (agentPaired) {
+            WindowsAgentDeviceEntity registered = new WindowsAgentDeviceRegistry(context).get(deviceId);
+            if (registered != null && registered.enabled && registered.clientSecret != null
+                    && !registered.clientSecret.trim().isEmpty()) {
+                try {
+                    JSONObject proof = authenticatedGet(base, registered.clientSecret,
+                            "/v1/pairing/verify", 1500);
+                    authenticated = proof.optBoolean("authenticated", false)
+                            && proof.optBoolean("paired", false)
+                            && deviceId.equals(proof.optString("deviceId", ""));
+                    if (authenticated) verifiedSecret = registered.clientSecret;
+                } catch (Exception ignored) { }
+            }
+
+            // Backward compatibility: migrate a still-valid legacy STUDIO secret,
+            // but only after the remote Agent proves that it matches this stable ID.
+            if (!authenticated) {
+                SharedPreferences legacy = prefs(context);
+                String legacyBase = legacy.getString(KEY_BASE, null);
+                String legacySecret = legacy.getString(KEY_SECRET, null);
+                String legacyId = legacy.getString(KEY_DEVICE_ID, null);
+                if (legacyBase != null && legacySecret != null) {
+                    if (legacyId == null || legacyId.trim().isEmpty()) {
+                        try {
+                            JSONObject oldIdentity = request(legacyBase, "GET", "/v1/discovery", "", null, 1200);
+                            legacyId = oldIdentity.optString("deviceId", null);
+                        } catch (Exception ignored) { }
+                    }
+                    if (deviceId.equals(legacyId)) {
+                        try {
+                            JSONObject proof = authenticatedGet(base, legacySecret,
+                                    "/v1/pairing/verify", 1500);
+                            authenticated = proof.optBoolean("authenticated", false)
+                                    && proof.optBoolean("paired", false)
+                                    && deviceId.equals(proof.optString("deviceId", ""));
+                            if (authenticated) verifiedSecret = legacySecret;
+                        } catch (Exception ignored) { }
+                    }
+                }
+            }
+        }
+
+        if (authenticated && verifiedSecret != null) {
+            saveRegistryPair(context, identity, base, verifiedSecret);
+            SharedPreferences legacy = prefs(context);
+            SharedPreferences.Editor editor = legacy.edit()
+                    .putString(KEY_BASE, base)
+                    .putString(KEY_DEVICE_ID, deviceId);
+            if (legacy.getString(KEY_SECRET, null) == null)
+                editor.putString(KEY_SECRET, verifiedSecret);
+            editor.commit();
+        }
+
+        identity.put("agentPaired", agentPaired);
+        identity.put("authenticated", authenticated);
+        identity.put("paired", authenticated);
+        identity.put("reachable", true);
+        identity.put("message", authenticated
+                ? "Сопряжение подтверждено сохранённым ключом RE:Vision."
+                : agentPaired
+                    ? "Windows Agent уже привязан на компьютере, но ключ этой установки RE:Vision не подтверждён."
+                    : "Windows Agent доступен, но на компьютере ещё не выполнено сопряжение.");
+        return identity;
+    }
+
     public static JSONObject command(Context context, String action) throws Exception {
         if (!action.matches("shutdown|restart|cancel-shutdown|lock")) {
             throw new IllegalArgumentException("Недопустимая команда Windows Agent.");
