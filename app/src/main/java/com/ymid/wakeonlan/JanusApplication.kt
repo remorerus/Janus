@@ -19,6 +19,7 @@ class JanusApplication : Application() {
         // starting services or touching the encrypted database.
         CrashLogDirectory.ensure(this)
         CrashReporter.initialize(this)
+        CrashReporter.setOperation("application.initialize_services")
         LauncherIconManager.register(this)
         RemoteConfigManager.initialize()
         NotificationHelper.createChannels(this)
@@ -27,8 +28,18 @@ class JanusApplication : Application() {
         // Android Accessibility settings if the main bridge service is disabled.
         VoiceBridgeRecoveryService.start(this)
         LauncherIconWorker.schedule(this)
+        CrashReporter.clearOperation()
+
         Executors.newSingleThreadExecutor().execute {
-            runCatching { DatabaseInstanceManager.getInstance(this) }
+            CrashReporter.setOperation("database.background_init")
+            try {
+                DatabaseInstanceManager.getInstance(this)
+                CrashReporter.clearOperation()
+            } catch (failure: Throwable) {
+                // The old startup path swallowed this exception. Preserve the app's
+                // current behavior but persist the exact database startup failure.
+                CrashReporter.recordException("database.background_init", failure)
+            }
         }
     }
 }
