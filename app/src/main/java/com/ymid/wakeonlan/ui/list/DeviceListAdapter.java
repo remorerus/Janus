@@ -133,4 +133,12 @@ public class DeviceListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             ((GroupHeaderViewHolder) viewHolder).bind((String) items.get(position));
         }
     }
+    
+    @Override
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder viewHolder) {
+        if (viewHolder instanceof DeviceItemViewHolder) {
+            ((DeviceItemViewHolder) viewHolder).cancelStatusUpdates();
+        }
+        super.onViewRecycled(viewHolder);
+    }
 }
