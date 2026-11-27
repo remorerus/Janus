@@ -8,15 +8,10 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import java.net.Socket;
 import java.net.InetSocketAddress;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry;
-import com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity;
 import android.widget.TextView;
 
 import androidx.appcompat.content.res.AppCompatResources;
