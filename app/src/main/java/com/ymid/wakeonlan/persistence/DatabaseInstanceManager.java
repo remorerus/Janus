@@ -10,6 +10,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory;
 
 import java.io.File;
 
+import com.ymid.wakeonlan.crash.CrashReporter;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom1To2;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom2To3;
 import com.ymid.wakeonlan.persistence.migrations.MigrationFrom3To4;
@@ -31,15 +32,19 @@ public class DatabaseInstanceManager {
 
     public static synchronized AppDatabase getInstance(final Context context) {
         if (INSTANCE == null) {
+            CrashReporter.setOperation("database.load_sqlcipher");
             System.loadLibrary("sqlcipher");
 
+            CrashReporter.setOperation("database.legacy_encryption_check");
             migrateToEncryptedIfNeeded(context);
 
+            CrashReporter.setOperation("database.retrieve_keystore_passphrase");
             String passphrase = DatabaseKeyManager.getOrCreatePassphrase(context);
             byte[] passphraseBytes = passphrase.getBytes();
 
             SupportOpenHelperFactory factory = new SupportOpenHelperFactory(passphraseBytes);
 
+            CrashReporter.setOperation("database.create_room_builder");
             INSTANCE = Room.databaseBuilder(context.getApplicationContext(), AppDatabase.class, DB_NAME)
                     .openHelperFactory(factory)
                     .addMigrations(
@@ -56,6 +61,7 @@ public class DatabaseInstanceManager {
                             new MigrationFrom11To12()
                     )
                     .build();
+            CrashReporter.clearOperation();
         }
         return INSTANCE;
     }
@@ -76,6 +82,7 @@ public class DatabaseInstanceManager {
         }
 
         Log.i(TAG, "Plaintext database detected, encrypting...");
+        CrashReporter.setOperation("database.encrypt_legacy_database");
         try {
             String passphrase = DatabaseKeyManager.getOrCreatePassphrase(context);
             deleteIfExists(tempFile);
