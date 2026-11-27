@@ -371,7 +371,7 @@ public final class WindowsAgentClient {
         try {
             String legacy = prefs(context).getString(KEY_BASE, null);
             if (!Strings.isNullOrEmpty(legacy)) return legacy;
-            com.ymid.wakeonlan.persistence.WindowsAgentDeviceEntity device =
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
                     new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
             return device == null ? null : device.baseUrl;
         } catch (Exception e) {
