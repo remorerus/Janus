@@ -564,6 +564,65 @@
                 android:text="@string/modify_device_test_shutdown"
                 app:layout_constraintTop_toBottomOf="@id/device_remote_shutdown_command" />
 
+            <TextView
+                android:id="@+id/device_agent_section_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="18dp"
+                android:text="Windows Agent"
+                android:textStyle="bold"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/device_button_test_shutdown" />
+
+            <TextView
+                android:id="@+id/device_agent_endpoint_hint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="24dp"
+                android:text="Адрес берётся из поля IP устройства выше (в том числе из Scan), порт 47821. Повторное подключение использует сохранённый ключ и не требует pairing code."
+                android:textSize="12sp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/device_agent_section_label" />
+
+            <Button
+                android:id="@+id/device_button_agent_connect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="24dp"
+                android:text="Подключить Windows Agent"
+                android:visibility="gone"
+                app:layout_constraintTop_toBottomOf="@id/device_agent_endpoint_hint" />
+
+            <Button
+                android:id="@+id/device_button_agent_disconnect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="24dp"
+                android:text="Разорвать соединение"
+                android:visibility="gone"
+                app:layout_constraintTop_toBottomOf="@id/device_button_agent_connect" />
+
+            <TextView
+                android:id="@+id/device_agent_connect_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="24dp"
+                android:textSize="12sp"
+                android:visibility="gone"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/device_button_agent_disconnect" />
+
         </androidx.constraintlayout.widget.ConstraintLayout>
 
 
