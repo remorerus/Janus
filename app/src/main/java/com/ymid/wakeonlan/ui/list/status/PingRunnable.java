@@ -1,6 +1,10 @@
 package com.ymid.wakeonlan.ui.list.status;
 
 import android.util.Log;
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
 
 import java.net.InetAddress;
 import java.util.List;
@@ -15,12 +19,14 @@ public class PingRunnable implements Runnable {
 
     private final Device device;
     private final StatusTestItem statusTestItem;
+    private final Context appContext;
 
     private boolean skipRunningExecutionResults = false;
 
-    public PingRunnable(Device device, StatusTestItem statusTestItem) {
+    public PingRunnable(Device device, StatusTestItem statusTestItem, Context context) {
         this.device = device;
         this.statusTestItem = statusTestItem;
+        this.appContext = context == null ? null : context.getApplicationContext();
     }
 
     public void cancelStatusUpdates() {
@@ -29,10 +35,25 @@ public class PingRunnable implements Runnable {
 
     @Override
     public void run() {
+        Network activeNetwork = null;
+        LinkProperties activeLinkProperties = null;
+        if (appContext != null) {
+            try {
+                ConnectivityManager manager = (ConnectivityManager)
+                        appContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+                activeNetwork = manager == null ? null : manager.getActiveNetwork();
+                activeLinkProperties = activeNetwork == null ? null : manager.getLinkProperties(activeNetwork);
+            } catch (Exception error) {
+                Log.w(getClass().getSimpleName(), "Could not read active Android network routes", error);
+            }
+        }
+
         List<String> candidates = DeviceNetworkProfiles.statusAddresses(device);
         if (candidates.isEmpty() && device.sshAddress != null && !device.sshAddress.trim().isEmpty()) {
             candidates = java.util.Collections.singletonList(device.sshAddress.trim());
         }
+        // Put endpoints on the active Android network's most specific route first.
+        candidates = DeviceNetworkProfiles.prioritizeForActiveRoutes(candidates, activeLinkProperties);
         if (candidates.isEmpty()) {
             notifyDeviceStatusListeners(new DeviceStatusSnapshot(DeviceStatus.UNKNOWN, null));
             return;
@@ -59,10 +80,13 @@ public class PingRunnable implements Runnable {
                     }
                 });
                 ping.setTimeoutMs(1000);
+                if (activeNetwork != null) ping.setNetwork(activeNetwork);
                 ping.run();
 
                 if (completed[0] && latency[0] >= 0) {
-                    notifyDeviceStatusListeners(new DeviceStatusSnapshot(DeviceStatus.ONLINE, latency[0], host));
+                    String activeMac = DeviceNetworkProfiles.macAddressForStatusAddress(device, host);
+                    notifyDeviceStatusListeners(new DeviceStatusSnapshot(
+                            DeviceStatus.ONLINE, latency[0], host, activeMac));
                     return;
                 }
             } catch (Throwable t) {
