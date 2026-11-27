@@ -1,5 +1,7 @@
 package com.ymid.wakeonlan.ui.list.status.pool;
 
+import android.content.Context;
+
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -19,24 +21,31 @@ import com.ymid.wakeonlan.ui.list.status.PingDeviceStatusTesterBuilder;
 public class PingStatusTesterPool implements StatusTesterPool {
 
     private static final ScheduledExecutorService EXECUTOR = Executors.newScheduledThreadPool(15);
-    private static final DeviceStatusTesterBuilder DEVICE_STATUS_TESTER = new PingDeviceStatusTesterBuilder();
     private static final int STATUS_CHECK_DELAY_SECONDS = 1;
 
     private static final Object STATUS_LOCK = new Object();
 
     private static Map<Integer, StatusTestItem> statusCheckMap = new HashMap<>(15);
 
-    private static StatusTesterPool INSTANCE;
+    private static PingStatusTesterPool INSTANCE;
+    private final PingDeviceStatusTesterBuilder deviceStatusTester;
 
-    private PingStatusTesterPool() {
-        // No instantiation
+    private PingStatusTesterPool(Context context) {
+        deviceStatusTester = new PingDeviceStatusTesterBuilder(context);
     }
 
-    public static synchronized StatusTesterPool getInstance() {
+    public static synchronized StatusTesterPool getInstance(Context context) {
         if (INSTANCE == null) {
-            INSTANCE = new PingStatusTesterPool();
+            INSTANCE = new PingStatusTesterPool(context);
+        } else {
+            INSTANCE.deviceStatusTester.setContext(context);
         }
+        return INSTANCE;
+    }
 
+    /** Backward-compatible access for non-UI callers that do not need route-aware pings. */
+    public static synchronized StatusTesterPool getInstance() {
+        if (INSTANCE == null) INSTANCE = new PingStatusTesterPool(null);
         return INSTANCE;
     }
 
@@ -61,7 +70,7 @@ public class PingStatusTesterPool implements StatusTesterPool {
             }
 
             ScheduledFuture<?> scheduledFuture =
-                    EXECUTOR.scheduleWithFixedDelay(DEVICE_STATUS_TESTER.buildStatusTestCallable(device, statusTestItem),
+                    EXECUTOR.scheduleWithFixedDelay(deviceStatusTester.buildStatusTestCallable(device, statusTestItem),
                             0, STATUS_CHECK_DELAY_SECONDS, TimeUnit.SECONDS);
             statusTestItem.setOrUpdateRunnable(scheduledFuture);
 
@@ -123,7 +132,7 @@ public class PingStatusTesterPool implements StatusTesterPool {
                 Device device = item.getDevice();
 
                 ScheduledFuture<?> scheduledFuture =
-                        EXECUTOR.scheduleWithFixedDelay(DEVICE_STATUS_TESTER.buildStatusTestCallable(device, item),
+                        EXECUTOR.scheduleWithFixedDelay(deviceStatusTester.buildStatusTestCallable(device, item),
                                 0, STATUS_CHECK_DELAY_SECONDS, TimeUnit.SECONDS);
                 item.setOrUpdateRunnable(scheduledFuture);
             });
