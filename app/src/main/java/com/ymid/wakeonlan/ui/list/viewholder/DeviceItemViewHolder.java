@@ -53,6 +53,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private final TextView deviceName;
     private final ObfuscatedTextView deviceMacAddress;
     private final TextView deviceIp;
+    private final TextView deviceIpPrevious;
     private final TextView deviceIpHint;
     private final TextView deviceStatusDetails;
     private final TextView deviceLatencyUnit;
@@ -85,6 +86,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         deviceName = view.findViewById(R.id.device_name);
         deviceMacAddress = view.findViewById(R.id.device_mac);
         deviceIp = view.findViewById(R.id.device_ip);
+        deviceIpPrevious = view.findViewById(R.id.device_ip_previous);
         deviceIpHint = view.findViewById(R.id.device_ip_hint);
         deviceStatusDetails = view.findViewById(R.id.device_status_details);
         deviceLatencyUnit = view.findViewById(R.id.device_latency_unit);
@@ -110,9 +112,8 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         deviceName.setText(device.name);
         lastActiveAddress = statusBoard.getLastActiveAddress(device.id);
         String rememberedMac = statusBoard.getLastActiveMacAddress(device.id);
-        updateActiveIp(lastActiveAddress, rememberedMac, false, lastActiveAddress != null);
-        deviceIpArrow.setVisibility(View.GONE);
-        deviceIpArrow.clearAnimation();
+        updateActiveIp(lastActiveAddress, rememberedMac, false, lastActiveAddress != null,
+                statusBoard.getPreviousActiveAddress(device.id));
         setServiceState(sshLed, sshState, "ПРОВЕРКА", 0);
         setServiceState(agentLed, agentState, "ПРОВЕРКА", 0);
         startServiceStatusProbes(device);
@@ -177,12 +178,14 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             if (status == DeviceStatus.ONLINE) {
                 String activeAddress = statusSnapshot.getActiveAddress();
                 String activeMac = statusSnapshot.getActiveMacAddress();
-                updateActiveIp(activeAddress, activeMac, addressChanged, false);
+                updateActiveIp(activeAddress, activeMac, addressChanged, false,
+                        statusBoard.getPreviousActiveAddress(deviceId));
                 updateLauncherIconIfNeeded(true);
                 render(RowState.ONLINE, statusSnapshot.getLatencyMs());
             } else if (status == DeviceStatus.OFFLINE) {
                 updateActiveIp(statusBoard.getLastActiveAddress(deviceId),
-                        statusBoard.getLastActiveMacAddress(deviceId), false, true);
+                        statusBoard.getLastActiveMacAddress(deviceId), false, true,
+                        statusBoard.getPreviousActiveAddress(deviceId));
                 updateLauncherIconIfNeeded(false);
                 render(statusBoard.isWaking(deviceId) ? RowState.WAKING : RowState.OFFLINE, null);
             } else {
@@ -192,9 +195,13 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     }
 
     private void updateActiveIp(String activeAddress, String activeMac, boolean addressChanged,
-                                boolean lastKnown) {
+                                boolean lastKnown, String previousAddress) {
         String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress.trim();
         if (next != null) lastActiveAddress = next;
+        String previous = Strings.isNullOrEmpty(previousAddress) ? null : previousAddress.trim();
+        boolean hasTransition = previous != null && next != null && !previous.equalsIgnoreCase(next);
+        deviceIpPrevious.setText(hasTransition ? previous : "");
+        deviceIpPrevious.setVisibility(hasTransition ? View.VISIBLE : View.GONE);
         deviceIp.setText(next == null ? "" : next);
         deviceIp.setVisibility(next == null ? View.GONE : View.VISIBLE);
         deviceIp.setAlpha(lastKnown ? 0.65f : 1f);
@@ -212,8 +219,13 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             deviceMacAddress.setVisibility(View.GONE);
         }
 
-        if (addressChanged && next != null) {
+        if (hasTransition) {
             deviceIpArrow.setVisibility(View.VISIBLE);
+        } else {
+            deviceIpArrow.setVisibility(View.GONE);
+            deviceIpArrow.clearAnimation();
+        }
+        if (addressChanged && hasTransition) {
             deviceIp.clearAnimation();
             TranslateAnimation ipMotion = new TranslateAnimation(-dp(22), 0, 0, 0);
             ipMotion.setDuration(850);
@@ -224,18 +236,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             arrow.setDuration(1100);
             arrow.setRepeatCount(1);
             arrow.setRepeatMode(Animation.RESTART);
-            arrow.setAnimationListener(new Animation.AnimationListener() {
-                @Override public void onAnimationStart(Animation animation) { }
-                @Override public void onAnimationEnd(Animation animation) {
-                    deviceIpArrow.setVisibility(View.GONE);
-                    deviceIpArrow.clearAnimation();
-                }
-                @Override public void onAnimationRepeat(Animation animation) { }
-            });
             deviceIpArrow.startAnimation(arrow);
-        } else if (!addressChanged) {
-            deviceIpArrow.setVisibility(View.GONE);
-            deviceIpArrow.clearAnimation();
         }
     }
 
