@@ -414,6 +414,56 @@ public final class WindowsAgentClient {
         return status;
     }
 
+    /** True when exactly one saved Windows Agent pairing belongs to this device name. */
+    public static boolean hasPairedDeviceForDevice(Context context,
+            com.ymid.wakeonlan.persistence.models.Device target) {
+        if (target == null || Strings.isNullOrEmpty(target.name)) return false;
+        try {
+            String wanted = normalizeDeviceName(target.name);
+            int matches = 0;
+            for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item :
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getAll()) {
+                if (item != null && wanted.equals(normalizeDeviceName(item.displayName))) matches++;
+            }
+            return matches == 1;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Enables/disables this installation's use of an existing pairing.
+     * This is deliberately NOT /v1/unpair: the Windows-side pairing and secret remain intact.
+     */
+    public static String setConnectionEnabledForDevice(Context context,
+            com.ymid.wakeonlan.persistence.models.Device target, boolean enabled) throws Exception {
+        if (target == null || Strings.isNullOrEmpty(target.name))
+            throw new IllegalArgumentException("Не выбрано устройство RE:Vision.");
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        String wanted = normalizeDeviceName(target.name);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity match = null;
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item : registry.getAll()) {
+            if (item != null && wanted.equals(normalizeDeviceName(item.displayName))) {
+                if (match != null)
+                    throw new IllegalStateException("Найдено несколько сопряжённых Windows Agent с таким именем. Уточни имя компьютера.");
+                match = item;
+            }
+        }
+        if (match == null)
+            throw new IllegalStateException("Для этого устройства нет сохранённого сопряжения Windows Agent. Сначала выполни первичное сопряжение.");
+        match.enabled = enabled;
+        registry.update(match);
+        if (!enabled)
+            return "Windows Agent отключён в RE:Vision. Сопряжение на компьютере и сохранённый ключ не удалены.";
+        int result = probeForDevice(context, target, target.statusIp);
+        if (result == 1) return "Windows Agent подключён: подпись проверена сохранённым ключом.";
+        if (result == 2) return "Компьютер отвечает, но сохранённый ключ RE:Vision отсутствует.";
+        if (result == 3) return "Windows Agent отклонил сохранённый ключ. Сопряжение не сброшено.";
+        if (result == 0) return "Windows Agent не отвечает по сохранённым адресам. Сопряжение сохранено.";
+        return "Windows Agent не связан с этим адресом. Сопряжение сохранено.";
+    }
+
     /**
      * Card status: 1=the current Android installation authenticated with its paired
      * secret; 2=the PC has a pairing but this installation has no matching secret;
@@ -426,6 +476,8 @@ public final class WindowsAgentClient {
         Context app = context.getApplicationContext();
         java.util.LinkedHashSet<String> bases = new java.util.LinkedHashSet<>();
         addAgentBase(bases, activeAddress);
+        // Scan pre-fills statusIp; use that same discovered endpoint for Windows Agent.
+        addAgentBase(bases, target.statusIp);
         addAgentBase(bases, target.sshAddress);
         for (String address : com.ymid.wakeonlan.network.DeviceNetworkProfiles.statusAddresses(target))
             addAgentBase(bases, address);
