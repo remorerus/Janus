@@ -459,8 +459,13 @@ export default {
     const toggleEnabled = requestedAction === 'wifi_enable' ? true
       : requestedAction === 'wifi_disable' ? false
       : (query && typeof query.enabled === 'boolean' ? query.enabled : undefined);
-    const action = (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
-      ? 'wifi_toggle' : requestedAction;
+    // Legacy AIUI may still emit windows_shutdown. Normalize it to the
+    // normal RE:Vision shutdown action so the saved device is resolved to its
+    // database ID and the configured SSH executor is used (never HTTP Agent).
+    const action = requestedAction === 'windows_shutdown'
+      ? 'shutdown'
+      : (requestedAction === 'wifi_enable' || requestedAction === 'wifi_disable')
+        ? 'wifi_toggle' : requestedAction;
     const allowedActions = ['list', 'status', 'wake', 'shutdown', 'wifi_toggle', 'wifi', 'wifi_connect', 'wifi_status', 'wifi_list', 'windows_status', 'windows_lock', 'windows_launch', 'windows_ssh_launch', 'windows_shutdown', 'windows_restart', 'windows_cancel_shutdown'];
     if (!allowedActions.includes(action)) {
       const message = 'Команда не распознана как действие RE:Vision. Уточни команду: список устройств, статус устройства или команда Wi-Fi.';
