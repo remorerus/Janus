@@ -164,7 +164,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             Preference windowsAgentPreference = new Preference(requireContext());
             windowsAgentPreference.setTitle("Windows Agent — компьютеры");
-            boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext());
+            boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isAnyConfigured(requireContext());
             String savedAgentHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
             windowsAgentPreference.setSummary(agentPaired
                     ? "Сопряжён · " + (savedAgentHost == null ? "адрес сохранён" : savedAgentHost)
@@ -470,15 +470,23 @@ public class SettingsActivity extends AppCompatActivity {
                             new Thread(() -> {
                                 try {
                                     org.json.JSONObject status = com.ymid.wakeonlan.voice.WindowsAgentClient.status(requireContext(), address);
-                                    boolean paired = status.optBoolean("paired", false);
+                                    boolean pairedOnPc = status.optBoolean("paired", false);
+                                    boolean authenticatedHere = status.optBoolean("clientAuthenticated", false);
                                     handler.post(() -> {
-                                        windowsAgentPreference.setSummary(paired
-                                                ? "Сопряжён · " + address
-                                                : "Агент доступен, но не сопряжён · " + address);
-                                        Toast.makeText(requireContext(), paired
-                                                ? "Windows Agent доступен, сопряжение сохранено."
-                                                : "Windows Agent доступен, требуется сопряжение.",
-                                                Toast.LENGTH_LONG).show();
+                                        String summary;
+                                        String message;
+                                        if (authenticatedHere) {
+                                            summary = "Сопряжение подтверждено подписью · " + address;
+                                            message = "Этот RE:Vision успешно подтвердил свой ключ сопряжения.";
+                                        } else if (pairedOnPc) {
+                                            summary = "Агент хранит ключ, но это приложение не подтвердило сопряжение · " + address;
+                                            message = "ПК доступен, но сохранённый ключ RE:Vision не совпал. Ничего не сбрасывали.";
+                                        } else {
+                                            summary = "Агент доступен, сопряжение не настроено · " + address;
+                                            message = "Windows Agent доступен, но на ПК нет активного сопряжения.";
+                                        }
+                                        windowsAgentPreference.setSummary(summary);
+                                        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show();
                                     });
                                 } catch (Exception e) {
                                     String message = e.getMessage() == null ? "Нет ответа от Windows Agent" : e.getMessage();
