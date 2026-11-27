@@ -394,6 +394,36 @@ app.MapGet("/v1/discovery", () => Results.Json(new {
     capabilities = new[] { "windows-agent", "ssh" }
 }));
 
+// Proves that this RE:Vision installation holds the pairing secret stored by this PC.
+// Unlike /v1/status, this endpoint authenticates the caller and has no side effects.
+app.MapPost("/v1/pairing/verify", (HttpContext context) =>
+{
+    var body = "";
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, "POST", context.Request.Path,
+            timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { authenticated = false, error = authError },
+            statusCode: StatusCodes.Status401Unauthorized);
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray())
+        usedNonces.TryRemove(item.Key, out _);
+    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now))
+        return Results.Unauthorized();
+
+    return Results.Json(new {
+        authenticated = true,
+        paired = true,
+        deviceId = config.DeviceId,
+        name = config.DeviceName
+    });
+});
+
 app.MapGet("/v1/manager/identity", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
