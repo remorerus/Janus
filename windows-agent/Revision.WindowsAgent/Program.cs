@@ -385,6 +385,39 @@ app.MapGet("/v1/status", () => Results.Json(new {
     paired = config.ClientSecret is not null
 }));
 
+// Confirms that the caller possesses this Agent's pairing secret.
+// /v1/status is intentionally public and is not proof of an authenticated pairing.
+app.MapGet("/v1/pairing/verify", (HttpContext context) =>
+{
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    var authError = config.ClientSecret is null
+        ? "not_paired"
+        : GetAuthenticationFailureReason(config.ClientSecret, "GET",
+            context.Request.Path.Value ?? "/v1/pairing/verify", timestamp, nonce, "", signature);
+    if (authError is not null)
+        return Results.Json(new {
+            authenticated = false,
+            paired = config.ClientSecret is not null,
+            deviceId = config.DeviceId,
+            error = authError
+        }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray())
+        usedNonces.TryRemove(item.Key, out _);
+    if (!usedNonces.TryAdd(nonce, now))
+        return Results.Unauthorized();
+
+    return Results.Json(new {
+        authenticated = true,
+        paired = true,
+        deviceId = config.DeviceId,
+        name = config.DeviceName
+    });
+});
+
 // Read-only LAN discovery. This endpoint and UDP advertisement expose no secrets.
 app.MapGet("/v1/discovery", () => Results.Json(new {
     protocol = "revision-discovery-v1",
