@@ -20,6 +20,7 @@ on:
       - revision-clean-diagnostic-2026-11-27
       - revision-crashdump-device-create-2026-11-27
       - revision-live-device-card-2026-11-27
+      - fix/live-network-card-state-agent-2026-11-27
     paths:
       - "app/**"
       - "*.gradle"
