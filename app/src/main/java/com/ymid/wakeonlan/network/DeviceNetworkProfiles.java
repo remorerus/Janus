@@ -42,6 +42,43 @@ public final class DeviceNetworkProfiles {
         return new ArrayList<>(values);
     }
 
+    /**
+     * Returns the MAC address belonging to the network profile whose status endpoint
+     * actually answered. Additional profile MACs are stored in networkProfilesJson.
+     */
+    public static String macAddressFor(Device device, String activeAddress) {
+        if (device == null) return null;
+        if (!hasText(activeAddress)) return device.macAddress;
+
+        if (sameAddress(activeAddress, device.statusIp)
+                || sameAddress(activeAddress, device.broadcastAddress)) {
+            return device.macAddress;
+        }
+
+        if (device.networkProfilesJson != null) {
+            try {
+                JSONArray profiles = new JSONArray(device.networkProfilesJson);
+                for (int i = 0; i < profiles.length(); i++) {
+                    JSONObject profile = profiles.optJSONObject(i);
+                    if (profile == null) continue;
+                    String status = profile.optString("statusIp", "");
+                    String broadcast = profile.optString("broadcastAddress", "");
+                    if (sameAddress(activeAddress, status) || sameAddress(activeAddress, broadcast)) {
+                        String mac = profile.optString("macAddress", "");
+                        return hasText(mac) ? mac.trim() : device.macAddress;
+                    }
+                }
+            } catch (Exception ignored) {
+                // Keep the primary MAC as a safe fallback for malformed optional profile data.
+            }
+        }
+        return device.macAddress;
+    }
+
+    private static boolean sameAddress(String first, String second) {
+        return hasText(first) && hasText(second) && first.trim().equalsIgnoreCase(second.trim());
+    }
+
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
