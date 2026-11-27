@@ -13,6 +13,7 @@ on:
       - revision-ssh-key-only-2026-11-25
       - revision-voicebridge-tap-ssh-manager-2026-11-25
       - revision-voice-windows-controls-2026-11-25
+      - revision-fix-active-ip-agent-status-2026-11-27
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
