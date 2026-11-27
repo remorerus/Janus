@@ -372,7 +372,7 @@ public final class WindowsAgentClient {
                     authenticated = verifyPairingAtBase(base, secret, deviceId);
                     if (authenticated) {
                         JSONObject identity = request(base, "GET", "/v1/discovery", "", null);
-                        saveRegistryPair(context, identity, base, secret);
+                        saveVerifiedRoute(context, identity, base, secret);
                     }
                 } catch (Exception ignored) {
                     authenticated = false;
@@ -442,7 +442,7 @@ public final class WindowsAgentClient {
                 if (Strings.isNullOrEmpty(secret)) continue;
                 try {
                     if (verifyPairingAtBase(base, secret, deviceId)) {
-                        saveRegistryPair(app, identity, base, secret);
+                        saveVerifiedRoute(app, identity, base, secret);
                         return 1;
                     }
                     rejectedSecret = true;
@@ -539,6 +539,39 @@ public final class WindowsAgentClient {
             throw new IllegalStateException("Windows Agent не принял команду.");
         }
         return result;
+    }
+
+    /** Persist a verified address only when it changes; card polling must not write Room every few seconds. */
+    private static void saveVerifiedRoute(Context context, JSONObject identity, String base, String secret)
+            throws Exception {
+        String deviceId = identity == null ? "" : identity.optString("deviceId", "").trim();
+        if (deviceId.isEmpty()) throw new IllegalStateException("Windows Agent не сообщил постоянный ID устройства.");
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity previous = registry.get(deviceId);
+        if (previous == null) {
+            saveRegistryPair(context, identity, base, secret);
+            return;
+        }
+        if (!previous.enabled) return;
+        if (base.equals(previous.baseUrl)) return;
+
+        java.util.LinkedHashSet<String> endpoints = new java.util.LinkedHashSet<>();
+        endpoints.add(base);
+        try {
+            org.json.JSONArray old = new org.json.JSONArray(
+                    previous.endpointUrlsJson == null ? "[]" : previous.endpointUrlsJson);
+            for (int i = 0; i < old.length(); i++) {
+                String endpoint = old.optString(i, "");
+                if (!endpoint.isEmpty()) endpoints.add(endpoint);
+            }
+        } catch (Exception ignored) { }
+        org.json.JSONArray updated = new org.json.JSONArray();
+        for (String endpoint : endpoints) updated.put(endpoint);
+        previous.baseUrl = base;
+        previous.endpointUrlsJson = updated.toString();
+        previous.lastSeenAt = System.currentTimeMillis();
+        registry.update(previous);
     }
 
     private static void saveRegistryPair(Context context, JSONObject identity, String base, String secret)
