@@ -32,6 +32,7 @@ public final class DeviceStatusBoard {
     private final Map<Integer, Deque<Long>> latencyHistory = new HashMap<>();
     private final Map<Integer, DeviceStatus> lastStatus = new HashMap<>();
     private final Map<Integer, String> lastActiveAddress = new HashMap<>();
+    private final Map<Integer, String> previousActiveAddress = new HashMap<>();
     private final Map<Integer, String> lastActiveMacAddress = new HashMap<>();
     private final Map<Integer, Long> wakeSentAt = new HashMap<>();
     private final MutableLiveData<Long> changes = new MutableLiveData<>(0L);
@@ -66,6 +67,9 @@ public final class DeviceStatusBoard {
             if (address != null && !address.trim().isEmpty()) {
                 String previousAddress = lastActiveAddress.put(deviceId, address.trim());
                 addressChanged = previousAddress != null && !previousAddress.equalsIgnoreCase(address.trim());
+                if (addressChanged) {
+                    previousActiveAddress.put(deviceId, previousAddress.trim());
+                }
                 String mac = snapshot.getActiveMacAddress();
                 if (mac == null || mac.trim().isEmpty()) {
                     lastActiveMacAddress.remove(deviceId);
@@ -89,6 +93,12 @@ public final class DeviceStatusBoard {
     @MainThread
     public String getLastActiveAddress(int deviceId) {
         return lastActiveAddress.get(deviceId);
+    }
+
+    /** Previous endpoint in the most recent confirmed network transition, if any. */
+    @MainThread
+    public String getPreviousActiveAddress(int deviceId) {
+        return previousActiveAddress.get(deviceId);
     }
 
     @MainThread
