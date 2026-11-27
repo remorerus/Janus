@@ -31,6 +31,8 @@ public final class DeviceStatusBoard {
 
     private final Map<Integer, Deque<Long>> latencyHistory = new HashMap<>();
     private final Map<Integer, DeviceStatus> lastStatus = new HashMap<>();
+    private final Map<Integer, String> activeAddresses = new HashMap<>();
+    private final Map<Integer, String> previousActiveAddresses = new HashMap<>();
     private final Map<Integer, Long> wakeSentAt = new HashMap<>();
     private final MutableLiveData<Long> changes = new MutableLiveData<>(0L);
 
@@ -47,10 +49,18 @@ public final class DeviceStatusBoard {
     }
 
     @MainThread
-    public void record(int deviceId, DeviceStatusSnapshot snapshot) {
+    public boolean record(int deviceId, DeviceStatusSnapshot snapshot) {
         DeviceStatus status = snapshot.getStatus();
+        boolean addressChanged = false;
         if (status == DeviceStatus.ONLINE) {
             wakeSentAt.remove(deviceId);
+            String measuredAddress = snapshot.getActiveAddress();
+            if (measuredAddress != null && !measuredAddress.trim().isEmpty()) {
+                String previousAddress = activeAddresses.put(deviceId, measuredAddress.trim());
+                addressChanged = previousAddress != null
+                        && !previousAddress.equalsIgnoreCase(measuredAddress.trim());
+                if (addressChanged) previousActiveAddresses.put(deviceId, previousAddress);
+            }
             Long latency = snapshot.getLatencyMs();
             if (latency != null) {
                 Deque<Long> history = latencyHistory.computeIfAbsent(deviceId, id -> new ArrayDeque<>());
@@ -64,9 +74,22 @@ public final class DeviceStatusBoard {
         }
 
         DeviceStatus previous = lastStatus.put(deviceId, status);
-        if (previous != status || status == DeviceStatus.ONLINE) {
+        if (previous != status || status == DeviceStatus.ONLINE || addressChanged) {
             changes.setValue(SystemClock.elapsedRealtime());
         }
+        return addressChanged;
+    }
+
+    /** Last endpoint that successfully answered, retained across row rebinds and screen pauses. */
+    @MainThread
+    public String getActiveAddress(int deviceId) {
+        return activeAddresses.get(deviceId);
+    }
+
+    /** Previous endpoint, retained for diagnostics and route-change presentation. */
+    @MainThread
+    public String getPreviousActiveAddress(int deviceId) {
+        return previousActiveAddresses.get(deviceId);
     }
 
     @MainThread
