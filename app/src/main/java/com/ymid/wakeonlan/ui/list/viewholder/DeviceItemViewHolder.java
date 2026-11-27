@@ -8,15 +8,18 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import java.net.Socket;
 import java.net.InetSocketAddress;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry;
-import com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity;
+import com.ymid.wakeonlan.security.AndroidKeyStoreKeyProvider;
+import com.ymid.wakeonlan.security.KeystoreEcdsaSignature;
+import com.ymid.wakeonlan.security.TofuHostKeyVerifier;
+import net.schmizz.sshj.DefaultConfig;
+import net.schmizz.sshj.SSHClient;
 import android.widget.TextView;
 
 import androidx.appcompat.content.res.AppCompatResources;
@@ -40,6 +43,7 @@ import com.ymid.wakeonlan.ui.list.status.DeviceStatusListener;
 import com.ymid.wakeonlan.ui.list.status.DeviceStatusSnapshot;
 import com.ymid.wakeonlan.ui.list.status.pool.StatusTestType;
 import com.ymid.wakeonlan.ui.list.status.pool.StatusTesterPool;
+import com.ymid.wakeonlan.voice.WindowsAgentClient;
 
 public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
@@ -49,6 +53,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private final TextView deviceName;
     private final ObfuscatedTextView deviceMacAddress;
     private final TextView deviceIp;
+    private final TextView deviceIpHint;
     private final TextView deviceStatusDetails;
     private final TextView deviceLatencyUnit;
     private final SparklineView latencySparkline;
@@ -80,6 +85,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         deviceName = view.findViewById(R.id.device_name);
         deviceMacAddress = view.findViewById(R.id.device_mac);
         deviceIp = view.findViewById(R.id.device_ip);
+        deviceIpHint = view.findViewById(R.id.device_ip_hint);
         deviceStatusDetails = view.findViewById(R.id.device_status_details);
         deviceLatencyUnit = view.findViewById(R.id.device_latency_unit);
         latencySparkline = view.findViewById(R.id.device_latency_sparkline);
@@ -102,13 +108,11 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         this.drivesLauncherIcon = drivesLauncherIcon;
 
         deviceName.setText(device.name);
-        deviceMacAddress.setObfuscatedText(device.macAddress);
-        // Never show a configured/first route as if it were active. The IP is populated only
-        // after a successful status check identifies the exact endpoint that answered.
-        deviceIp.setText("");
-        deviceIp.setVisibility(View.GONE);
-        lastActiveAddress = null;
+        lastActiveAddress = statusBoard.getLastActiveAddress(device.id);
+        String rememberedMac = statusBoard.getLastActiveMacAddress(device.id);
+        updateActiveIp(lastActiveAddress, rememberedMac, false, lastActiveAddress != null);
         deviceIpArrow.setVisibility(View.GONE);
+        deviceIpArrow.clearAnimation();
         setServiceState(sshLed, sshState, "ПРОВЕРКА", 0);
         setServiceState(agentLed, agentState, "ПРОВЕРКА", 0);
         startServiceStatusProbes(device);
@@ -163,7 +167,7 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
     private void updateStatusDetails(int deviceId, DeviceStatusSnapshot statusSnapshot) {
         itemView.post(() -> {
-            statusBoard.record(deviceId, statusSnapshot);
+            boolean addressChanged = statusBoard.record(deviceId, statusSnapshot);
             // The row may have been rebound to another device while the check was running
             if (device == null || device.id != deviceId) {
                 return;
@@ -172,11 +176,13 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
             DeviceStatus status = statusSnapshot.getStatus();
             if (status == DeviceStatus.ONLINE) {
                 String activeAddress = statusSnapshot.getActiveAddress();
-                updateActiveIp(activeAddress);
+                String activeMac = statusSnapshot.getActiveMacAddress();
+                updateActiveIp(activeAddress, activeMac, addressChanged, false);
                 updateLauncherIconIfNeeded(true);
                 render(RowState.ONLINE, statusSnapshot.getLatencyMs());
             } else if (status == DeviceStatus.OFFLINE) {
-                updateActiveIp(null);
+                updateActiveIp(statusBoard.getLastActiveAddress(deviceId),
+                        statusBoard.getLastActiveMacAddress(deviceId), false, true);
                 updateLauncherIconIfNeeded(false);
                 render(statusBoard.isWaking(deviceId) ? RowState.WAKING : RowState.OFFLINE, null);
             } else {
@@ -185,20 +191,37 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         });
     }
 
-    private void updateActiveIp(String activeAddress) {
-        String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress;
-        String previous = lastActiveAddress;
-        lastActiveAddress = next;
+    private void updateActiveIp(String activeAddress, String activeMac, boolean addressChanged,
+                                boolean lastKnown) {
+        String next = Strings.isNullOrEmpty(activeAddress) ? null : activeAddress.trim();
+        if (next != null) lastActiveAddress = next;
         deviceIp.setText(next == null ? "" : next);
         deviceIp.setVisibility(next == null ? View.GONE : View.VISIBLE);
-        if (next != null && previous != null && !previous.equals(next)) {
+        deviceIp.setAlpha(lastKnown ? 0.65f : 1f);
+        deviceIpHint.setText(lastKnown ? "последний" : "");
+        deviceIpHint.setVisibility(lastKnown && next != null ? View.VISIBLE : View.GONE);
+
+        if (!Strings.isNullOrEmpty(activeMac)) {
+            deviceMacAddress.setObfuscatedText(activeMac);
+            deviceMacAddress.setVisibility(View.VISIBLE);
+        } else if (next == null && DeviceNetworkProfiles.statusAddresses(device).size() <= 1) {
+            deviceMacAddress.setObfuscatedText(device.macAddress);
+            deviceMacAddress.setVisibility(Strings.isNullOrEmpty(device.macAddress) ? View.GONE : View.VISIBLE);
+        } else {
+            // Do not display the first profile's MAC beside an IP from another network.
+            deviceMacAddress.setVisibility(View.GONE);
+        }
+
+        if (addressChanged && next != null) {
             deviceIpArrow.setVisibility(View.VISIBLE);
             deviceIp.clearAnimation();
-            deviceIp.startAnimation(new TranslateAnimation(-dp(18), 0, 0, 0) {{
-                setDuration(420);
-            }});
-            TranslateAnimation arrow = new TranslateAnimation(0, dp(38), 0, 0);
-            arrow.setDuration(620);
+            TranslateAnimation ipMotion = new TranslateAnimation(-dp(22), 0, 0, 0);
+            ipMotion.setDuration(850);
+            deviceIp.startAnimation(ipMotion);
+
+            deviceIpArrow.clearAnimation();
+            TranslateAnimation arrow = new TranslateAnimation(-dp(8), dp(42), 0, 0);
+            arrow.setDuration(1100);
             arrow.setRepeatCount(1);
             arrow.setRepeatMode(Animation.RESTART);
             arrow.setAnimationListener(new Animation.AnimationListener() {
@@ -210,6 +233,9 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
                 @Override public void onAnimationRepeat(Animation animation) { }
             });
             deviceIpArrow.startAnimation(arrow);
+        } else if (!addressChanged) {
+            deviceIpArrow.setVisibility(View.GONE);
+            deviceIpArrow.clearAnimation();
         }
     }
 
@@ -221,66 +247,84 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         if (serviceProbeFuture != null) serviceProbeFuture.cancel(true);
         final int targetId = target.id;
         serviceProbeFuture = SERVICE_PROBES.scheduleWithFixedDelay(() -> {
-            boolean sshOnline = probeSsh(target);
-            int agentResult = probeWindowsAgent(target);
+            String activeAddress = lastActiveAddress;
+            int sshResult = probeSsh(target, activeAddress);
+            int agentResult = probeWindowsAgent(target, activeAddress);
             itemView.post(() -> {
                 if (device == null || device.id != targetId) return;
-                setServiceState(sshLed, sshState, sshOnline ? "ONLINE" : "OFFLINE",
-                        sshOnline ? 1 : 2);
+                if (sshResult == 1) {
+                    setServiceState(sshLed, sshState, "SSH OK", 1);
+                } else if (sshResult == 2) {
+                    setServiceState(sshLed, sshState, "ПОРТ ЕСТЬ", 3);
+                } else if (sshResult == -1) {
+                    setServiceState(sshLed, sshState, "НЕ НАСТР.", 0);
+                } else {
+                    setServiceState(sshLed, sshState, "OFFLINE", 2);
+                }
+
                 if (agentResult == 1) {
                     setServiceState(agentLed, agentState, "ONLINE", 1);
+                } else if (agentResult == 2) {
+                    setServiceState(agentLed, agentState, "НУЖЕН КЛЮЧ", 3);
+                } else if (agentResult == 3) {
+                    setServiceState(agentLed, agentState, "КЛЮЧ ОШИБКА", 2);
                 } else if (agentResult == 0) {
                     setServiceState(agentLed, agentState, "OFFLINE", 2);
                 } else {
                     setServiceState(agentLed, agentState, "НЕ ПРИВЯЗАН", 0);
                 }
             });
-        }, 0, 4, TimeUnit.SECONDS);
+        }, 0, 6, TimeUnit.SECONDS);
     }
 
-    private boolean probeSsh(Device target) {
-        String host = !Strings.isNullOrEmpty(lastActiveAddress) ? lastActiveAddress : target.sshAddress;
-        if (Strings.isNullOrEmpty(host)) return false;
-        int port = target.sshPort == null || target.sshPort < 1 ? 22 : target.sshPort;
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), 1200);
-            return true;
-        } catch (Exception ignored) {
-            return false;
+    /**
+     * 1=SSH public-key authentication succeeded, 2=TCP port is reachable but SSH
+     * authentication failed, 0=unreachable, -1=SSH credentials/key are not configured.
+     */
+    private int probeSsh(Device target, String activeAddress) {
+        String username = target.sshUsername == null ? "" : target.sshUsername.trim();
+        String alias = target.sshKeyAlias == null ? "" : target.sshKeyAlias.trim();
+        if (username.isEmpty() || alias.isEmpty()
+                || com.ymid.wakeonlan.security.SshKeyManager.getOpenSshPublicKey(alias) == null) {
+            return -1;
         }
+
+        int port = target.sshPort == null || target.sshPort < 1 ? 22 : target.sshPort;
+        LinkedHashSet<String> hosts = new LinkedHashSet<>();
+        if (!Strings.isNullOrEmpty(activeAddress)) hosts.add(activeAddress.trim());
+        if (!Strings.isNullOrEmpty(target.sshAddress)) hosts.add(target.sshAddress.trim());
+        if (hosts.isEmpty()) return -1;
+
+        boolean tcpReachable = false;
+        for (String host : hosts) {
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(host, port), 1000);
+                tcpReachable = true;
+            } catch (Exception ignored) {
+                continue;
+            }
+
+            TofuHostKeyVerifier verifier = new TofuHostKeyVerifier(itemView.getContext());
+            DefaultConfig config = new DefaultConfig();
+            config.setKeyAlgorithms(KeystoreEcdsaSignature.replaceIn(config.getKeyAlgorithms()));
+            try (SSHClient client = new SSHClient(config)) {
+                client.addHostKeyVerifier(verifier);
+                client.setConnectTimeout(1400);
+                client.connect(host, port);
+                client.authPublickey(username, new AndroidKeyStoreKeyProvider(alias));
+                return 1;
+            } catch (Exception ignored) {
+                // A reachable TCP/22 port is not an authenticated SSH session.
+                // Continue to any other explicitly configured route before reporting this.
+            }
+        }
+        return tcpReachable ? 2 : 0;
     }
 
-    /** 1=online, 0=offline, -1=no paired agent associated with this device name. */
-    private int probeWindowsAgent(Device target) {
+    /** 1=HMAC-verified paired agent, 2=PC holds a key but this app lacks it, 3=key rejected. */
+    private int probeWindowsAgent(Device target, String activeAddress) {
         try {
-            List<WindowsAgentDeviceEntity> paired =
-                    new WindowsAgentDeviceRegistry(itemView.getContext()).getAll();
-            WindowsAgentDeviceEntity match = null;
-            for (WindowsAgentDeviceEntity candidate : paired) {
-                if (candidate != null && candidate.enabled && candidate.displayName != null
-                        && target.name != null
-                        && candidate.displayName.trim().equalsIgnoreCase(target.name.trim())) {
-                    match = candidate;
-                    break;
-                }
-            }
-            if (match == null || Strings.isNullOrEmpty(match.baseUrl)) return -1;
-            URL statusUrl = new URL(match.baseUrl.replaceAll("/+$", "") + "/v1/status");
-            HttpURLConnection connection = (HttpURLConnection) statusUrl.openConnection();
-            try {
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(1200);
-                connection.setReadTimeout(1200);
-                int code = connection.getResponseCode();
-                if (code < 200 || code >= 300) return 0;
-                try (java.io.InputStream in = connection.getInputStream()) {
-                    byte[] buffer = new byte[1024];
-                    while (in.read(buffer) != -1) { }
-                }
-                return 1;
-            } finally {
-                connection.disconnect();
-            }
+            return WindowsAgentClient.probeForDevice(itemView.getContext(), target, activeAddress);
         } catch (Exception ignored) {
             return 0;
         }
@@ -289,21 +333,16 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
     private void setServiceState(View led, TextView label, String value, int state) {
         label.setText(value);
         int color = state == 1 ? Color.rgb(67, 205, 120)
-                : state == 2 ? Color.rgb(235, 83, 83) : Color.rgb(145, 145, 145);
+                : state == 2 ? Color.rgb(235, 83, 83)
+                : state == 3 ? Color.rgb(244, 174, 74) : Color.rgb(145, 145, 145);
         GradientDrawable dot = new GradientDrawable();
         dot.setShape(GradientDrawable.OVAL);
         dot.setColor(color);
         led.setBackground(dot);
         label.setTextColor(color);
-        if (state == 1) {
-            AlphaAnimation pulse = new AlphaAnimation(0.55f, 1f);
-            pulse.setDuration(850);
-            pulse.setRepeatMode(Animation.REVERSE);
-            pulse.setRepeatCount(Animation.INFINITE);
-            led.startAnimation(pulse);
-        } else {
-            led.clearAnimation();
-        }
+        // Service LEDs show a stable state; pulsing was making an unverified TCP check
+        // look like a live authenticated SSH session.
+        led.clearAnimation();
     }
 
     private void render(RowState state, Long latencyMs) {
