@@ -1,4 +1,4 @@
-run-name: RE:Vision signed APK build (${{ github.ref_name }}) # IP transition arrows and SSH voice routing rebuild
+run-name: RE:Vision signed APK build (${{ github.ref_name }}) # Windows Agent controls, persistent device ordering, and 1.9.25 diagnostics rebuild
 name: Build RE:Vision APK
 
 on:
@@ -21,6 +21,7 @@ on:
       - revision-crashdump-device-create-2026-11-27
       - revision-live-device-card-2026-11-27
       - revision-fix-active-ip-agent-status-2026-11-27
+      - revision-1.9.25-agent-controls-reorder-2026-11-27
     paths:
       - "app/**"
       - "*.gradle"
