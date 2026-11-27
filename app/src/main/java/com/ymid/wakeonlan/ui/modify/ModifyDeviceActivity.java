@@ -100,6 +100,9 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
     protected Spinner deviceSshOsSpinner;
     protected TextView deviceSshOsSuggestion;
     protected Button sshTestShutdownButton;
+    protected Button agentConnectButton;
+    protected Button agentDisconnectButton;
+    protected TextView agentConnectStatus;
     protected String sshKeyAlias;
     private LinearLayout networkProfilesContainer;
     private final java.util.List<NetworkProfileInput> additionalNetworkProfiles = new java.util.ArrayList<>();
@@ -160,6 +163,12 @@ public abstract class ModifyDeviceActivity extends AppCompatActivity {
         deviceSshOsSuggestion = binding.device.deviceShutdownOsSuggestion;
 
         sshTestShutdownButton = binding.device.deviceButtonTestShutdown;
+        agentConnectButton = binding.device.deviceButtonAgentConnect;
+        agentDisconnectButton = binding.device.deviceButtonAgentDisconnect;
+        agentConnectStatus = binding.device.deviceAgentConnectStatus;
+        agentConnectButton.setVisibility(View.GONE);
+        agentDisconnectButton.setVisibility(View.GONE);
+        agentConnectStatus.setVisibility(View.GONE);
         networkProfilesContainer = binding.device.networkProfilesContainer;
         binding.device.addNetworkProfile.setOnClickListener(v -> addNetworkProfile("", getDeviceMacInputText(), "", "", true));
 
