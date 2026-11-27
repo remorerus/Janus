@@ -225,12 +225,13 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         if (serviceProbeFuture != null) serviceProbeFuture.cancel(true);
         final int targetId = target.id;
         serviceProbeFuture = SERVICE_PROBES.scheduleWithFixedDelay(() -> {
-            boolean sshOnline = probeSsh(target);
+            int sshResult = probeSsh(target);
             int agentResult = probeWindowsAgent(target);
             itemView.post(() -> {
                 if (device == null || device.id != targetId) return;
-                setServiceState(sshLed, sshState, sshOnline ? "ПОРТ ОТКРЫТ" : "НЕТ СВЯЗИ",
-                        sshOnline ? 1 : 2);
+                setServiceState(sshLed, sshState,
+                        sshResult == 1 ? "ПОРТ ОТКРЫТ" : sshResult == 0 ? "НЕТ СВЯЗИ" : "ЖДЁМ IP",
+                        sshResult == 1 ? 1 : sshResult == 0 ? 2 : 0);
                 if (agentResult == 1) {
                     setServiceState(agentLed, agentState, "СОПРЯЖЁН", 1);
                 } else if (agentResult == 0) {
@@ -242,15 +243,22 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         }, 0, 4, TimeUnit.SECONDS);
     }
 
-    private boolean probeSsh(Device target) {
-        String host = !Strings.isNullOrEmpty(lastActiveAddress) ? lastActiveAddress : target.sshAddress;
-        if (Strings.isNullOrEmpty(host)) return false;
+    /** 1=TCP port responds, 0=checked and unavailable, -1=wait for the active profile. */
+    private int probeSsh(Device target) {
+        String host = lastActiveAddress;
+        if (Strings.isNullOrEmpty(host)) {
+            // Do not label the first saved SSH address ONLINE while several network
+            // profiles exist and the current one has not yet been identified by ping.
+            if (DeviceNetworkProfiles.statusAddresses(target).size() > 1) return -1;
+            host = target.sshAddress;
+        }
+        if (Strings.isNullOrEmpty(host)) return -1;
         int port = target.sshPort == null || target.sshPort < 1 ? 22 : target.sshPort;
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), 1200);
-            return true;
+            return 1;
         } catch (Exception ignored) {
-            return false;
+            return 0;
         }
     }
 
