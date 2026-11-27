@@ -87,12 +87,16 @@ public final class WindowsAgentClient {
                     ? existingId.equals(targetId)
                     : existingBase.equals(base);
             if (sameDevice) {
-                boolean agentPaired = false;
+                boolean existingSecretVerified = false;
                 try {
-                    JSONObject status = request(base, "GET", "/v1/status", "", null);
-                    agentPaired = status.optBoolean("paired", false);
+                    JSONObject verification = authenticatedGet(base, existingSecret,
+                            "/v1/pairing/verify", TIMEOUT_MS);
+                    existingSecretVerified = verification.optBoolean("authenticated", false)
+                            && verification.optBoolean("paired", false)
+                            && targetId != null
+                            && targetId.equals(verification.optString("deviceId", ""));
                 } catch (Exception ignored) { }
-                if (agentPaired) {
+                if (existingSecretVerified) {
                     saveRegistryPair(context, targetIdentity, base, existingSecret);
                     SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
                     if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
@@ -410,6 +414,141 @@ public final class WindowsAgentClient {
             device.isDefault = registry.getDefault() == null;
         }
         registry.addPairedDevice(device, device.isDefault);
+    }
+
+    /**
+     * Finds the paired Agent that belongs to this RE:Vision device row.
+     * Matching is based on stable registry identity, saved per-profile IPs and aliases,
+     * not only on the row's display name.
+     */
+    public static WindowsAgentDeviceEntity findRegisteredDeviceForCard(Context context, Device target) {
+        if (target == null) return null;
+        WindowsAgentDeviceRegistry registry = new WindowsAgentDeviceRegistry(context);
+        List<WindowsAgentDeviceEntity> paired = registry.getAll();
+        String wanted = normalizeDeviceName(target.name);
+        java.util.LinkedHashSet<String> expectedHosts = new java.util.LinkedHashSet<>();
+        for (String address : DeviceNetworkProfiles.statusAddresses(target)) {
+            String host = endpointHost(address);
+            if (!host.isEmpty()) expectedHosts.add(host);
+        }
+        for (String address : new String[]{target.statusIp, target.broadcastAddress, target.sshAddress}) {
+            String host = endpointHost(address);
+            if (!host.isEmpty()) expectedHosts.add(host);
+        }
+
+        List<WindowsAgentDeviceEntity> matches = new ArrayList<>();
+        for (WindowsAgentDeviceEntity candidate : paired) {
+            if (candidate == null || !candidate.enabled || candidate.clientSecret == null
+                    || candidate.clientSecret.trim().isEmpty()) continue;
+            boolean nameMatch = !wanted.isEmpty()
+                    && wanted.equals(normalizeDeviceName(candidate.displayName));
+            try {
+                org.json.JSONArray aliases = new org.json.JSONArray(
+                        candidate.voiceAliasesJson == null ? "[]" : candidate.voiceAliasesJson);
+                for (int i = 0; !nameMatch && i < aliases.length(); i++) {
+                    nameMatch = wanted.equals(normalizeDeviceName(aliases.optString(i, "")));
+                }
+            } catch (Exception ignored) { }
+
+            boolean endpointMatch = false;
+            String baseHost = endpointHost(candidate.baseUrl);
+            if (!baseHost.isEmpty() && expectedHosts.contains(baseHost)) endpointMatch = true;
+            try {
+                org.json.JSONArray saved = new org.json.JSONArray(
+                        candidate.endpointUrlsJson == null ? "[]" : candidate.endpointUrlsJson);
+                for (int i = 0; !endpointMatch && i < saved.length(); i++) {
+                    String host = endpointHost(saved.optString(i, ""));
+                    endpointMatch = !host.isEmpty() && expectedHosts.contains(host);
+                }
+            } catch (Exception ignored) { }
+
+            if (nameMatch || endpointMatch) matches.add(candidate);
+        }
+
+        if (matches.size() == 1) return matches.get(0);
+        if (matches.size() > 1)
+            throw new IllegalStateException("К карточке подходит несколько Windows Agent. Уточни имя или IP.");
+        // Safe fallback only when the app has exactly one saved PC and exactly one paired Agent.
+        if (paired.size() == 1) {
+            try {
+                List<Device> devices = com.ymid.wakeonlan.persistence.repository.DeviceRepository
+                        .getInstance(context).getAll();
+                if (devices.size() == 1 && devices.get(0).id == target.id) {
+                    WindowsAgentDeviceEntity only = paired.get(0);
+                    return only != null && only.enabled ? only : null;
+                }
+            } catch (Exception ignored) { }
+        }
+        return null;
+    }
+
+    /**
+     * Confirms that the saved HMAC secret belongs to the expected stable Windows Agent ID.
+     * Tries the saved endpoints and the IPs stored in the device's network profiles.
+     */
+    public static boolean verifyRegisteredPairing(Context context,
+            WindowsAgentDeviceEntity device, Device target) {
+        if (device == null || !device.enabled || device.deviceId == null
+                || device.clientSecret == null || device.clientSecret.trim().isEmpty()) return false;
+
+        java.util.LinkedHashSet<String> bases = new java.util.LinkedHashSet<>();
+        if (device.baseUrl != null && !device.baseUrl.trim().isEmpty()) bases.add(device.baseUrl.trim());
+        try {
+            org.json.JSONArray saved = new org.json.JSONArray(
+                    device.endpointUrlsJson == null ? "[]" : device.endpointUrlsJson);
+            for (int i = 0; i < saved.length(); i++) {
+                String value = saved.optString(i, "").trim();
+                if (!value.isEmpty()) bases.add(value);
+            }
+        } catch (Exception ignored) { }
+
+        if (target != null) {
+            java.util.LinkedHashSet<String> addresses = new java.util.LinkedHashSet<>(
+                    DeviceNetworkProfiles.statusAddresses(target));
+            for (String value : new String[]{target.statusIp, target.broadcastAddress, target.sshAddress}) {
+                if (value != null && !value.trim().isEmpty()) addresses.add(value.trim());
+            }
+            for (String address : addresses) {
+                String host = endpointHost(address);
+                if (!host.isEmpty()) bases.add("http://" + host + ":47821");
+            }
+        }
+
+        for (String candidateBase : bases) {
+            try {
+                String base = normalizeBase(candidateBase);
+                JSONObject identity = request(base, "GET", "/v1/discovery", "", null, 1200);
+                if (!device.deviceId.equals(identity.optString("deviceId", ""))) continue;
+                JSONObject result = authenticatedGet(base, device.clientSecret,
+                        "/v1/pairing/verify", 1200);
+                if (!result.optBoolean("authenticated", false)
+                        || !result.optBoolean("paired", false)
+                        || !device.deviceId.equals(result.optString("deviceId", ""))) continue;
+
+                if (!base.equals(device.baseUrl)) {
+                    java.util.LinkedHashSet<String> routes = new java.util.LinkedHashSet<>();
+                    routes.add(base);
+                    try {
+                        org.json.JSONArray old = new org.json.JSONArray(
+                                device.endpointUrlsJson == null ? "[]" : device.endpointUrlsJson);
+                        for (int i = 0; i < old.length(); i++) {
+                            String value = old.optString(i, "");
+                            if (!value.isEmpty()) routes.add(value);
+                        }
+                    } catch (Exception ignored) { }
+                    org.json.JSONArray updated = new org.json.JSONArray();
+                    for (String route : routes) updated.put(route);
+                    device.baseUrl = base;
+                    device.endpointUrlsJson = updated.toString();
+                }
+                device.lastSeenAt = System.currentTimeMillis();
+                new WindowsAgentDeviceRegistry(context).update(device);
+                return true;
+            } catch (Exception ignored) {
+                // A stale endpoint, unrelated host or invalid secret is not a valid pairing.
+            }
+        }
+        return false;
     }
 
     /**
@@ -946,12 +1085,30 @@ public final class WindowsAgentClient {
         return value.replaceAll("/+$", "");
     }
 
+    private static JSONObject authenticatedGet(String base, String secret, String path,
+            int timeoutMs) throws Exception {
+        long timestamp = System.currentTimeMillis() / 1000L;
+        byte[] nonceBytes = new byte[16];
+        new SecureRandom().nextBytes(nonceBytes);
+        String nonce = Base64.encodeToString(nonceBytes, Base64.NO_WRAP | Base64.URL_SAFE);
+        String payload = "GET\\n" + path + "\\n" + timestamp + "\\n" + nonce + "\\n";
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
+        String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
+        return request(base, "GET", path, "", new String[]{Long.toString(timestamp), nonce, signature}, timeoutMs);
+    }
+
     private static JSONObject request(String base, String method, String path, String body, String[] auth) throws Exception {
+        return request(base, method, path, body, auth, TIMEOUT_MS);
+    }
+
+    private static JSONObject request(String base, String method, String path, String body,
+            String[] auth, int timeoutMs) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(base + path).openConnection();
         try {
             connection.setRequestMethod(method);
-            connection.setConnectTimeout(TIMEOUT_MS);
-            connection.setReadTimeout(TIMEOUT_MS);
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
             connection.setRequestProperty("Accept", "application/json");
             if (auth != null) {
                 connection.setRequestProperty("X-Revision-Time", auth[0]);
