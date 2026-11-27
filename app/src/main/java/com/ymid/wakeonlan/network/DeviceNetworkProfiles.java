@@ -1,10 +1,14 @@
 package com.ymid.wakeonlan.network;
 
 import com.ymid.wakeonlan.persistence.models.Device;
+import android.net.LinkProperties;
+import android.net.RouteInfo;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -40,6 +44,79 @@ public final class DeviceNetworkProfiles {
             }
         }
         return new ArrayList<>(values);
+    }
+
+    /**
+     * Orders candidate endpoints by the most specific route on Android's active network.
+     * A host on the connected Wi-Fi subnet outranks a host reachable only through a default
+     * route, so an old responding address on another interface is not selected first.
+     */
+    public static List<String> prioritizeForActiveRoutes(List<String> candidates, LinkProperties properties) {
+        if (candidates == null || candidates.size() < 2 || properties == null) {
+            return candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
+        }
+        final class ScoredAddress {
+            final String host;
+            final int score;
+            final int originalIndex;
+            ScoredAddress(String host, int score, int originalIndex) {
+                this.host = host;
+                this.score = score;
+                this.originalIndex = originalIndex;
+            }
+        }
+        List<ScoredAddress> scored = new ArrayList<>();
+        for (int i = 0; i < candidates.size(); i++) {
+            String host = candidates.get(i);
+            int bestPrefix = -1;
+            try {
+                InetAddress address = InetAddress.getByName(host);
+                for (RouteInfo route : properties.getRoutes()) {
+                    if (route != null && route.getDestination() != null
+                            && route.getDestination().contains(address)) {
+                        bestPrefix = Math.max(bestPrefix, route.getDestination().getPrefixLength());
+                    }
+                }
+            } catch (Exception ignored) { }
+            scored.add(new ScoredAddress(host, bestPrefix, i));
+        }
+        scored.sort(Comparator.comparingInt((ScoredAddress item) -> item.score).reversed()
+                .thenComparingInt(item -> item.originalIndex));
+        List<String> ordered = new ArrayList<>(scored.size());
+        for (ScoredAddress item : scored) ordered.add(item.host);
+        return ordered;
+    }
+
+    /**
+     * Returns the MAC belonging to the profile whose configured status endpoint answered.
+     * A default MAC is returned only for the primary profile; an unmatched address deliberately
+     * returns null rather than displaying a MAC from a different network adapter.
+     */
+    public static String macAddressForStatusAddress(Device device, String address) {
+        if (device == null || !hasText(address)) return null;
+        String wanted = address.trim();
+        String primaryStatus = hasText(device.statusIp) ? device.statusIp : device.broadcastAddress;
+        if (sameAddress(primaryStatus, wanted)) return device.macAddress;
+
+        if (device.networkProfilesJson == null) return null;
+        try {
+            JSONArray profiles = new JSONArray(device.networkProfilesJson);
+            for (int i = 0; i < profiles.length(); i++) {
+                JSONObject profile = profiles.optJSONObject(i);
+                if (profile == null) continue;
+                String status = profile.optString("statusIp", "");
+                String broadcast = profile.optString("broadcastAddress", "");
+                if (sameAddress(status, wanted) || sameAddress(broadcast, wanted)) {
+                    String mac = profile.optString("macAddress", "").trim();
+                    return hasText(mac) ? mac : device.macAddress;
+                }
+            }
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    private static boolean sameAddress(String left, String right) {
+        return hasText(left) && hasText(right) && left.trim().equalsIgnoreCase(right.trim());
     }
 
     private static boolean hasText(String value) {
