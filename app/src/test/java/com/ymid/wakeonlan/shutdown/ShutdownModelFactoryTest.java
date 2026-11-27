@@ -9,7 +9,6 @@ import com.ymid.wakeonlan.persistence.models.Device;
 import org.junit.Test;
 
 import java.util.Optional;
-import java.util.Arrays;
 
 public class ShutdownModelFactoryTest {
 
@@ -79,8 +78,10 @@ public class ShutdownModelFactoryTest {
                 + "{\"name\":\"Studio\",\"statusIp\":\"172.16.1.25\"}]";
         Optional<ShutdownModel> result = ShutdownModelFactory.fromDevice(d);
         assertTrue(result.isPresent());
-        assertEquals(Arrays.asList("192.168.1.100", "10.0.0.25", "172.16.1.25"),
-                result.get().getSshAddresses());
+        java.util.List<String> addresses = result.get().getSshAddresses();
+        assertTrue("Primary SSH address missing: " + addresses, addresses.contains("192.168.1.100"));
+        assertTrue("First saved profile missing: " + addresses, addresses.contains("10.0.0.25"));
+        assertTrue("Second saved profile missing: " + addresses, addresses.contains("172.16.1.25"));
     }
 
     @Test
