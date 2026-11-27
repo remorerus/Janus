@@ -6,6 +6,7 @@ public class NetworkScanDevice {
 
     private Optional<String> name = Optional.empty();
     private String ipAddress;
+    private String macAddress;
 
     public String getIpAddress() {
         return ipAddress;
@@ -22,6 +23,10 @@ public class NetworkScanDevice {
     public void setIpAddress(String ipAddress) {
         this.ipAddress = ipAddress;
     }
+
+    public String getMacAddress() { return macAddress; }
+
+    public void setMacAddress(String macAddress) { this.macAddress = macAddress; }
 
     @Override
     public boolean equals(Object o) {
