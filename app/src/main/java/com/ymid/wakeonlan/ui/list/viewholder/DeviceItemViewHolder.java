@@ -22,6 +22,7 @@ import com.google.common.base.Strings;
 
 import com.ymid.wakeonlan.R;
 import com.ymid.wakeonlan.persistence.models.Device;
+import com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity;
 import com.ymid.wakeonlan.network.DeviceNetworkProfiles;
 import com.ymid.wakeonlan.persistence.models.DeviceStatus;
 import com.ymid.wakeonlan.shutdown.ShutdownModelFactory;
