@@ -427,12 +427,16 @@ public final class WindowsAgentClient {
         if (authenticated && verifiedSecret != null) {
             saveRegistryPair(context, identity, base, verifiedSecret);
             SharedPreferences legacy = prefs(context);
-            SharedPreferences.Editor editor = legacy.edit()
-                    .putString(KEY_BASE, base)
-                    .putString(KEY_DEVICE_ID, deviceId);
-            if (legacy.getString(KEY_SECRET, null) == null)
-                editor.putString(KEY_SECRET, verifiedSecret);
-            editor.commit();
+            String legacyId = legacy.getString(KEY_DEVICE_ID, null);
+            String legacySecret = legacy.getString(KEY_SECRET, null);
+            // Do not overwrite a legacy profile that belongs to a different PC.
+            if (legacySecret == null || deviceId.equals(legacyId)) {
+                SharedPreferences.Editor editor = legacy.edit()
+                        .putString(KEY_BASE, base)
+                        .putString(KEY_DEVICE_ID, deviceId);
+                if (legacySecret == null) editor.putString(KEY_SECRET, verifiedSecret);
+                editor.commit();
+            }
         }
 
         identity.put("agentPaired", agentPaired);
