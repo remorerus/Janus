@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Base64;
 
+import com.google.common.base.Strings;
+
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
 
@@ -339,7 +341,11 @@ public final class WindowsAgentClient {
     /** Returns the saved STUDIO PC address without exposing the pairing secret. */
     public static String getConfiguredBaseUrl(Context context) {
         try {
-            return prefs(context).getString(KEY_BASE, null);
+            String legacy = prefs(context).getString(KEY_BASE, null);
+            if (!Strings.isNullOrEmpty(legacy)) return legacy;
+            com.ymid.wakeonlan.persistence.WindowsAgentDeviceEntity device =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            return device == null ? null : device.baseUrl;
         } catch (Exception e) {
             return null;
         }
