@@ -25,10 +25,14 @@ public class AddDeviceActivity extends ModifyDeviceActivity {
         // Never query Room on the UI thread. Populate a safe initial value, then
         // calculate the next number from the repository's background executor.
         deviceNameInput.setText("Устройство 1");
+        CrashReporter.setOperation("device_creation.prefill_query");
         deviceRepository.getAllAsync(existingDevices -> {
             if (isFinishing() || isDestroyed()) return;
             if ("Устройство 1".contentEquals(deviceNameInput.getText())) {
                 deviceNameInput.setText(nextDeviceName(existingDevices));
+            }
+            if (!saveStarted) {
+                CrashReporter.clearOperation();
             }
         });
         triggerRemoteShutdownLayoutVisibility(false);
