@@ -76,10 +76,10 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
         deviceName.setText(device.name);
         deviceMacAddress.setObfuscatedText(device.macAddress);
-        // Without a status IP there is no meaningful address to show; the broadcast address would mislead
-        String displayedIp = DeviceNetworkProfiles.statusAddresses(device).stream().findFirst().orElse(null);
-        deviceIp.setText(displayedIp);
-        deviceIp.setVisibility(Strings.isNullOrEmpty(displayedIp) ? View.GONE : View.VISIBLE);
+        // Never show a configured/first route as if it were active. The IP is populated only
+        // after a successful status check identifies the exact endpoint that answered.
+        deviceIp.setText("");
+        deviceIp.setVisibility(View.GONE);
 
         setOnClickHandler(device);
         setOnEditClickHandler(device);
@@ -139,9 +139,14 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
 
             DeviceStatus status = statusSnapshot.getStatus();
             if (status == DeviceStatus.ONLINE) {
+                String activeAddress = statusSnapshot.getActiveAddress();
+                deviceIp.setText(activeAddress == null ? "" : activeAddress);
+                deviceIp.setVisibility(Strings.isNullOrEmpty(activeAddress) ? View.GONE : View.VISIBLE);
                 updateLauncherIconIfNeeded(true);
                 render(RowState.ONLINE, statusSnapshot.getLatencyMs());
             } else if (status == DeviceStatus.OFFLINE) {
+                deviceIp.setText("");
+                deviceIp.setVisibility(View.GONE);
                 updateLauncherIconIfNeeded(false);
                 render(statusBoard.isWaking(deviceId) ? RowState.WAKING : RowState.OFFLINE, null);
             } else {
