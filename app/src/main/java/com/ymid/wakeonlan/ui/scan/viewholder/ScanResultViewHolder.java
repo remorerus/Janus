@@ -54,6 +54,7 @@ public class ScanResultViewHolder extends RecyclerView.ViewHolder {
             Bundle bundle = new Bundle();
             bundle.putString(AddNetworkScanDeviceActivity.MACHINE_NAME_KEY, hostName.orElse(null));
             bundle.putString(AddNetworkScanDeviceActivity.MACHINE_IP_KEY, scanDevice.getIpAddress());
+            bundle.putString(AddNetworkScanDeviceActivity.MACHINE_MAC_KEY, scanDevice.getMacAddress());
             intent.putExtras(bundle);
             context.startActivity(intent);
         });
