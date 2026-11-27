@@ -470,7 +470,9 @@ export default {
     }
     const rawRequestedName = decodeQueryValue(query && (query.deviceName ?? query.device) || '');
     const requestedText = String(rawRequestedName).trim();
-    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText;
+    const requestedName = /^(null|undefined|none)$/i.test(requestedText) ? '' : requestedText
+      .replace(/^(?:компьютер|устройство)\s+/i, '')
+      .replace(/\s+(?:устройство|компьютер)$/i, '').trim();
 
     // Windows commands must target the name spoken by the user. Never fall back
     // to a default PC when the voice intent omitted or failed to recognize it.
