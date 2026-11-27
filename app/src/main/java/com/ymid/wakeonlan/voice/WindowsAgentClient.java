@@ -89,12 +89,14 @@ public final class WindowsAgentClient {
                     ? existingId.equals(targetId)
                     : existingBase.equals(base);
             if (sameDevice) {
-                boolean agentPaired = false;
+                boolean currentSecretAccepted = false;
                 try {
                     JSONObject status = request(base, "GET", "/v1/status", "", null);
-                    agentPaired = status.optBoolean("paired", false);
+                    if (status.optBoolean("paired", false) && targetId != null && !targetId.isEmpty()) {
+                        currentSecretAccepted = verifyPairingAtBase(base, existingSecret, targetId);
+                    }
                 } catch (Exception ignored) { }
-                if (agentPaired) {
+                if (currentSecretAccepted) {
                     saveRegistryPair(context, targetIdentity, base, existingSecret);
                     SharedPreferences.Editor keep = existing.edit().putString(KEY_BASE, base);
                     if (targetId != null && !targetId.isEmpty()) keep.putString(KEY_DEVICE_ID, targetId);
@@ -102,10 +104,11 @@ public final class WindowsAgentClient {
                     JSONObject alreadyPaired = targetIdentity == null ? new JSONObject() : targetIdentity;
                     alreadyPaired.put("paired", true);
                     alreadyPaired.put("alreadyPaired", true);
+                    alreadyPaired.put("clientAuthenticated", true);
                     return alreadyPaired;
                 }
-                // The same physical PC is reachable but has been locally unpaired.
-                // Allow an explicit new one-time code to renew its secret.
+                // Do not label a server-side leftover secret as this app's pairing.
+                // Existing secrets are preserved; no automatic unpair/reset is attempted.
             } else {
                 // Keep the legacy pairing intact; the newly paired PC is stored separately in the registry.
             }
