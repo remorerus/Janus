@@ -30,6 +30,7 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
         super.onCreate(savedInstanceState);
         populateInputs();
         configureSshConnectionRequest();
+        configureAgentConnectionControls();
     }
 
     private void configureSshConnectionRequest() {
@@ -86,6 +87,53 @@ public class EditDeviceActivity extends ModifyDeviceActivity {
                 }
             }, "revision-ssh-key-request").start();
         });
+    }
+
+    private void configureAgentConnectionControls() {
+        agentConnectStatus.setVisibility(android.view.View.VISIBLE);
+        agentConnectStatus.setText("Проверка сохранённого сопряжения Windows Agent…");
+        agentConnectButton.setOnClickListener(v -> changeAgentConnection(true));
+        agentDisconnectButton.setOnClickListener(v -> changeAgentConnection(false));
+        new Thread(() -> {
+            boolean paired = WindowsAgentClient.hasPairedDeviceForDevice(EditDeviceActivity.this, device);
+            int state = paired ? WindowsAgentClient.probeForDevice(EditDeviceActivity.this, device, device.statusIp) : -1;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (!paired) {
+                    agentConnectButton.setVisibility(android.view.View.GONE);
+                    agentDisconnectButton.setVisibility(android.view.View.GONE);
+                    agentConnectStatus.setText("Нет сохранённого сопряжения с этим компьютером. Первичное сопряжение выполняется отдельно; эти кнопки не сбрасывают и не создают pairing.");
+                    return;
+                }
+                agentConnectButton.setVisibility(android.view.View.VISIBLE);
+                agentDisconnectButton.setVisibility(android.view.View.VISIBLE);
+                agentConnectButton.setEnabled(state != 1);
+                agentDisconnectButton.setEnabled(state == 1 || state == 2 || state == 3);
+                agentConnectStatus.setText(state == 1 ? "Windows Agent подключён и проверен сохранённым ключом."
+                        : "Сопряжение сохранено. Можно повторно подключиться без pairing code.");
+            });
+        }, "revision-agent-settings-probe").start();
+    }
+
+    private void changeAgentConnection(boolean connect) {
+        agentConnectButton.setEnabled(false);
+        agentDisconnectButton.setEnabled(false);
+        agentConnectStatus.setText(connect ? "Подключение с сохранённым ключом…" : "Отключение RE:Vision от Windows Agent…");
+        new Thread(() -> {
+            String result;
+            try {
+                result = WindowsAgentClient.setConnectionEnabledForDevice(this, device, connect);
+            } catch (Exception error) {
+                result = error.getMessage() == null ? "Не удалось изменить состояние Windows Agent." : error.getMessage();
+            }
+            final String message = result;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                agentConnectStatus.setText(message);
+                agentConnectButton.setEnabled(true);
+                agentDisconnectButton.setEnabled(true);
+            });
+        }, "revision-agent-settings-action").start();
     }
 
     private void populateInputs() {
