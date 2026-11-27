@@ -353,7 +353,157 @@ public final class WindowsAgentClient {
 
     public static JSONObject status(Context context, String host) throws Exception {
         String base = normalizeBase(host);
-        return request(base, "GET", "/v1/status", "", null);
+        JSONObject status = request(base, "GET", "/v1/status", "", null);
+        String deviceId = status.optString("deviceId", "").trim();
+        boolean authenticated = false;
+        if (status.optBoolean("paired", false) && !deviceId.isEmpty()) {
+            String secret = findLocalPairingSecret(context, deviceId, base);
+            if (!Strings.isNullOrEmpty(secret)) {
+                try {
+                    authenticated = verifyPairingAtBase(base, secret, deviceId);
+                    if (authenticated) {
+                        JSONObject identity = request(base, "GET", "/v1/discovery", "", null);
+                        saveRegistryPair(context, identity, base, secret);
+                    }
+                } catch (Exception ignored) {
+                    authenticated = false;
+                }
+            }
+        }
+        status.put("clientAuthenticated", authenticated);
+        return status;
+    }
+
+    /**
+     * Card status: 1=the current Android installation authenticated with its paired
+     * secret; 2=the PC has a pairing but this installation has no matching secret;
+     * 3=a local secret exists but the Agent rejected it; 0=offline; -1=unpaired/not
+     * associated. Merely receiving GET /v1/status never counts as successful pairing.
+     */
+    public static int probeForDevice(Context context,
+            com.ymid.wakeonlan.persistence.models.Device target, String activeAddress) {
+        if (target == null) return -1;
+        Context app = context.getApplicationContext();
+        java.util.LinkedHashSet<String> bases = new java.util.LinkedHashSet<>();
+        addAgentBase(bases, activeAddress);
+        addAgentBase(bases, target.sshAddress);
+        for (String address : com.ymid.wakeonlan.network.DeviceNetworkProfiles.statusAddresses(target))
+            addAgentBase(bases, address);
+
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(app);
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> registered =
+                registry.getAll();
+        String wantedName = normalizeDeviceName(target.name);
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item : registered) {
+            if (item == null || !item.enabled) continue;
+            boolean sameName = wantedName.equals(normalizeDeviceName(item.displayName));
+            if (sameName) {
+                addAgentBase(bases, item.baseUrl);
+                try {
+                    org.json.JSONArray routes = new org.json.JSONArray(
+                            item.endpointUrlsJson == null ? "[]" : item.endpointUrlsJson);
+                    for (int i = 0; i < routes.length(); i++) addAgentBase(bases, routes.optString(i, ""));
+                } catch (Exception ignored) { }
+            }
+        }
+        SharedPreferences legacy = null;
+        try {
+            legacy = prefs(app);
+            addAgentBase(bases, legacy.getString(KEY_BASE, null));
+        } catch (Exception ignored) { }
+
+        boolean reachable = false;
+        boolean serverPaired = false;
+        boolean rejectedSecret = false;
+        for (String base : bases) {
+            try {
+                JSONObject identity = request(base, "GET", "/v1/discovery", "", null);
+                if (!"revision-discovery-v1".equals(identity.optString("protocol"))) continue;
+                String deviceId = identity.optString("deviceId", "").trim();
+                if (deviceId.isEmpty()) continue;
+                reachable = true;
+
+                JSONObject status = request(base, "GET", "/v1/status", "", null);
+                if (!deviceId.equals(status.optString("deviceId", ""))) continue;
+                if (!status.optBoolean("paired", false)) continue;
+                serverPaired = true;
+
+                String secret = findLocalPairingSecret(app, deviceId, base);
+                if (Strings.isNullOrEmpty(secret)) continue;
+                try {
+                    if (verifyPairingAtBase(base, secret, deviceId)) {
+                        saveRegistryPair(app, identity, base, secret);
+                        return 1;
+                    }
+                    rejectedSecret = true;
+                } catch (Exception error) {
+                    if (isUnauthorized(error)) rejectedSecret = true;
+                }
+            } catch (Exception ignored) {
+                // Try the remaining known endpoints. No route is trusted without stable-ID validation.
+            }
+        }
+
+        if (rejectedSecret) return 3;
+        if (serverPaired) return 2;
+        if (reachable) return -1;
+        return 0;
+    }
+
+    private static void addAgentBase(java.util.Set<String> bases, String endpoint) {
+        if (endpoint == null || endpoint.trim().isEmpty()) return;
+        try {
+            String value = endpoint.trim();
+            if (!value.contains("://")) value = "http://" + value;
+            URL url = new URL(value);
+            String host = url.getHost();
+            if (host.isEmpty()) return;
+            int port = url.getPort() > 0 ? url.getPort() : 47821;
+            bases.add(normalizeBase("http://" + host + ":" + port));
+        } catch (Exception ignored) { }
+    }
+
+    private static String findLocalPairingSecret(Context context, String deviceId, String base) {
+        if (deviceId == null || deviceId.trim().isEmpty()) return null;
+        try {
+            com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity paired =
+                    registry.get(deviceId);
+            if (paired != null && paired.enabled && !Strings.isNullOrEmpty(paired.clientSecret))
+                return paired.clientSecret;
+        } catch (Exception ignored) { }
+
+        try {
+            SharedPreferences legacy = prefs(context);
+            String secret = legacy.getString(KEY_SECRET, null);
+            String savedId = legacy.getString(KEY_DEVICE_ID, null);
+            String savedBase = legacy.getString(KEY_BASE, null);
+            boolean sameIdentity = !Strings.isNullOrEmpty(savedId)
+                    ? deviceId.equals(savedId)
+                    : sameEndpointHost(savedBase, base);
+            if (!Strings.isNullOrEmpty(secret) && sameIdentity) return secret;
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    private static boolean verifyPairingAtBase(String base, String secret, String expectedDeviceId)
+            throws Exception {
+        JSONObject verified = authenticatedRequest(base, secret, "/v1/pairing/verify", "");
+        return verified.optBoolean("authenticated", false)
+                && expectedDeviceId.equals(verified.optString("deviceId", ""));
+    }
+
+    private static boolean sameEndpointHost(String first, String second) {
+        if (Strings.isNullOrEmpty(first) || Strings.isNullOrEmpty(second)) return false;
+        return endpointHost(first).equalsIgnoreCase(endpointHost(second));
+    }
+
+    private static boolean isUnauthorized(Exception error) {
+        String message = error == null ? "" : String.valueOf(error.getMessage());
+        return message.contains("HTTP 401") || message.contains("signature_mismatch")
+                || message.contains("not_paired");
     }
 
     public static JSONObject command(Context context, String action) throws Exception {
