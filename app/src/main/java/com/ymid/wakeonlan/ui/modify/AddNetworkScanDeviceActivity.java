@@ -19,8 +19,15 @@ public class AddNetworkScanDeviceActivity extends AddDeviceActivity {
             String machineName = extras.getString(MACHINE_NAME_KEY, null);
             String machineIp = extras.getString(MACHINE_IP_KEY, null);
 
-            deviceNameInput.setText(machineName);
-            deviceStatusIpInput.setText(machineIp);
+            if (machineName != null && !machineName.trim().isEmpty()) {
+                deviceNameInput.setText(machineName.trim());
+            }
+            if (machineIp != null && !machineIp.trim().isEmpty()) {
+                // A Scan result is the same endpoint for reachability and the initial SSH route.
+                // Credentials and the SSH key remain those explicitly configured by the user.
+                deviceStatusIpInput.setText(machineIp.trim());
+                deviceSshAddressInput.setRealText(machineIp.trim());
+            }
             broadcastAutofill.callOnClick();
         }
     }
