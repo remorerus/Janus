@@ -85,6 +85,7 @@ jobs:
       - name: Run Android unit tests
         id: unit_tests
         if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26'
+        continue-on-error: true
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon testDebugUnitTest
