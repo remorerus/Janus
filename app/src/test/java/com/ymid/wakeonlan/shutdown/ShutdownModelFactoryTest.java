@@ -9,6 +9,7 @@ import com.ymid.wakeonlan.persistence.models.Device;
 import org.junit.Test;
 
 import java.util.Optional;
+import java.util.Arrays;
 
 public class ShutdownModelFactoryTest {
 
@@ -68,6 +69,17 @@ public class ShutdownModelFactoryTest {
         Optional<ShutdownModel> result = ShutdownModelFactory.fromDevice(d);
         assertTrue(result.isPresent());
         assertEquals("10.0.0.1", result.get().getSshAddress());
+    }
+
+    @Test
+    public void fromDevice_includesEverySavedNetworkAddressInOrder() {
+        Device d = keyAuthDevice();
+        d.networkProfilesJson = "[{\"name\":\"Local Network\",\"statusIp\":\"10.0.0.25\",\"macAddress\":\"AA:BB:CC:DD:EE:FF\"},"
+                + "{\"name\":\"Studio\",\"statusIp\":\"172.16.1.25\"}]";
+        Optional<ShutdownModel> result = ShutdownModelFactory.fromDevice(d);
+        assertTrue(result.isPresent());
+        assertEquals(Arrays.asList("192.168.1.100", "10.0.0.25", "172.16.1.25"),
+                result.get().getSshAddresses());
     }
 
     @Test
