@@ -164,10 +164,10 @@ public class SettingsActivity extends AppCompatActivity {
 
             Preference windowsAgentPreference = new Preference(requireContext());
             windowsAgentPreference.setTitle("Windows Agent — компьютеры");
-            boolean agentPaired = com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext());
+            boolean agentConfigured = com.ymid.wakeonlan.voice.WindowsAgentClient.isAnyConfigured(requireContext());
             String savedAgentHost = com.ymid.wakeonlan.voice.WindowsAgentClient.getConfiguredBaseUrl(requireContext());
-            windowsAgentPreference.setSummary(agentPaired
-                    ? "Сопряжён · " + (savedAgentHost == null ? "адрес сохранён" : savedAgentHost)
+            windowsAgentPreference.setSummary(agentConfigured
+                    ? "Данные сопряжения сохранены · нажми для проверки"
                     : "Не сопряжён · подключение по локальной сети");
             getPreferenceScreen().addPreference(windowsAgentPreference);
 
@@ -177,7 +177,7 @@ public class SettingsActivity extends AppCompatActivity {
             directLockTestPreference.setTitle("Тест: заблокировать ПК");
             directLockTestPreference.setSummary("Прямая проверка связи с Windows Agent без AIUI");
             directLockTestPreference.setEnabled(
-                    com.ymid.wakeonlan.voice.WindowsAgentClient.isConfigured(requireContext()));
+                    com.ymid.wakeonlan.voice.WindowsAgentClient.isAnyConfigured(requireContext()));
             getPreferenceScreen().addPreference(directLockTestPreference);
             directLockTestPreference.setOnPreferenceClickListener(preference -> {
                 new AlertDialog.Builder(requireContext())
