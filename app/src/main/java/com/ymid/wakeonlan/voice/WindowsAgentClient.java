@@ -68,6 +68,31 @@ public final class WindowsAgentClient {
         try { targetIdentity = request(base, "GET", "/v1/discovery", "", null); }
         catch (Exception ignored) { }
 
+        // A multi-device pairing may live only in the SQLCipher registry (not the legacy
+        // SharedPreferences slot). Reuse it only after the current PC verifies its HMAC.
+        if (targetIdentity != null) {
+            String targetId = targetIdentity.optString("deviceId", "").trim();
+            if (!targetId.isEmpty()) {
+                try {
+                    com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity registryPair =
+                            new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).get(targetId);
+                    JSONObject status = request(base, "GET", "/v1/status", "", null);
+                    if (registryPair != null && registryPair.enabled
+                            && !Strings.isNullOrEmpty(registryPair.clientSecret)
+                            && status.optBoolean("paired", false)
+                            && targetId.equals(status.optString("deviceId", ""))
+                            && verifyPairingAtBase(base, registryPair.clientSecret, targetId)) {
+                        saveVerifiedRoute(context, targetIdentity, base, registryPair.clientSecret);
+                        JSONObject alreadyPaired = new JSONObject(targetIdentity.toString());
+                        alreadyPaired.put("paired", true);
+                        alreadyPaired.put("alreadyPaired", true);
+                        alreadyPaired.put("clientAuthenticated", true);
+                        return alreadyPaired;
+                    }
+                } catch (Exception ignored) { }
+            }
+        }
+
         // Preserve the current pairing. If the same physical PC received a new IP,
         // its stable discovery ID lets us update only the endpoint without pairing again.
         if (existingBase != null && existingSecret != null) {
@@ -356,7 +381,13 @@ public final class WindowsAgentClient {
 
     public static JSONObject status(Context context) throws Exception {
         String base = prefs(context).getString(KEY_BASE, null);
-        if (base == null) throw new IllegalStateException("Windows Agent ещё не сопряжён.");
+        if (Strings.isNullOrEmpty(base)) {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            base = device == null ? null : device.baseUrl;
+        }
+        if (Strings.isNullOrEmpty(base))
+            throw new IllegalStateException("Windows Agent ещё не сопряжён.");
         return status(context, base);
     }
 
@@ -404,21 +435,24 @@ public final class WindowsAgentClient {
         java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> registered =
                 registry.getAll();
         String wantedName = normalizeDeviceName(target.name);
+        java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> sameNameAgents =
+                new java.util.ArrayList<>();
         for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item : registered) {
-            if (item == null || !item.enabled) continue;
-            boolean sameName = wantedName.equals(normalizeDeviceName(item.displayName));
-            if (sameName) {
-                addAgentBase(bases, item.baseUrl);
-                try {
-                    org.json.JSONArray routes = new org.json.JSONArray(
-                            item.endpointUrlsJson == null ? "[]" : item.endpointUrlsJson);
-                    for (int i = 0; i < routes.length(); i++) addAgentBase(bases, routes.optString(i, ""));
-                } catch (Exception ignored) { }
-            }
+            if (item != null && item.enabled
+                    && wantedName.equals(normalizeDeviceName(item.displayName))) sameNameAgents.add(item);
         }
-        SharedPreferences legacy = null;
+        // Name-based association is safe only when it uniquely identifies one paired PC.
+        if (sameNameAgents.size() == 1) {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity item = sameNameAgents.get(0);
+            addAgentBase(bases, item.baseUrl);
+            try {
+                org.json.JSONArray routes = new org.json.JSONArray(
+                        item.endpointUrlsJson == null ? "[]" : item.endpointUrlsJson);
+                for (int i = 0; i < routes.length(); i++) addAgentBase(bases, routes.optString(i, ""));
+            } catch (Exception ignored) { }
+        }
         try {
-            legacy = prefs(app);
+            SharedPreferences legacy = prefs(app);
             addAgentBase(bases, legacy.getString(KEY_BASE, null));
         } catch (Exception ignored) { }
 
