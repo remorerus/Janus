@@ -133,7 +133,7 @@ jobs:
 
       - name: Build APKs
         id: build_apks
-        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
+        if: always() && steps.unit_tests.outcome != 'cancelled'
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon clean assembleDebug assembleRelease assembleDiagnostic \
@@ -143,7 +143,7 @@ jobs:
             -PKEY_PASSWORD="$KEY_PASSWORD"
 
       - name: Upload Release APK
-        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
+        if: always() && steps.unit_tests.outcome != 'cancelled'
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Release-APK
@@ -152,7 +152,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Debug APK
-        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
+        if: always() && steps.unit_tests.outcome != 'cancelled'
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Debug-APK
@@ -161,7 +161,7 @@ jobs:
           retention-days: 7
 
       - name: Upload isolated diagnostic APK
-        if: steps.unit_tests.outcome == 'success' || steps.unit_tests.outcome == 'skipped'
+        if: always() && steps.unit_tests.outcome != 'cancelled'
         uses: actions/upload-artifact@v4
         with:
           name: RE-Vision-Clean-Diagnostic-APK
@@ -175,6 +175,9 @@ jobs:
           {
             echo "## RE:Vision build validation"
             echo "- Unit tests: ${{ steps.unit_tests.outcome }}"
+            if [ "${{ steps.unit_tests.outcome }}" = "failure" ]; then
+              echo "- WARNING: unit tests failed; APK packaging still runs so the artifact can be inspected. Review test failures before deployment."
+            fi
             echo "- Emulator startup smoke test: ${{ steps.startup_smoke.outcome }}"
             if [ "${{ steps.startup_smoke.outcome }}" = "failure" ]; then
               echo "- WARNING: emulator smoke test failed; APK build was allowed to continue. See emulator diagnostics artifact if available."
