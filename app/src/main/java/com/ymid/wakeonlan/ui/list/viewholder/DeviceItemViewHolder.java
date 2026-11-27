@@ -294,6 +294,8 @@ public class DeviceItemViewHolder extends RecyclerView.ViewHolder {
         LinkedHashSet<String> hosts = new LinkedHashSet<>();
         if (!Strings.isNullOrEmpty(activeAddress)) hosts.add(activeAddress.trim());
         if (!Strings.isNullOrEmpty(target.sshAddress)) hosts.add(target.sshAddress.trim());
+        // Every saved status endpoint is also a candidate route for this same PC.
+        hosts.addAll(DeviceNetworkProfiles.statusAddresses(target));
         if (hosts.isEmpty()) return -1;
 
         boolean tcpReachable = false;
