@@ -20,6 +20,7 @@ on:
       - revision-clean-diagnostic-2026-11-27
       - revision-crashdump-device-create-2026-11-27
       - revision-live-device-card-2026-11-27
+      - revision-wifi-device-manager-2026-11-28
       - revision-fix-active-ip-agent-status-2026-11-27
       - revision-active-ip-agent-status-apk-2026-11-27
     paths:
