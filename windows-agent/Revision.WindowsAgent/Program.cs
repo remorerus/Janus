@@ -178,12 +178,30 @@ app.MapGet("/v1/manager/registered-agents", async (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
     await RefreshDiscoveredAgentDevicesAsync(config.DeviceId, registeredAgentDevices, registeredAgentsPath);
+
+    // This web manager belongs to one Windows Agent. Resolve its friendly name
+    // from the RE:Vision registry by stable Agent ID; never identify it by IP.
     var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    return Results.Json(new { devices = registeredAgentDevices.Values
-        .OrderByDescending(x => x.IsDefault).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
-        .Select(x => new { deviceId = x.DeviceId, displayName = x.DisplayName, isDefault = x.IsDefault,
-            enabled = x.Enabled, paired = x.Paired, online = x.Online && nowMs - x.LastSeenAt <= 120000L,
-            lastSeenAt = x.LastSeenAt }).ToArray() });
+    registeredAgentDevices.TryGetValue(config.DeviceId, out var registeredSelf);
+    var hasRevisionName = registeredSelf is not null &&
+        !string.IsNullOrWhiteSpace(registeredSelf.DisplayName);
+    var selfDevice = new
+    {
+        deviceId = config.DeviceId,
+        displayName = hasRevisionName ? registeredSelf!.DisplayName : config.DeviceName,
+        isDefault = registeredSelf?.IsDefault ?? false,
+        enabled = registeredSelf?.Enabled ?? true,
+        paired = config.ClientSecret is not null,
+        online = true,
+        lastSeenAt = nowMs,
+        isSelf = true
+    };
+    return Results.Json(new
+    {
+        selfDeviceId = config.DeviceId,
+        nameSource = hasRevisionName ? "revision" : "local",
+        devices = new[] { selfDevice }
+    });
 });
 
 app.MapPost("/v1/manager/registered-agents/sync", async (HttpContext context) =>
@@ -231,7 +249,12 @@ app.MapPost("/v1/manager/registered-agents/sync", async (HttpContext context) =>
 app.MapGet("/v1/manager/commands", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
-    return Results.Json(CommandCatalog.Load(commandsPath));
+    // Commands in this catalog belong to this Agent. Normalize legacy selections
+    // so old entries cannot keep routing locally defined commands to another PC.
+    var commands = CommandCatalog.Load(commandsPath)
+        .Select(command => command with { DeviceId = config.DeviceId })
+        .ToArray();
+    return Results.Json(commands);
 });
 
 app.MapPut("/v1/manager/commands", async (HttpContext context) =>
@@ -262,9 +285,8 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты распознавания (максимум 12), тип команды и параметры." });
         if (deviceId.Length > 0 &&
-            (!registeredAgentDevices.TryGetValue(deviceId, out var selectedAgent) ||
-             !selectedAgent.Paired || !selectedAgent.Enabled))
-            return Results.BadRequest(new { error = "Выбранный компьютер не найден в реестре сопряжённых Windows Agent или отключён." });
+            !string.Equals(deviceId, config.DeviceId, StringComparison.Ordinal))
+            return Results.BadRequest(new { error = "В этой панели можно назначить команду только текущему Windows Agent." });
         var localVoicePhrases = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spokenPhrase in new[] { phrase }.Concat(aliases))
         {
@@ -305,7 +327,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             var normalizedPhrase = NormalizeVoicePhrase(spokenPhrase);
             if (normalizedPhrase.Length > 0) registeredVoicePhrases.Add(normalizedPhrase);
         }
-        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments, aliases, deviceId));
+        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments, aliases, config.DeviceId));
     }
 
     CommandCatalog.Save(commandsPath, normalized);
@@ -861,7 +883,9 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
     }
 
     var requestedTargetId = (request?.TargetDeviceId ?? "").Trim();
-    var destinationDeviceId = requestedTargetId.Length > 0 ? requestedTargetId : (command.DeviceId ?? "");
+    // The local command catalog always targets this Agent. Only an explicit voice
+    // target may route the request to a different, named Windows Agent.
+    var destinationDeviceId = requestedTargetId.Length > 0 ? requestedTargetId : config.DeviceId;
     if (!string.IsNullOrWhiteSpace(destinationDeviceId) &&
         !string.Equals(destinationDeviceId, config.DeviceId, StringComparison.Ordinal))
     {
@@ -1764,13 +1788,13 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction" onchange="updateKindFields()"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" placeholder="C:\Program Files\...\app.exe">
 <label id="argsLabel">Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
-<label>Устройство</label><select id="deviceIdSelect"><option value="">Устройство по умолчанию</option></select><button type="button" class="secondary" onclick="loadRegisteredAgents()">Обновить список устройств</button><div class="muted" style="font-size:12px;margin-top:6px">Выбери компьютер, на котором выполнить команду. По умолчанию используется компьютер, получивший голосовой запрос. Если компьютер явно назван голосом, это указание имеет приоритет. Найденные, но ещё не сопряжённые устройства отображаются, но выбрать их нельзя.</div>
+<label>Устройство</label><select id="deviceIdSelect" disabled><option value="">Определение этого Windows Agent…</option></select><button type="button" class="secondary" onclick="loadRegisteredAgents()">Обновить определение</button><div class="muted" id="deviceIdentityStatus" style="font-size:12px;margin-top:6px">Панель определяет только этот компьютер по постоянному ID и имени из реестра RE:Vision.</div>
 <button id="addCommandButton" onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
-<div class="note">Каталог команд хранится на этом компьютере. Чтобы RE:Vision находил эти команды без явного имени ПК, выбери этот Windows Agent устройством по умолчанию. Выбранное выше устройство — конечный компьютер выполнения; явно названный голосом компьютер имеет приоритет. Команда выполняется в активной пользовательской сессии целевого ПК.</div>
+<div class="note">Каталог команд хранится на этом компьютере, а поле «Устройство» автоматически закрепляет команды за этим Windows Agent. Если другой компьютер явно назван голосом, это указание сохраняет приоритет. Команда выполняется в активной пользовательской сессии целевого ПК.</div>
 </section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section><section class="panel"><h2>Обучить распознавание</h2><div class="muted">Если Ревижн услышал фразу неправильно, выбери правильную команду. После подтверждения ошибочный вариант сохранится как её дополнительный голосовой псевдоним.</div><label>Какую фразу услышал агент</label><input id="correctionPhrase" maxlength="160" placeholder="Например: открой а имп"><label>Какую команду ты имел в виду</label><select id="correctionCommand"><option value="">Сначала загрузи каталог команд</option></select><button type="button" onclick="saveCorrection()">Запомнить исправление</button><div class="status" id="correctionStatus"></div><div class="note">Исправление сохраняется только после твоего подтверждения. Оно не запускает команду и не меняет основную голосовую фразу.</div></section></main>
 <script>
-let commands=[],editingIndex=-1,registeredAgents=[];
+let commands=[],editingIndex=-1,registeredAgents=[],selfDeviceId='',selfAgent=null;
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
 async function loadIdentity(){
@@ -1880,32 +1904,33 @@ function updateKindFields(){
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
-function clearForm(){editingIndex=-1;['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('deviceIdSelect').value='';el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('addCommandButton').textContent='Добавить в список';updateKindFields()}
+function clearForm(){editingIndex=-1;['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('deviceIdSelect').value=selfDeviceId;el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('addCommandButton').textContent='Добавить в список';updateKindFields()}
 function addCommand(){
  const kind=el('kind').value, action=el('windowAction').value;
  const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':(kind==='media'?'':el('target').value.trim()));
  const aliases=el('aliases').value.split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
- const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases,kind,target,deviceId:el('deviceIdSelect').value,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
+ const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases,kind,target,deviceId:selfDeviceId,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
  if(aliases.length>12){msg('Можно добавить не более 12 вариантов распознавания.');return}
+ if(!selfDeviceId||!selfAgent){msg('Не удалось определить этот Windows Agent. Обнови определение устройства.');return}
  if(!c.name||!c.phrase||(!c.target&&kind!=='window'&&kind!=='media')){msg('Заполни название, голосовую фразу и параметры команды.');return}
  if(kind==='window'&&!['next','previous'].includes(action)&&!c.target){msg('Укажи имя процесса или часть заголовка окна.');return}
- if(c.deviceId){const selected=registeredAgents.find(x=>x.deviceId===c.deviceId);if(!selected||!selected.paired||!selected.enabled){msg('Выбранный компьютер отсутствует, не сопряжён или отключён. Выбери другое устройство или значение по умолчанию.');return}}
+ if(!selfAgent.enabled){msg('Этот Windows Agent отключён в реестре RE:Vision.');return}
  if(commands.some((x,i)=>i!==editingIndex&&x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
  if(editingIndex>=0){commands[editingIndex]=c}else{commands.push(c)}render();clearForm();msg('Изменение внесено. Нажми «Сохранить изменения».')
 }
-function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';loadRegisteredAgents(c.deviceId||'');updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
+function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';el('deviceIdSelect').value=selfDeviceId;updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(i){commands.splice(i,1);if(editingIndex===i)clearForm();else if(editingIndex>i)editingIndex--;render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const select=el('correctionCommand');if(select){const chosen=select.value;select.innerHTML='';const empty=document.createElement('option');empty.value='';empty.textContent='Выбери команду';select.append(empty);commands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name+' — '+c.phrase;select.append(o)});if(commands.some(c=>c.id===chosen))select.value=chosen}const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
 root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+' · Устройство: '+deviceLabel(c.deviceId)+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
-function deviceLabel(id){if(!id)return 'по умолчанию';const d=registeredAgents.find(x=>x.deviceId===id);return d?d.displayName:id}
-async function loadRegisteredAgents(selected){try{const r=await fetch('/v1/manager/registered-agents',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();registeredAgents=d.devices||[];const s=el('deviceIdSelect'),wanted=selected===undefined?s.value:selected;s.replaceChildren();const def=document.createElement('option');def.value='';def.textContent='Устройство по умолчанию';s.append(def);registeredAgents.forEach(x=>{const o=document.createElement('option');o.value=x.deviceId;o.disabled=!x.paired||!x.enabled;o.textContent=x.displayName+' · '+(!x.paired?'Найдено, не сопряжено':!x.enabled?'Отключено':x.online?'В сети':'Сохранено / не в сети')+(x.isDefault?' · По умолчанию':'');s.append(o)});if(registeredAgents.some(x=>x.deviceId===wanted))s.value=wanted;else if(wanted){const missing=document.createElement('option');missing.value=wanted;missing.disabled=true;missing.textContent='Не найдено в реестре: '+wanted;s.append(missing);s.value=wanted}else s.value='';if(commands.length)render();}catch(e){el('status').textContent='Не удалось загрузить список устройств: '+e.message}}
-async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=(await r.json()).map(x=>({...x,deviceId:x.deviceId||''}));render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
+function deviceLabel(id){if(!id)return selfAgent?selfAgent.displayName:'этот компьютер';const d=registeredAgents.find(x=>x.deviceId===id);return d?d.displayName:(id===selfDeviceId&&selfAgent?selfAgent.displayName:id)}
+async function loadRegisteredAgents(){try{const r=await fetch('/v1/manager/registered-agents',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();registeredAgents=d.devices||[];selfDeviceId=d.selfDeviceId||((registeredAgents[0]||{}).deviceId||'');selfAgent=registeredAgents.find(x=>x.deviceId===selfDeviceId)||registeredAgents[0]||null;const s=el('deviceIdSelect');s.replaceChildren();if(selfAgent){const o=document.createElement('option');o.value=selfAgent.deviceId;o.textContent=selfAgent.displayName+' · Этот компьютер'+(!selfAgent.enabled?' · Отключён в RE:Vision':selfAgent.paired?' · Сопряжён':' · Не сопряжён');s.append(o);s.value=selfDeviceId;}else{const o=document.createElement('option');o.value='';o.textContent='Не удалось определить устройство';s.append(o);}s.disabled=true;const identityStatus=el('deviceIdentityStatus');if(identityStatus)identityStatus.textContent=d.nameSource==='revision'?'Имя получено из реестра устройств RE:Vision по постоянному ID этого Windows Agent.':'Запись ещё не синхронизирована из RE:Vision; пока используется локальное имя Windows Agent.';if(commands.length){commands=commands.map(x=>({...x,deviceId:selfDeviceId}));render();}}catch(e){el('status').textContent='Не удалось определить этот Windows Agent: '+e.message}}
+async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=(await r.json()).map(x=>({...x,deviceId:selfDeviceId}));render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на этом компьютере.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 async function saveCorrection(){const status=el('correctionStatus');try{const heardPhrase=el('correctionPhrase').value.trim(),commandId=el('correctionCommand').value;if(!heardPhrase||!commandId)throw Error('Заполни фразу и выбери правильную команду.');const r=await fetch('/v1/manager/voice-corrections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({heardPhrase,commandId})});const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось сохранить исправление');el('correctionPhrase').value='';await loadCommands();status.textContent=data.alreadyKnown?'Этот вариант уже известен.':'Запомнил вариант для команды «'+data.command+'». Теперь его можно произнести.'}catch(e){status.textContent=e.message}}
-loadCommands();
-loadIdentity();
-loadRegisteredAgents();
-loadPairing();
+(async function initializeManager(){
+ await Promise.all([loadIdentity(),loadRegisteredAgents(),loadPairing()]);
+ await loadCommands();
+})();
 </script></body></html>
 """;
 
