@@ -363,18 +363,37 @@ public final class WindowsAgentClient {
                     java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices =
                             registry.getAll();
                     org.json.JSONArray array = new org.json.JSONArray();
+                    java.util.Set<String> pairedIds = new java.util.HashSet<>();
                     long now = System.currentTimeMillis();
                     for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : devices) {
                         if (device == null || device.deviceId == null || device.deviceId.trim().isEmpty()) continue;
+                        pairedIds.add(device.deviceId);
                         org.json.JSONObject item = new org.json.JSONObject();
                         item.put("deviceId", device.deviceId);
                         item.put("displayName", device.displayName == null ? "Windows PC" : device.displayName);
                         item.put("isDefault", device.isDefault);
                         item.put("enabled", device.enabled);
+                        item.put("paired", true);
                         item.put("online", device.lastSeenAt > 0 && now - device.lastSeenAt <= 120000L);
                         item.put("lastSeenAt", Math.max(0L, device.lastSeenAt));
                         array.put(item);
                     }
+                    // Show LAN-discovered Agents too, but keep unpaired entries visibly disabled.
+                    try {
+                        for (JSONObject found : discover(app)) {
+                            String id = found.optString("deviceId", "").trim();
+                            if (id.isEmpty() || pairedIds.contains(id)) continue;
+                            JSONObject item = new JSONObject();
+                            item.put("deviceId", id);
+                            item.put("displayName", found.optString("name", "Windows PC"));
+                            item.put("isDefault", false);
+                            item.put("enabled", false);
+                            item.put("paired", false);
+                            item.put("online", true);
+                            item.put("lastSeenAt", now);
+                            array.put(item);
+                        }
+                    } catch (Exception ignored) { }
                     org.json.JSONObject payload = new org.json.JSONObject();
                     payload.put("devices", array);
                     String body = payload.toString();
