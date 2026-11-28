@@ -358,6 +358,30 @@ public final class WindowsAgentClient {
         try {
             DEVICE_REGISTRY_SYNC_EXECUTOR.execute(() -> {
                 try {
+                    // Migrate the original single-PC encrypted pairing into the multi-device
+                    // registry before publishing it. Older installations may have only these
+                    // SharedPreferences keys, leaving the web manager's device selector empty.
+                    try {
+                        SharedPreferences legacy = prefs(app);
+                        String legacyBase = legacy.getString(KEY_BASE, null);
+                        String legacySecret = legacy.getString(KEY_SECRET, null);
+                        if (!Strings.isNullOrEmpty(legacyBase) && !Strings.isNullOrEmpty(legacySecret)) {
+                            JSONObject identity = request(legacyBase, "GET", "/v1/discovery", "", null);
+                            String legacyId = identity.optString("deviceId", "").trim();
+                            JSONObject status = request(legacyBase, "GET", "/v1/status", "", null);
+                            if (!legacyId.isEmpty()
+                                    && status.optBoolean("paired", false)
+                                    && legacyId.equals(status.optString("deviceId", ""))
+                                    && verifyPairingAtBase(legacyBase, legacySecret, legacyId)) {
+                                com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry migrationRegistry =
+                                        new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(app);
+                                if (migrationRegistry.get(legacyId) == null)
+                                    saveRegistryPair(app, identity, legacyBase, legacySecret);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // Keep the legacy profile untouched if migration cannot be verified.
+                    }
                     com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
                             new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(app);
                     java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices =
