@@ -805,6 +805,22 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
         }
     }
 
+    // A named application request is not Alt+Tab. Resolve explicit focus verbs
+    // before tolerant catalog matching so a generic window command can never steal it.
+    if (command is null)
+    {
+        var namedWindowMatch = hypotheses
+            .Select(heard => new { Heard = heard, Target = ResolveNamedWindowTarget(heard) })
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.Target));
+        if (namedWindowMatch is not null)
+        {
+            command = new AgentCommand("builtin-window-target", "Переключение на " + namedWindowMatch.Target,
+                namedWindowMatch.Heard, "window", namedWindowMatch.Target!, "focus");
+            matchedBy = "built-in-window-target";
+            matchedHeard = namedWindowMatch.Heard;
+        }
+    }
+
     // When no exact match exists, use a conservative distance check over all
     // hypotheses and aliases. Ambiguous results are never executed automatically.
     if (command is null)
@@ -1314,6 +1330,35 @@ static string? ResolveWindowNavigationAction(string phrase)
     return null;
 }
 
+static string? ResolveNamedWindowTarget(string phrase)
+{
+    var normalized = NormalizeVoicePhrase(phrase);
+    if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+    // Only explicit focus/switch wording activates a named window. Generic
+    // next/previous commands remain handled exclusively by Alt+Tab below.
+    var prefixes = new[]
+    {
+        "переключись на ", "переключиться на ", "переключи на ", "переключить на ",
+        "перейди на ", "перейти на ", "перейди в ", "перейти в ",
+        "активируй ", "активировать ", "сфокусируй ", "сфокусировать ",
+        "перемести фокус на ", "выведи на передний план "
+    };
+
+    foreach (var prefix in prefixes)
+    {
+        if (!normalized.StartsWith(prefix, StringComparison.Ordinal)) continue;
+        var target = normalized.Substring(prefix.Length).Trim();
+        target = Regex.Replace(target, @"^(?:программу|приложение|окно)\\s+", "");
+        target = Regex.Replace(target, @"\\s+(?:пожалуйста|на экран)$", "").Trim();
+        if (target.Length < 2) return null;
+        if (target is "следующее окно" or "предыдущее окно" or "следующее приложение" or "предыдущее приложение")
+            return null;
+        return target;
+    }
+    return null;
+}
+
 static IEnumerable<string> GetCommandPhrases(AgentCommand command)
 {
     yield return command.Phrase;
@@ -1630,19 +1675,20 @@ public static class RevisionWindowApi {
 
   public static IntPtr Find(string query) {
     IntPtr found = IntPtr.Zero;
+    int bestScore = 0;
     EnumWindows((hWnd, lParam) => {
       if (!IsWindowVisible(hWnd)) return true;
       var title = new StringBuilder(512);
       GetWindowText(hWnd, title, title.Capacity);
+      string windowTitle = title.ToString();
       uint pid;
       GetWindowThreadProcessId(hWnd, out pid);
       string processName = "";
       try { processName = Process.GetProcessById((int)pid).ProcessName; } catch {}
-      if (processName.Equals(query, StringComparison.OrdinalIgnoreCase) ||
-          title.ToString().IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) {
-        found = hWnd;
-        return false;
-      }
+      int score = processName.Equals(query, StringComparison.OrdinalIgnoreCase) ? 3
+          : windowTitle.Equals(query, StringComparison.OrdinalIgnoreCase) ? 2
+          : windowTitle.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0;
+      if (score > bestScore) { bestScore = score; found = hWnd; }
       return true;
     }, IntPtr.Zero);
     return found;
