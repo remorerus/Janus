@@ -1349,8 +1349,8 @@ static string? ResolveNamedWindowTarget(string phrase)
     {
         if (!normalized.StartsWith(prefix, StringComparison.Ordinal)) continue;
         var target = normalized.Substring(prefix.Length).Trim();
-        target = Regex.Replace(target, @"^(?:программу|приложение|окно)\\s+", "");
-        target = Regex.Replace(target, @"\\s+(?:пожалуйста|на экран)$", "").Trim();
+        target = Regex.Replace(target, @"^(?:программу|приложение|окно|браузер)\s+", "");
+        target = Regex.Replace(target, @"\s+(?:пожалуйста|на экран|программу|приложение|браузер)$", "").Trim();
         if (target.Length < 2) return null;
         if (target is "следующее окно" or "предыдущее окно" or "следующее приложение" or "предыдущее приложение")
             return null;
