@@ -177,8 +177,12 @@ app.MapPost("/v1/ssh-manager/execute", async (HttpContext context) =>
 app.MapGet("/v1/manager/registered-agents", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
+    var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     return Results.Json(new { devices = registeredAgentDevices.Values
-        .OrderByDescending(x => x.IsDefault).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray() });
+        .OrderByDescending(x => x.IsDefault).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .Select(x => new { deviceId = x.DeviceId, displayName = x.DisplayName, isDefault = x.IsDefault,
+            enabled = x.Enabled, paired = x.Paired, online = x.Online && nowMs - x.LastSeenAt <= 120000L,
+            lastSeenAt = x.LastSeenAt }).ToArray() });
 });
 
 app.MapPost("/v1/manager/registered-agents/sync", async (HttpContext context) =>
@@ -214,7 +218,7 @@ app.MapPost("/v1/manager/registered-agents/sync", async (HttpContext context) =>
         if (id.Length is < 1 or > 128 || name.Length is < 1 or > 80 || !ids.Add(id))
             return Results.BadRequest(new { error = "В списке есть устройство с неверным или повторяющимся ID/именем." });
         normalized.Add(new RegisteredAgentDevice(id, name, item.IsDefault, item.Enabled,
-            item.Online, Math.Clamp(item.LastSeenAt, 0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
+            item.Paired, item.Online, Math.Clamp(item.LastSeenAt, 0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
     }
 
     registeredAgentDevices.Clear();
@@ -1842,7 +1846,7 @@ function removeCommand(i){commands.splice(i,1);if(editingIndex===i)clearForm();e
 function render(){const select=el('correctionCommand');if(select){const chosen=select.value;select.innerHTML='';const empty=document.createElement('option');empty.value='';empty.textContent='Выбери команду';select.append(empty);commands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name+' — '+c.phrase;select.append(o)});if(commands.some(c=>c.id===chosen))select.value=chosen}const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
 root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+' · Устройство: '+deviceLabel(c.deviceId)+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
 function deviceLabel(id){if(!id)return 'по умолчанию';const d=registeredAgents.find(x=>x.deviceId===id);return d?d.displayName:id}
-async function loadRegisteredAgents(selected){try{const r=await fetch('/v1/manager/registered-agents',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();registeredAgents=d.devices||[];const s=el('deviceIdSelect'),wanted=selected===undefined?s.value:selected;s.replaceChildren();const def=document.createElement('option');def.value='';def.textContent='Устройство по умолчанию';s.append(def);registeredAgents.forEach(x=>{const o=document.createElement('option');o.value=x.deviceId;o.textContent=x.displayName+' · '+(!x.enabled?'Отключено':x.online?'В сети':'Сохранено / не в сети')+(x.isDefault?' · По умолчанию':'');s.append(o)});if(registeredAgents.some(x=>x.deviceId===wanted))s.value=wanted;else s.value='';}catch(e){el('status').textContent='Не удалось загрузить список устройств: '+e.message}}
+async function loadRegisteredAgents(selected){try{const r=await fetch('/v1/manager/registered-agents',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();registeredAgents=d.devices||[];const s=el('deviceIdSelect'),wanted=selected===undefined?s.value:selected;s.replaceChildren();const def=document.createElement('option');def.value='';def.textContent='Устройство по умолчанию';s.append(def);registeredAgents.forEach(x=>{const o=document.createElement('option');o.value=x.deviceId;o.disabled=!x.paired||!x.enabled;o.textContent=x.displayName+' · '+(!x.paired?'Найдено, не сопряжено':!x.enabled?'Отключено':x.online?'В сети':'Сохранено / не в сети')+(x.isDefault?' · По умолчанию':'');s.append(o)});if(registeredAgents.some(x=>x.deviceId===wanted))s.value=wanted;else s.value='';}catch(e){el('status').textContent='Не удалось загрузить список устройств: '+e.message}}
 async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=(await r.json()).map(x=>({...x,deviceId:x.deviceId||''}));render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 async function saveCorrection(){const status=el('correctionStatus');try{const heardPhrase=el('correctionPhrase').value.trim(),commandId=el('correctionCommand').value;if(!heardPhrase||!commandId)throw Error('Заполни фразу и выбери правильную команду.');const r=await fetch('/v1/manager/voice-corrections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({heardPhrase,commandId})});const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось сохранить исправление');el('correctionPhrase').value='';await loadCommands();status.textContent=data.alreadyKnown?'Этот вариант уже известен.':'Запомнил вариант для команды «'+data.command+'». Теперь его можно произнести.'}catch(e){status.textContent=e.message}}
@@ -1935,9 +1939,9 @@ sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, s
 sealed record DirectCommandRequest(string? Id, string? Name, string? Kind, string? Target, string? Arguments);
 sealed record RegisteredAgentSyncRequest(List<RegisteredAgentDeviceInput>? Devices);
 sealed record RegisteredAgentDeviceInput(string? DeviceId, string? DisplayName, bool IsDefault,
-    bool Enabled, bool Online, long LastSeenAt);
+    bool Enabled, bool Paired = true, bool Online = false, long LastSeenAt = 0);
 sealed record RegisteredAgentDevice(string DeviceId, string DisplayName, bool IsDefault,
-    bool Enabled, bool Online, long LastSeenAt);
+    bool Enabled, bool Paired = true, bool Online = false, long LastSeenAt = 0);
 
 static class RegisteredAgentCatalog
 {
