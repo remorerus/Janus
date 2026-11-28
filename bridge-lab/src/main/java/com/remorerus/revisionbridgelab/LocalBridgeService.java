@@ -37,12 +37,12 @@ public final class LocalBridgeService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (server == null || !server.isRunning()) startServer();
+        if (server == null) startServer();
         return START_STICKY;
     }
 
     private synchronized void startServer() {
-        if (server != null && server.isRunning()) return;
+        if (server != null) return;
         try {
             InetAddress loopback = InetAddress.getByName("127.0.0.1");
             server = new WebSocketServer(new InetSocketAddress(loopback, PORT)) {
