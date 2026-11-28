@@ -27,6 +27,7 @@ builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Pro
 var app = builder.Build();
 var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
 var pendingSshKeyRequests = new ConcurrentDictionary<string, PendingSshKeyRequest>();
+var discoveredWifiDevices = new ConcurrentDictionary<string, DiscoveredWifiDevice>(StringComparer.Ordinal);
 
 app.MapGet("/", (HttpContext context) =>
 {
@@ -450,6 +451,9 @@ app.MapGet("/v1/manager/pairing", (HttpContext context) =>
     return Results.Json(new
     {
         paired,
+        pairedDeviceId = config.PairedDeviceId,
+        pairedDeviceName = config.PairedDeviceName,
+        pairedDeviceAddress = config.PairedDeviceAddress,
         codeAvailable,
         pairingCode = codeAvailable ? config.PairingCode : null,
         expiresUtc = codeAvailable ? config.PairingExpiresUtc : (DateTimeOffset?)null,
@@ -464,6 +468,7 @@ app.MapPost("/v1/manager/pairing/generate", (HttpContext context) =>
     if (config.ClientSecret is not null)
         return Results.Conflict(new { error = "RE:Vision уже сопряжён с этим компьютером. Новый код не требуется; сначала отвяжи устройство штатным способом." });
 
+    config.PendingPairingDeviceId = null;
     config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
     config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
     config.Save(configPath);
@@ -479,6 +484,87 @@ app.MapPost("/v1/manager/pairing/generate", (HttpContext context) =>
     });
 });
 
+// Local-only device actions. Discovery packets contain public metadata only;
+// pairing secrets are never broadcast or returned by the device-list endpoint.
+app.MapGet("/v1/manager/devices", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    var now = DateTimeOffset.UtcNow;
+    var devices = discoveredWifiDevices.Values
+        .OrderByDescending(x => x.LastSeenUtc)
+        .Select(x => new
+        {
+            deviceId = x.DeviceId,
+            name = x.Name,
+            deviceType = x.DeviceType,
+            appVersion = x.AppVersion,
+            address = x.Address,
+            online = now - x.LastSeenUtc <= TimeSpan.FromSeconds(35),
+            lastSeenUtc = x.LastSeenUtc,
+            paired = string.Equals(config.PairedDeviceId, x.DeviceId, StringComparison.Ordinal)
+        }).ToArray();
+    return Results.Json(new { devices, paired = config.ClientSecret is not null });
+});
+
+app.MapPost("/v1/manager/devices/{id}/pair", (HttpContext context, string id) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    if (!discoveredWifiDevices.ContainsKey(id))
+        return Results.NotFound(new { error = "Устройство больше не обнаруживается в Wi-Fi. Обнови список." });
+    if (config.ClientSecret is not null)
+        return Results.Conflict(new { error = "Сначала забудь текущее сопряжённое устройство." });
+    config.PendingPairingDeviceId = id;
+    config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+    config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+    config.Save(configPath);
+    File.WriteAllText(Path.ChangeExtension(configPath, ".pairing-code.txt"),
+        $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Target device: {id}{Environment.NewLine}Keep this code private.");
+    return Results.Json(new { generated = true, deviceId = id, pairingCode = config.PairingCode,
+        expiresUtc = config.PairingExpiresUtc, message = "Создан код для выбранного устройства. Заверши сопряжение в RE:Vision." });
+});
+
+app.MapPost("/v1/manager/pairing/forget", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    if (config.ClientSecret is null)
+        return Results.Conflict(new { error = "Сопряжённого устройства сейчас нет." });
+
+    // Revoke only the Windows Agent ↔ RE:Vision pairing; command catalogs,
+    // SSH keys, Voice Bridge data and other settings remain untouched.
+    config.ClientSecret = null;
+    config.PairedDeviceId = null;
+    config.PairedDeviceName = null;
+    config.PairedDeviceAddress = null;
+    config.PendingPairingDeviceId = null;
+    config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+    config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+    config.Save(configPath);
+    File.WriteAllText(Path.ChangeExtension(configPath, ".pairing-code.txt"),
+        $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Keep this code private.");
+    return Results.Json(new { forgotten = true, pairingCode = config.PairingCode,
+        expiresUtc = config.PairingExpiresUtc,
+        message = "Сопряжение забыто на Windows Agent. Создан новый код для повторного подключения." });
+});
+
+app.MapPost("/v1/manager/devices/{id}/forget", (HttpContext context, string id) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    if (!string.Equals(config.PairedDeviceId, id, StringComparison.Ordinal))
+        return Results.NotFound(new { error = "Это устройство не является текущей сопряжённой парой." });
+    config.ClientSecret = null;
+    config.PairedDeviceId = null;
+    config.PairedDeviceName = null;
+    config.PairedDeviceAddress = null;
+    config.PendingPairingDeviceId = null;
+    config.PairingCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
+    config.PairingExpiresUtc = DateTimeOffset.UtcNow.AddHours(24);
+    config.Save(configPath);
+    File.WriteAllText(Path.ChangeExtension(configPath, ".pairing-code.txt"),
+        $"RE:Vision pairing code (valid 24h): {config.PairingCode}{Environment.NewLine}Keep this code private.");
+    return Results.Json(new { forgotten = true, pairingCode = config.PairingCode,
+        expiresUtc = config.PairingExpiresUtc, message = "Устройство забыто. Можно выполнить новое сопряжение." });
+});
+
 app.MapPost("/v1/pair", async (HttpContext context) =>
 {
     // Read the small pairing payload explicitly instead of relying on minimal-API
@@ -492,6 +578,8 @@ app.MapPost("/v1/pair", async (HttpContext context) =>
         return Results.BadRequest(new { error = "Pairing request is too large." });
 
     string? suppliedCode = null;
+    string? suppliedDeviceId = null;
+    string? suppliedDeviceName = null;
     try
     {
         using var document = JsonDocument.Parse(rawBody);
@@ -499,12 +587,13 @@ app.MapPost("/v1/pair", async (HttpContext context) =>
         {
             foreach (var property in document.RootElement.EnumerateObject())
             {
-                if (string.Equals(property.Name, "code", StringComparison.OrdinalIgnoreCase) &&
-                    property.Value.ValueKind == JsonValueKind.String)
-                {
+                if (property.Value.ValueKind != JsonValueKind.String) continue;
+                if (string.Equals(property.Name, "code", StringComparison.OrdinalIgnoreCase))
                     suppliedCode = property.Value.GetString();
-                    break;
-                }
+                else if (string.Equals(property.Name, "deviceId", StringComparison.OrdinalIgnoreCase))
+                    suppliedDeviceId = property.Value.GetString();
+                else if (string.Equals(property.Name, "deviceName", StringComparison.OrdinalIgnoreCase))
+                    suppliedDeviceName = property.Value.GetString();
             }
         }
     }
@@ -524,7 +613,15 @@ app.MapPost("/v1/pair", async (HttpContext context) =>
             Encoding.UTF8.GetBytes(config.PairingCode)))
         return Results.Unauthorized();
 
+    if (!string.IsNullOrWhiteSpace(config.PendingPairingDeviceId) &&
+        !string.Equals(config.PendingPairingDeviceId, suppliedDeviceId, StringComparison.Ordinal))
+        return Results.Conflict(new { error = "Этот код создан для другого устройства. Выбери нужное устройство в веб-панели." });
+
     config.ClientSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+    config.PairedDeviceId = string.IsNullOrWhiteSpace(suppliedDeviceId) ? null : suppliedDeviceId.Trim();
+    config.PairedDeviceName = string.IsNullOrWhiteSpace(suppliedDeviceName) ? null : suppliedDeviceName.Trim();
+    config.PairedDeviceAddress = context.Connection.RemoteIpAddress?.ToString();
+    config.PendingPairingDeviceId = null;
     config.PairingCode = "";
     config.Save(configPath);
     return Results.Json(new PairResponse(config.ClientSecret, "HMAC-SHA256", Port));
@@ -700,8 +797,8 @@ app.MapPost("/v1/unpair", (HttpContext context) =>
     return Results.Ok(new { paired = false });
 });
 
-// UDP broadcast discovery listener. The advertisement is intentionally public
-// and contains only a stable ID, display name, port and capability list.
+// UDP discovery listener. It answers Android discovery requests and accepts
+// public, non-secret announcements from companion devices on the same Wi-Fi LAN.
 _ = Task.Run(async () =>
 {
     using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, 47822));
@@ -713,16 +810,39 @@ _ = Task.Run(async () =>
             IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
             var requestBytes = udp.Receive(ref remote);
             var requestText = Encoding.UTF8.GetString(requestBytes);
-            if (!string.Equals(requestText, "REVISION_DISCOVER_V1", StringComparison.Ordinal)) continue;
-            var responseBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            if (string.Equals(requestText, "REVISION_DISCOVER_V1", StringComparison.Ordinal))
             {
-                protocol = "revision-discovery-v1",
-                deviceId = config.DeviceId,
-                name = config.DeviceName,
-                port = Port,
-                capabilities = new[] { "windows-agent", "ssh" }
-            }));
-            await udp.SendAsync(responseBytes, responseBytes.Length, remote);
+                var responseBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+                {
+                    protocol = "revision-discovery-v1",
+                    deviceId = config.DeviceId,
+                    name = config.DeviceName,
+                    port = Port,
+                    capabilities = new[] { "windows-agent", "ssh" }
+                }));
+                await udp.SendAsync(responseBytes, responseBytes.Length, remote);
+                continue;
+            }
+
+            // Companion APK will broadcast this metadata-only JSON packet.
+            // It is never sufficient to establish trust or execute commands.
+            try
+            {
+                using var announcement = JsonDocument.Parse(requestBytes);
+                var root = announcement.RootElement;
+                if (!root.TryGetProperty("protocol", out var protocol) ||
+                    protocol.GetString() != "revision-client-announcement-v1") continue;
+                var id = root.TryGetProperty("deviceId", out var idValue) ? idValue.GetString()?.Trim() : null;
+                var name = root.TryGetProperty("name", out var nameValue) ? nameValue.GetString()?.Trim() : null;
+                var type = root.TryGetProperty("deviceType", out var typeValue) ? typeValue.GetString()?.Trim() : null;
+                var version = root.TryGetProperty("appVersion", out var versionValue) ? versionValue.GetString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(id) || id.Length > 128 ||
+                    string.IsNullOrWhiteSpace(name) || name.Length > 80 ||
+                    string.IsNullOrWhiteSpace(type) || type.Length > 40) continue;
+                discoveredWifiDevices[id] = new DiscoveredWifiDevice(id, name, type,
+                    version is { Length: <= 40 } ? version : null, remote.Address.ToString(), DateTimeOffset.UtcNow);
+            }
+            catch (JsonException) { }
         }
         catch (ObjectDisposedException) { break; }
         catch (SocketException) { if (app.Lifetime.ApplicationStopping.IsCancellationRequested) break; }
@@ -1353,7 +1473,7 @@ async function refreshDeviceState(){await loadIdentity();await loadPairing()}
 async function loadPairing(){try{const r=await fetch('/v1/manager/pairing',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('pairingStatus').textContent=d.paired?'Устройство уже привязано. Повторная привязка не требуется.':d.message;el('pairingMessage').textContent=d.paired?'Привязка активна.':(d.codeAvailable?'Код доступен для первичной привязки.':'Активного кода нет или он истёк.')}catch(e){el('pairingStatus').textContent='Не удалось проверить привязку: '+e.message}}
 async function loadSshRequests(){try{const r=await fetch('/v1/ssh-key-requests',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const items=await r.json(),root=el('sshRequests');root.replaceChildren();if(!items.length){root.textContent='Новых запросов нет.';return}items.forEach(x=>{const card=document.createElement('div');card.className='item';const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.deviceName+' просит SSH-доступ';const details=document.createElement('small');details.textContent='Пользователь Windows: '+x.username+' · IP: '+x.remoteAddress+'\\nОтпечаток: '+x.fingerprint;info.append(title,details);const actions=document.createElement('div');actions.className='actions';const yes=document.createElement('button');yes.textContent='Разрешить';yes.onclick=()=>handleSshRequest(x.id,'approve');const no=document.createElement('button');no.className='danger';no.textContent='Отклонить';no.onclick=()=>handleSshRequest(x.id,'reject');actions.append(yes,no);card.append(info,actions);root.append(card)})}catch(e){el('sshRequestStatus').textContent='Не удалось проверить запросы: '+e.message}}
 async function handleSshRequest(id,action){try{const r=await fetch('/v1/ssh-key-requests/'+encodeURIComponent(id)+'/'+action,{method:'POST'});const d=await r.json();if(!r.ok)throw Error(d.error||'HTTP '+r.status);el('sshRequestStatus').textContent=action==='approve'?'Подключение разрешено.':'Запрос отклонён.';await loadSshRequests()}catch(e){el('sshRequestStatus').textContent=e.message}}
-updateFields();loadIdentity();loadPairing();loadCommands();loadSshRequests();setInterval(loadSshRequests,2500);
+updateFields();loadIdentity();loadPairing();loadWifiDevices();loadCommands();loadSshRequests();setInterval(loadSshRequests,2500);setInterval(loadWifiDevices,5000);
 </script></body></html>
 """;
 
@@ -1373,7 +1493,13 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <main><section class="panel pairing"><h2>Имя компьютера в сети</h2><div class="muted">Постоянный ID: <span id="deviceId">загрузка…</span></div><label>Отображаемое имя</label><input id="deviceName" maxlength="64" placeholder="Например, STUDIO PC"><button type="button" onclick="saveIdentity()">Сохранить имя</button><div class="status" id="identityStatus"></div></section><section class="panel pairing"><h2>Привязка RE:Vision</h2>
 <div id="pairingState" class="status">Проверка состояния привязки…</div>
 <div id="pairingCodeWrap" style="display:none"><label>Текущий код привязки</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong id="pairingCode" style="font-size:24px;letter-spacing:3px"></strong><button type="button" class="secondary" onclick="copyPairingCode()">Копировать</button></div><div id="pairingExpiry" class="muted"></div><div class="note">Код предназначен только для привязки RE:Vision. Не отправляй его посторонним.</div></div>
-<button type="button" onclick="generatePairingCode()">Сгенерировать новый код</button><button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
+<button type="button" onclick="generatePairingCode()">Сгенерировать новый код</button><button type="button" class="danger" id="forgetPairingButton" style="display:none" onclick="forgetPairing()">Забыть устройство</button><button type="button" class="secondary" onclick="loadPairing()">Обновить состояние</button>
+</section><section class="panel"><h2>Устройства в Wi-Fi</h2>
+<div class="muted">Устройства, которые объявили себя RE:Vision в этой локальной сети. Объявление показывает только имя, ID и IP — оно не означает доверенное сопряжение.</div>
+<div id="wifiDevices" class="muted" style="margin-top:12px">Поиск устройств…</div>
+<button type="button" class="secondary" onclick="loadWifiDevices()">Обновить список</button>
+<div class="status" id="wifiDevicesStatus"></div>
+<div class="note">Чтобы очки появились здесь, APK должен отправлять объявление в локальную Wi-Fi-сеть. Приёмная часть Windows Agent уже подготовлена; поддержку отправки добавим на следующем этапе APK.</div>
 </section><section class="panel"><h2>Добавить команду в каталог</h2>
 <label>Название</label><input id="name" placeholder="Например, Запуск Mixxx">
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
@@ -1421,7 +1547,58 @@ async function loadPairing(){
   el('pairingState').textContent=p.message;
   const generateButton=document.querySelector('[onclick="generatePairingCode()"]');
   if(generateButton)generateButton.style.display=p.paired?'none':'inline-block';
+  const forgetButton=el('forgetPairingButton');
+  if(forgetButton)forgetButton.style.display=p.paired?'inline-block':'none';
  }catch(e){el('pairingState').textContent='Не удалось проверить привязку: '+e.message}
+}
+async function forgetPairing(){
+ if(!confirm('Забыть сопряжённое устройство? Ключ на Windows Agent будет отозван. Для повторного подключения потребуется новое сопряжение в RE:Vision. Каталоги команд и SSH-ключи не затрагиваются.'))return;
+ try{
+  const r=await fetch('/v1/manager/pairing/forget',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  await loadPairing();await loadWifiDevices();
+  el('pairingState').textContent=d.message;
+ }catch(e){el('pairingState').textContent='Не удалось забыть устройство: '+e.message}
+}
+async function pairWifiDevice(id){
+ try{
+  const r=await fetch('/v1/manager/devices/'+encodeURIComponent(id)+'/pair',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  await loadPairing();
+  el('pairingState').textContent=d.message+' Код: '+d.pairingCode;
+ }catch(e){el('wifiDevicesStatus').textContent=e.message}
+}
+async function forgetWifiDevice(id){
+ if(!confirm('Забыть это устройство и отозвать его ключ сопряжения?'))return;
+ try{
+  const r=await fetch('/v1/manager/devices/'+encodeURIComponent(id)+'/forget',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  await loadPairing();await loadWifiDevices();
+  el('wifiDevicesStatus').textContent=d.message;
+ }catch(e){el('wifiDevicesStatus').textContent=e.message}
+}
+async function loadWifiDevices(){
+ const root=el('wifiDevices');
+ try{
+  const r=await fetch('/v1/manager/devices',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'HTTP '+r.status);
+  root.replaceChildren();
+  if(!d.devices.length){root.textContent='Пока нет объявлений от устройств. Когда APK очков начнёт передавать Wi-Fi discovery, Rokid появится здесь.';return}
+  d.devices.forEach(x=>{
+   const card=document.createElement('div');card.className='item';
+   const info=document.createElement('div');const title=document.createElement('b');title.textContent=x.name;
+   const details=document.createElement('small');details.textContent=x.deviceType+' · '+x.address+' · '+(x.online?'В сети':'Не отвечает')+' · '+(x.paired?'Сопряжено':'Не сопряжено')+' · '+new Date(x.lastSeenUtc).toLocaleTimeString();
+   info.append(title,details);const actions=document.createElement('div');actions.className='actions';
+   if(x.paired){const forget=document.createElement('button');forget.className='danger';forget.textContent='Забыть';forget.onclick=()=>forgetWifiDevice(x.deviceId);actions.append(forget)}
+   else {const pair=document.createElement('button');pair.textContent='Сопрячь';pair.disabled=!x.online||d.paired;pair.onclick=()=>pairWifiDevice(x.deviceId);actions.append(pair)}
+   card.append(info,actions);root.append(card);
+  });
+  el('wifiDevicesStatus').textContent='Обнаружено устройств: '+d.devices.length;
+ }catch(e){root.textContent='Не удалось получить список: '+e.message}
 }
 async function generatePairingCode(){
  const status=el('pairingState');
@@ -1576,6 +1753,10 @@ sealed class AgentConfig
     public string PairingCode { get; set; } = "";
     public DateTimeOffset PairingExpiresUtc { get; set; }
     public string? ClientSecret { get; set; }
+    public string? PairedDeviceId { get; set; }
+    public string? PairedDeviceName { get; set; }
+    public string? PairedDeviceAddress { get; set; }
+    public string? PendingPairingDeviceId { get; set; }
     public static AgentConfig LoadOrCreate(string path)
     {
         AgentConfig c;
@@ -1608,4 +1789,7 @@ sealed record VoiceCorrectionRequest(string? HeardPhrase, string? CommandId);
 
 record PendingSshKeyRequest(string Id, string DeviceName, string DeviceId, string Username,
     string PublicKey, string Fingerprint, string RemoteAddress, DateTimeOffset CreatedUtc);
+
+record DiscoveredWifiDevice(string DeviceId, string Name, string DeviceType,
+    string? AppVersion, string Address, DateTimeOffset LastSeenUtc);
 
