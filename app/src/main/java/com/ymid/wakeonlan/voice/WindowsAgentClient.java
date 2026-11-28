@@ -47,6 +47,7 @@ public final class WindowsAgentClient {
     private static final String KEY_SECRET = "client_secret";
     private static final String KEY_DEVICE_ID = "device_id";
     private static final int TIMEOUT_MS = 5000;
+    private static final ExecutorService DEVICE_REGISTRY_SYNC_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private WindowsAgentClient() {}
 
@@ -345,6 +346,49 @@ public final class WindowsAgentClient {
             }
         } catch (Exception ignored) { }
         return fallbackBase;
+    }
+
+    /**
+     * Mirrors the non-secret device registry to each paired Agent so its local web manager
+     * can offer the same stable device IDs in command selectors. Pairing secrets never leave Android.
+     */
+    public static void syncDeviceRegistryToAgents(Context context) {
+        if (context == null) return;
+        final Context app = context.getApplicationContext();
+        try {
+            DEVICE_REGISTRY_SYNC_EXECUTOR.execute(() -> {
+                try {
+                    com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                            new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(app);
+                    java.util.List<com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> devices =
+                            registry.getAll();
+                    org.json.JSONArray array = new org.json.JSONArray();
+                    long now = System.currentTimeMillis();
+                    for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : devices) {
+                        if (device == null || device.deviceId == null || device.deviceId.trim().isEmpty()) continue;
+                        org.json.JSONObject item = new org.json.JSONObject();
+                        item.put("deviceId", device.deviceId);
+                        item.put("displayName", device.displayName == null ? "Windows PC" : device.displayName);
+                        item.put("isDefault", device.isDefault);
+                        item.put("enabled", device.enabled);
+                        item.put("online", device.lastSeenAt > 0 && now - device.lastSeenAt <= 120000L);
+                        item.put("lastSeenAt", Math.max(0L, device.lastSeenAt));
+                        array.put(item);
+                    }
+                    org.json.JSONObject payload = new org.json.JSONObject();
+                    payload.put("devices", array);
+                    String body = payload.toString();
+                    for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : devices) {
+                        if (device == null || !device.enabled || Strings.isNullOrEmpty(device.clientSecret)) continue;
+                        try {
+                            authenticatedRequestForDevice(app, device, "/v1/manager/registered-agents/sync", body);
+                        } catch (Exception ignored) {
+                            // Offline Agents remain saved; no alternate device is substituted.
+                        }
+                    }
+                } catch (Exception ignored) { }
+            });
+        } catch (Exception ignored) { }
     }
 
     public static boolean isConfigured(Context context) {
@@ -709,8 +753,7 @@ public final class WindowsAgentClient {
             throw new IllegalStateException("Компьютер не найден или отключён в списке устройств.");
         JSONObject body = new JSONObject();
         body.put("phrase", phrase.trim());
-        return authenticatedRequestForDevice(context, device,
-                "/v1/command/execute", body.toString());
+        return executeRoutedPhrase(context, device, body.toString());
     }
 
     public static JSONObject executePhrase(Context context, String deviceId, String phrase,
@@ -734,7 +777,7 @@ public final class WindowsAgentClient {
         }
         for (String item : unique) arr.put(item);
         body.put("alternatives", arr);
-        return authenticatedRequestForDevice(context, device, "/v1/command/execute", body.toString());
+        return executeRoutedPhrase(context, device, body.toString());
     }
 
     /**
@@ -1206,6 +1249,30 @@ public final class WindowsAgentClient {
         throw last == null
                 ? new IllegalStateException("Windows Agent не найден в локальной сети.")
                 : last;
+    }
+
+    private static JSONObject executeRoutedPhrase(Context context,
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity source, String body) throws Exception {
+        JSONObject response = authenticatedRequestForDevice(context, source, "/v1/command/execute", body);
+        String targetId = response.optString("routeToDeviceId", "").trim();
+        if (targetId.isEmpty()) return response;
+
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity target = registry.get(targetId);
+        if (target == null || !target.enabled || Strings.isNullOrEmpty(target.clientSecret)) {
+            throw new IllegalStateException("Команда назначена на устройство, которое отсутствует или отключено в реестре RE:Vision. Ничего не выполнено.");
+        }
+        JSONObject directCommand = response.optJSONObject("directCommand");
+        if (directCommand == null)
+            throw new IllegalStateException("Windows Agent вернул неполные параметры перенаправленной команды.");
+        JSONObject executed = authenticatedRequestForDevice(context, target,
+                "/v1/command/execute-direct", directCommand.toString());
+        if (!executed.optBoolean("accepted", false))
+            throw new IllegalStateException("Выбранный Windows Agent не выполнил команду.");
+        executed.put("routedToDeviceId", target.deviceId);
+        executed.put("routedToDeviceName", target.displayName);
+        return executed;
     }
 
     private static JSONObject authenticatedRequest(String base, String secret, String path, String body)
