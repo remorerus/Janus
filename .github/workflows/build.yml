@@ -88,8 +88,7 @@ jobs:
           echo "Release signing key verified."
       - name: Run Android unit tests
         id: unit_tests
-        if: github.ref != 'refs/heads/revision-test-ssh-named-focus-release-apk-2026-11-28'
-        if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26'
+        if: github.ref != 'refs/heads/revision-device-card-ssh-approval-2026-11-26' && github.ref != 'refs/heads/revision-test-ssh-named-focus-release-apk-2026-11-28'
         continue-on-error: true
         timeout-minutes: 2
         run: |
