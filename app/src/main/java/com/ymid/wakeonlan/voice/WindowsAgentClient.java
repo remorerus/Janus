@@ -1036,10 +1036,20 @@ public final class WindowsAgentClient {
                     throw new IllegalStateException("В команде указано другое устройство. Уточни, на каком компьютере выполнить действие.");
             }
             return executePhrase(context, spokenTarget.device.deviceId, effectivePhrase,
-                    stripRoutingWordsFromAlternatives(alternatives));
+                    stripRoutingWordsFromAlternatives(context, alternatives, spokenTarget.device.deviceId));
         }
 
-        java.util.List<String> cleanedAlternatives = stripRoutingWordsFromAlternatives(alternatives);
+        String selectedDeviceId = null;
+        if (!effectiveDeviceName.isEmpty()) {
+            try { selectedDeviceId = resolveRegisteredDevice(context, effectiveDeviceName).deviceId; }
+            catch (Exception ignored) { }
+        } else {
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            if (defaultDevice != null) selectedDeviceId = defaultDevice.deviceId;
+        }
+        java.util.List<String> cleanedAlternatives =
+                stripRoutingWordsFromAlternatives(context, alternatives, selectedDeviceId);
         if (effectiveDeviceName.isEmpty())
             return executePhraseOnDefault(context, effectivePhrase, cleanedAlternatives);
         com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
@@ -1053,33 +1063,21 @@ public final class WindowsAgentClient {
         return executePhrase(context, device.deviceId, effectivePhrase, cleanedAlternatives);
     }
 
-    private static java.util.List<String> stripRoutingWordsFromAlternatives(java.util.List<String> alternatives) {
+    private static java.util.List<String> stripRoutingWordsFromAlternatives(Context context,
+            java.util.List<String> alternatives, String selectedDeviceId) {
         java.util.ArrayList<String> result = new java.util.ArrayList<>();
         if (alternatives == null) return result;
         for (String alternative : alternatives) {
             if (alternative == null || alternative.trim().isEmpty()) continue;
             try {
-                SpokenDeviceTarget cleaned = extractSpokenDeviceTargetForNoContext(alternative);
+                SpokenDeviceTarget cleaned = extractSpokenDeviceTarget(context, alternative);
+                if (cleaned.device != null && selectedDeviceId != null
+                        && !selectedDeviceId.equals(cleaned.device.deviceId)) continue;
                 if (!cleaned.phrase.isEmpty() && !result.contains(cleaned.phrase)) result.add(cleaned.phrase);
             } catch (Exception ignored) { }
             if (result.size() >= 4) break;
         }
         return result;
-    }
-
-    private static SpokenDeviceTarget extractSpokenDeviceTargetForNoContext(String phrase) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("[\\p{L}\\p{N}]+").matcher(phrase == null ? "" : phrase);
-        java.util.ArrayList<String> tokens = new java.util.ArrayList<>();
-        while (matcher.find()) {
-            String token = matcher.group().toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
-            if (token.equals("через") || token.equals("посредством")
-                    || token.equals("ревижн") || token.equals("ревижен")
-                    || token.equals("ревижин") || token.equals("ревиж")
-                    || token.equals("агент") || token.equals("виндовс") || token.equals("windows")) continue;
-            tokens.add(token);
-        }
-        return new SpokenDeviceTarget(null, String.join(" ", tokens));
     }
 
     public static JSONObject commandForDeviceName(Context context, String deviceName, String action) throws Exception {
