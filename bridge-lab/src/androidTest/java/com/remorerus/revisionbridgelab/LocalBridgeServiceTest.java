@@ -19,35 +19,45 @@ public final class LocalBridgeServiceTest {
     @Test public void foregroundServiceAcceptsLoopbackWebSocketAndEchoesMessage() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         Intent launch = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        context.startActivity(launch);
-        Thread.sleep(500);
-
+        InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
         Intent service = new Intent(context, LocalBridgeService.class).setAction(LocalBridgeService.ACTION_START);
         context.startForegroundService(service);
 
         CountDownLatch responseLatch = new CountDownLatch(1);
         AtomicReference<String> response = new AtomicReference<>();
         AtomicReference<String> error = new AtomicReference<>();
-        WebSocketClient client = new WebSocketClient(new URI(
-                "ws://127.0.0.1:38763/bridge?token=" + LocalBridgeService.LAB_TOKEN)) {
-            @Override public void onOpen(ServerHandshake handshake) { send("instrumentation-ping"); }
-            @Override public void onMessage(String message) { response.set(message); responseLatch.countDown(); close(); }
-            @Override public void onClose(int code, String reason, boolean remote) {}
-            @Override public void onError(Exception ex) { error.set(ex.toString()); responseLatch.countDown(); }
-        };
-
+        WebSocketClient client = null;
         boolean connected = false;
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline && !connected) {
-            try { connected = client.connectBlocking(1, TimeUnit.SECONDS); }
-            catch (Exception ignored) {}
-            if (!connected) Thread.sleep(250);
+            client = new WebSocketClient(new URI(
+                    "ws://127.0.0.1:38763/bridge?token=" + LocalBridgeService.LAB_TOKEN)) {
+                @Override public void onOpen(ServerHandshake handshake) { send("instrumentation-ping"); }
+                @Override public void onMessage(String message) {
+                    response.set(message);
+                    responseLatch.countDown();
+                    close();
+                }
+                @Override public void onClose(int code, String reason, boolean remote) {}
+                @Override public void onError(Exception ex) { error.set(ex.toString()); }
+            };
+            try { connected = client.connectBlocking(2, TimeUnit.SECONDS); }
+            catch (Exception ex) { error.set(ex.toString()); }
+            if (!connected) {
+                try { client.closeBlocking(); } catch (Exception ignored) {}
+                Thread.sleep(250);
+            }
         }
-        assertTrue("loopback WebSocket did not connect: " + error.get(), connected);
-        assertTrue("server did not answer; error=" + error.get(), responseLatch.await(5, TimeUnit.SECONDS));
-        assertNotNull(response.get());
-        assertTrue(response.get(), response.get().contains("\"ok\":true"));
-        assertTrue(response.get(), response.get().contains("instrumentation-ping"));
-        context.stopService(service);
+        try {
+            assertTrue("loopback WebSocket did not connect: " + error.get(), connected);
+            assertTrue("server did not answer; error=" + error.get(),
+                    responseLatch.await(5, TimeUnit.SECONDS));
+            assertNotNull(response.get());
+            assertTrue(response.get(), response.get().contains("\\"ok\\":true"));
+            assertTrue(response.get(), response.get().contains("instrumentation-ping"));
+        } finally {
+            if (client != null) client.close();
+            context.stopService(service);
+        }
     }
 }
