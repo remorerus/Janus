@@ -21,7 +21,7 @@
     {
       "path": "widgets/bridge-status/index",
       "family": "1x2",
-      "placement": "persistent",
+      "placement": "overlay",
       "displayName": "Состояние Ревижн",
       "description": "Показывает доступность приложения RE:Vision и Voice Bridge."
     }
