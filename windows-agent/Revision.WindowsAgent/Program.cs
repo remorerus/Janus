@@ -1554,8 +1554,7 @@ public static class RevisionWindowApi {
 
       Guid targetDesktop;
       if (manager.GetWindowDesktopId(targetWindow, out targetDesktop) < 0) return false;
-      Guid originDesktop;
-      if (!TryGetCurrentDesktopId(manager, out originDesktop)) return false;
+      if (!TryGetCurrentDesktopId(manager, out _)) return false;
 
       // First scan right until Windows reaches the edge of the desktop strip.
       // Then return to the starting desktop and scan left. This avoids relying
