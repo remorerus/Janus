@@ -900,10 +900,10 @@ static bool StopCatalogProcess(string target, uint sessionId)
 static bool IsAimpLaunchPhrase(string phrase)
 {
     var tokens = NormalizeVoicePhrase(phrase).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-    if (!tokens.Contains("аимп", StringComparer.Ordinal)) return false;
+    if (!tokens.Any(t => t is "аимп" or "aimp" or "эймп")) return false;
     var allowed = new HashSet<string>(StringComparer.Ordinal)
     {
-        "аимп", "открой", "открыть", "запусти", "запустить", "включи", "включить",
+        "аимп", "aimp", "эймп", "открой", "открыть", "запусти", "запустить", "включи", "включить",
         "стартуй", "старт", "запуск", "программу", "приложение"
     };
     return tokens.All(allowed.Contains);
@@ -912,7 +912,7 @@ static bool IsAimpLaunchPhrase(string phrase)
 static string? ResolveAimpMediaAction(string phrase)
 {
     var tokens = NormalizeVoicePhrase(phrase).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-    if (!tokens.Contains("аимп", StringComparer.Ordinal)) return null;
+    if (!tokens.Any(t => t is "аимп" or "aimp" or "эймп")) return null;
 
     var play = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -933,7 +933,7 @@ static string? ResolveAimpMediaAction(string phrase)
     };
     var allowed = new HashSet<string>(StringComparer.Ordinal)
     {
-        "аимп", "воспроизведи", "воспроизвести", "воспроизведение", "начни", "начать",
+        "аимп", "aimp", "эймп", "воспроизведи", "воспроизвести", "воспроизведение", "начни", "начать",
         "играй", "проиграй", "проигрывай", "play", "стартуй", "старт",
         "пауза", "поставь", "приостанови", "приостановить", "pause",
         "следующий", "следующую", "следующая", "next",
