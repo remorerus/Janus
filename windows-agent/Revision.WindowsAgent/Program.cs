@@ -1522,55 +1522,87 @@ public static class RevisionWindowApi {
     return (IVirtualDesktopManager)Activator.CreateInstance(type);
   }
 
-  private static void SwitchToNextVirtualDesktop() {
-    // Windows shortcut: Win+Ctrl+Right. The user explicitly requested this
-    // window switch, so move to the desktop that owns the target application.
+  private static void SwitchVirtualDesktop(bool right) {
+    // Windows shortcuts: Win+Ctrl+Right / Win+Ctrl+Left.
     keybd_event(0x5B, 0, 0, UIntPtr.Zero); // left Windows key
     keybd_event(0x11, 0, 0, UIntPtr.Zero); // Ctrl
-    keybd_event(0x27, 0, 0, UIntPtr.Zero); // Right
-    Thread.Sleep(70);
-    keybd_event(0x27, 0, 2, UIntPtr.Zero);
+    keybd_event(right ? (byte)0x27 : (byte)0x25, 0, 0, UIntPtr.Zero);
+    Thread.Sleep(60);
+    keybd_event(right ? (byte)0x27 : (byte)0x25, 0, 2, UIntPtr.Zero);
     keybd_event(0x11, 0, 2, UIntPtr.Zero);
     keybd_event(0x5B, 0, 2, UIntPtr.Zero);
+  }
+
+  private static bool TryGetCurrentDesktopId(IVirtualDesktopManager manager, out Guid desktopId) {
+    IntPtr foreground = GetForegroundWindow();
+    if (foreground != IntPtr.Zero &&
+        manager.GetWindowDesktopId(foreground, out desktopId) >= 0) return true;
+    desktopId = Guid.Empty;
+    return false;
+  }
+
+  private static bool IsTargetOnCurrentDesktop(IVirtualDesktopManager manager, IntPtr targetWindow) {
+    bool onCurrent;
+    return manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent) >= 0 && onCurrent;
   }
 
   public static bool SwitchToWindowDesktop(IntPtr targetWindow) {
     IVirtualDesktopManager manager = null;
     try {
       manager = CreateDesktopManager();
-      bool onCurrent;
-      int hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
-      if (hr >= 0 && onCurrent) return true;
+      if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
 
       Guid targetDesktop;
-      if (manager.GetWindowDesktopId(targetWindow, out targetDesktop) < 0)
-        return false;
+      if (manager.GetWindowDesktopId(targetWindow, out targetDesktop) < 0) return false;
+      Guid originDesktop;
+      if (!TryGetCurrentDesktopId(manager, out originDesktop)) return false;
 
-      IntPtr initialForeground = GetForegroundWindow();
-      Guid initialDesktop = Guid.Empty;
-      bool canDetectWrap = initialForeground != IntPtr.Zero &&
-          manager.GetWindowDesktopId(initialForeground, out initialDesktop) >= 0;
-
-      // The public Windows API identifies a window's desktop but does not expose
-      // an activate-desktop method. Walk the documented Win+Ctrl+Right cycle and
-      // check the target after each step. Stop when the desktop cycle wraps.
+      // First scan right until Windows reaches the edge of the desktop strip.
+      // Then return to the starting desktop and scan left. This avoids relying
+      // on undocumented VirtualDesktopManagerInternal COM interfaces.
+      int rightSteps = 0;
       for (int attempt = 0; attempt < 16; attempt++) {
-        hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
-        if (hr >= 0 && onCurrent) return true;
-        SwitchToNextVirtualDesktop();
-        Thread.Sleep(300);
-        hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
-        if (hr >= 0 && onCurrent) return true;
+        Guid before;
+        if (!TryGetCurrentDesktopId(manager, out before)) break;
+        SwitchVirtualDesktop(true);
+        Thread.Sleep(250);
+        if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
 
-        if (canDetectWrap) {
-          IntPtr foreground = GetForegroundWindow();
-          Guid activeDesktop;
-          if (foreground != IntPtr.Zero &&
-              manager.GetWindowDesktopId(foreground, out activeDesktop) >= 0 &&
-              activeDesktop == initialDesktop) break;
-        }
+        Guid after;
+        if (!TryGetCurrentDesktopId(manager, out after) || after == before) break;
+        rightSteps++;
+        if (after == targetDesktop) return true;
       }
-      return false;
+
+      // Restore the original desktop before scanning in the other direction.
+      for (int i = 0; i < rightSteps; i++) {
+        SwitchVirtualDesktop(false);
+        Thread.Sleep(250);
+      }
+      if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+      int leftSteps = 0;
+      for (int attempt = 0; attempt < 16; attempt++) {
+        Guid before;
+        if (!TryGetCurrentDesktopId(manager, out before)) break;
+        SwitchVirtualDesktop(false);
+        Thread.Sleep(250);
+        if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+        Guid after;
+        if (!TryGetCurrentDesktopId(manager, out after) || after == before) break;
+        leftSteps++;
+        if (after == targetDesktop) return true;
+      }
+
+      // If the target could not be activated, leave the user's workspace as it
+      // was before the command rather than strand them at the end of the scan.
+      for (int i = 0; i < leftSteps; i++) {
+        SwitchVirtualDesktop(true);
+        Thread.Sleep(250);
+      }
+      return IsTargetOnCurrentDesktop(manager, targetWindow) ? true :
+          (TryGetCurrentDesktopId(manager, out Guid finalDesktop) && finalDesktop == originDesktop && false);
     } finally {
       if (manager != null && Marshal.IsComObject(manager)) Marshal.ReleaseComObject(manager);
     }
@@ -1662,7 +1694,7 @@ static bool RunPowerShellInSession(uint sessionId, string script)
             // Do not report "accepted" merely because PowerShell was created.
             // Wait for the actual window/focus action and return its exit status.
             const uint WaitObject0 = 0x00000000;
-            var waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 15000);
+            var waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 20000);
             if (waitResult != WaitObject0)
             {
                 NativeMethods.TerminateProcess(process.hProcess, 1460);
