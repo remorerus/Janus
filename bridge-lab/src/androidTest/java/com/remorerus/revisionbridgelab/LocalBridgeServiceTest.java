@@ -53,7 +53,7 @@ public final class LocalBridgeServiceTest {
             assertTrue("server did not answer; error=" + error.get(),
                     responseLatch.await(5, TimeUnit.SECONDS));
             assertNotNull(response.get());
-            assertTrue(response.get(), response.get().contains("\\"ok\\":true"));
+            assertTrue(response.get(), response.get().contains("\"ok\":true"));
             assertTrue(response.get(), response.get().contains("instrumentation-ping"));
         } finally {
             if (client != null) client.close();
