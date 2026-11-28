@@ -931,33 +931,155 @@ public final class WindowsAgentClient {
         return normalized.replace("студиолокал", "studiolocal");
     }
 
-    public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase) throws Exception {
-        if (deviceName == null || deviceName.trim().isEmpty()) return executePhraseOnDefault(context, phrase);
-        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
-        try {
-            device = resolveRegisteredDevice(context, deviceName);
-        } catch (IllegalStateException notFound) {
-            if (isLegacyStudioAlias(deviceName)
-                    && isConfigured(context)) return executePhrase(context, phrase);
-            throw notFound;
+    private static final class SpokenDeviceTarget {
+        final com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
+        final String phrase;
+        SpokenDeviceTarget(com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device, String phrase) {
+            this.device = device;
+            this.phrase = phrase;
         }
-        if (device == null) throw new IllegalStateException("Компьютер по умолчанию не настроен.");
-        return executePhrase(context, device.deviceId, phrase);
+    }
+
+    /**
+     * Removes transport wording ("through RE:Vision Agent") and resolves a paired
+     * computer name spoken at the end of the command, e.g. "play AIMP on Studio Local".
+     * Device names are matched only against enabled, already-paired Windows Agents.
+     */
+    private static SpokenDeviceTarget extractSpokenDeviceTarget(Context context, String phrase) throws Exception {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[\\p{L}\\p{N}]+").matcher(phrase == null ? "" : phrase);
+        java.util.ArrayList<String> tokens = new java.util.ArrayList<>();
+        while (matcher.find()) tokens.add(matcher.group().toLowerCase(java.util.Locale.ROOT).replace('ё', 'е'));
+
+        java.util.ArrayList<String> cleaned = new java.util.ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            if (token.equals("с") && i + 1 < tokens.size()
+                    && (tokens.get(i + 1).equals("помощью") || tokens.get(i + 1).equals("помощи"))) {
+                i++;
+                continue;
+            }
+            if (token.equals("через") || token.equals("посредством")
+                    || token.equals("ревижн") || token.equals("ревижен")
+                    || token.equals("ревижин") || token.equals("ревиж")
+                    || token.equals("агент") || token.equals("виндовс")
+                    || token.equals("windows")) continue;
+            cleaned.add(token);
+        }
+
+        com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry registry =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context);
+        java.util.LinkedHashMap<String, com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity> matches =
+                new java.util.LinkedHashMap<>();
+        int bestTokenCount = 0;
+        for (com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device : registry.getAll()) {
+            if (device == null || !device.enabled) continue;
+            java.util.ArrayList<String> names = new java.util.ArrayList<>();
+            if (device.displayName != null && !device.displayName.trim().isEmpty()) names.add(device.displayName);
+            try {
+                org.json.JSONArray aliases = new org.json.JSONArray(device.voiceAliasesJson);
+                for (int i = 0; i < aliases.length(); i++) {
+                    String alias = aliases.optString(i, "").trim();
+                    if (!alias.isEmpty()) names.add(alias);
+                }
+            } catch (Exception ignored) { }
+
+            for (String name : names) {
+                java.util.regex.Matcher nameMatcher = java.util.regex.Pattern
+                        .compile("[\\p{L}\\p{N}]+").matcher(name);
+                java.util.ArrayList<String> nameTokens = new java.util.ArrayList<>();
+                while (nameMatcher.find()) nameTokens.add(nameMatcher.group());
+                int count = nameTokens.size();
+                if (count == 0 || cleaned.size() <= count || count < bestTokenCount) continue;
+                String suffix = String.join("", cleaned.subList(cleaned.size() - count, cleaned.size()));
+                if (!normalizeDeviceName(suffix).equals(normalizeDeviceName(name))) continue;
+                if (count > bestTokenCount) {
+                    matches.clear();
+                    bestTokenCount = count;
+                }
+                matches.put(device.deviceId, device);
+            }
+        }
+
+        if (matches.size() > 1)
+            throw new IllegalStateException("Имя компьютера неоднозначно. Уточни имя устройства.");
+        if (matches.isEmpty()) return new SpokenDeviceTarget(null, String.join(" ", cleaned));
+
+        int removeFrom = cleaned.size() - bestTokenCount;
+        if (removeFrom > 0 && (cleaned.get(removeFrom - 1).equals("на")
+                || cleaned.get(removeFrom - 1).equals("для")
+                || cleaned.get(removeFrom - 1).equals("в")
+                || cleaned.get(removeFrom - 1).equals("к"))) removeFrom--;
+        String commandPhrase = String.join(" ", cleaned.subList(0, removeFrom)).trim();
+        if (commandPhrase.isEmpty())
+            throw new IllegalArgumentException("Не удалось выделить действие из голосовой команды.");
+        return new SpokenDeviceTarget(matches.values().iterator().next(), commandPhrase);
+    }
+
+    public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase) throws Exception {
+        return executePhraseForDeviceName(context, deviceName, phrase, java.util.Collections.emptyList());
     }
 
     public static JSONObject executePhraseForDeviceName(Context context, String deviceName, String phrase,
             java.util.List<String> alternatives) throws Exception {
-        if (deviceName == null || deviceName.trim().isEmpty())
-            return executePhraseOnDefault(context, phrase, alternatives);
+        if (phrase == null || phrase.trim().isEmpty())
+            throw new IllegalArgumentException("Не распознана голосовая фраза для запуска команды.");
+        SpokenDeviceTarget spokenTarget = extractSpokenDeviceTarget(context, phrase);
+        String effectivePhrase = spokenTarget.phrase;
+        String effectiveDeviceName = deviceName == null ? "" : deviceName.trim();
+
+        if (spokenTarget.device != null) {
+            if (!effectiveDeviceName.isEmpty()) {
+                com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity explicitlySelected =
+                        resolveRegisteredDevice(context, effectiveDeviceName);
+                if (!explicitlySelected.deviceId.equals(spokenTarget.device.deviceId))
+                    throw new IllegalStateException("В команде указано другое устройство. Уточни, на каком компьютере выполнить действие.");
+            }
+            return executePhrase(context, spokenTarget.device.deviceId, effectivePhrase,
+                    stripRoutingWordsFromAlternatives(alternatives));
+        }
+
+        java.util.List<String> cleanedAlternatives = stripRoutingWordsFromAlternatives(alternatives);
+        if (effectiveDeviceName.isEmpty())
+            return executePhraseOnDefault(context, effectivePhrase, cleanedAlternatives);
         com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity device;
         try {
-            device = resolveRegisteredDevice(context, deviceName);
+            device = resolveRegisteredDevice(context, effectiveDeviceName);
         } catch (IllegalStateException notFound) {
-            if (isLegacyStudioAlias(deviceName) && isConfigured(context))
-                return executeLegacyPhrase(context, phrase, alternatives);
+            if (isLegacyStudioAlias(effectiveDeviceName) && isConfigured(context))
+                return executeLegacyPhrase(context, effectivePhrase, cleanedAlternatives);
             throw notFound;
         }
-        return executePhrase(context, device.deviceId, phrase, alternatives);
+        return executePhrase(context, device.deviceId, effectivePhrase, cleanedAlternatives);
+    }
+
+    private static java.util.List<String> stripRoutingWordsFromAlternatives(java.util.List<String> alternatives) {
+        java.util.ArrayList<String> result = new java.util.ArrayList<>();
+        if (alternatives == null) return result;
+        for (String alternative : alternatives) {
+            if (alternative == null || alternative.trim().isEmpty()) continue;
+            try {
+                SpokenDeviceTarget cleaned = extractSpokenDeviceTargetForNoContext(alternative);
+                if (!cleaned.phrase.isEmpty() && !result.contains(cleaned.phrase)) result.add(cleaned.phrase);
+            } catch (Exception ignored) { }
+            if (result.size() >= 4) break;
+        }
+        return result;
+    }
+
+    private static SpokenDeviceTarget extractSpokenDeviceTargetForNoContext(String phrase) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[\\p{L}\\p{N}]+").matcher(phrase == null ? "" : phrase);
+        java.util.ArrayList<String> tokens = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            String token = matcher.group().toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+            if (token.equals("через") || token.equals("посредством")
+                    || token.equals("ревижн") || token.equals("ревижен")
+                    || token.equals("ревижин") || token.equals("ревиж")
+                    || token.equals("агент") || token.equals("виндовс") || token.equals("windows")) continue;
+            tokens.add(token);
+        }
+        return new SpokenDeviceTarget(null, String.join(" ", tokens));
     }
 
     public static JSONObject commandForDeviceName(Context context, String deviceName, String action) throws Exception {
