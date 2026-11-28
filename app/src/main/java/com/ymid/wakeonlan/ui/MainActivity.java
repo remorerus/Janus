@@ -65,6 +65,11 @@ public class MainActivity extends AppCompatActivity implements ConsoleHeaderHost
         InAppUpdateManager.attach(this);
         InAppUpdateManager.checkForUpdate(this);
 
+        // Publish the existing paired-device registry to Windows Agents after app startup.
+        // This upgrades already-paired installations without requiring the user to pair again.
+        binding.getRoot().post(() ->
+                com.ymid.wakeonlan.voice.WindowsAgentClient.syncDeviceRegistryToAgents(getApplicationContext()));
+
         // Do not let optional recovery-service startup delay or prevent the main
         // activity from reaching RESUMED. The bridge has its own accessibility
         // service; this endpoint is only a recovery fallback.
