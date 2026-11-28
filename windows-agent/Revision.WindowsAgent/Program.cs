@@ -16,6 +16,7 @@ var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.C
 Directory.CreateDirectory(dataDir);
 var configPath = Path.Combine(dataDir, "agent.json");
 var commandsPath = Path.Combine(dataDir, "commands.json");
+var registeredAgentsPath = Path.Combine(dataDir, "registered-agents.json");
 var sshDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSshAgent");
 Directory.CreateDirectory(sshDataDir);
 var sshCommandsPath = Path.Combine(sshDataDir, "commands.json");
@@ -28,6 +29,8 @@ var app = builder.Build();
 var usedNonces = new ConcurrentDictionary<string, DateTimeOffset>();
 var pendingSshKeyRequests = new ConcurrentDictionary<string, PendingSshKeyRequest>();
 var discoveredWifiDevices = new ConcurrentDictionary<string, DiscoveredWifiDevice>(StringComparer.Ordinal);
+var registeredAgentDevices = new ConcurrentDictionary<string, RegisteredAgentDevice>(StringComparer.Ordinal);
+foreach (var savedAgent in RegisteredAgentCatalog.Load(registeredAgentsPath)) registeredAgentDevices[savedAgent.DeviceId] = savedAgent;
 
 app.MapGet("/", (HttpContext context) =>
 {
@@ -171,6 +174,55 @@ app.MapPost("/v1/ssh-manager/execute", async (HttpContext context) =>
     return Results.Json(new { accepted = true, command = item.Name, phrase, executed = true });
 });
 
+app.MapGet("/v1/manager/registered-agents", (HttpContext context) =>
+{
+    if (!IsLocal(context)) return Results.NotFound();
+    return Results.Json(new { devices = registeredAgentDevices.Values
+        .OrderByDescending(x => x.IsDefault).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray() });
+});
+
+app.MapPost("/v1/manager/registered-agents/sync", async (HttpContext context) =>
+{
+    var body = await new StreamReader(context.Request.Body).ReadToEndAsync();
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    var authError = config.ClientSecret is null ? "not_paired" :
+        GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path,
+            timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray())
+        usedNonces.TryRemove(item.Key, out _);
+    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+
+    RegisteredAgentSyncRequest? request;
+    try { request = JsonSerializer.Deserialize<RegisteredAgentSyncRequest>(body,
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+    catch { return Results.BadRequest(new { error = "Некорректный список устройств." }); }
+    if (request?.Devices is null || request.Devices.Count > 64)
+        return Results.BadRequest(new { error = "Список устройств пуст или превышает 64 записи." });
+
+    var normalized = new List<RegisteredAgentDevice>();
+    var ids = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var item in request.Devices)
+    {
+        var id = (item.DeviceId ?? "").Trim();
+        var name = (item.DisplayName ?? "").Trim();
+        if (id.Length is < 1 or > 128 || name.Length is < 1 or > 80 || !ids.Add(id))
+            return Results.BadRequest(new { error = "В списке есть устройство с неверным или повторяющимся ID/именем." });
+        normalized.Add(new RegisteredAgentDevice(id, name, item.IsDefault, item.Enabled,
+            item.Online, Math.Clamp(item.LastSeenAt, 0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
+    }
+
+    registeredAgentDevices.Clear();
+    foreach (var item in normalized) registeredAgentDevices[item.DeviceId] = item;
+    RegisteredAgentCatalog.Save(registeredAgentsPath, registeredAgentDevices.Values);
+    return Results.Json(new { saved = true, count = normalized.Count });
+});
+
 app.MapGet("/v1/manager/commands", (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
@@ -193,6 +245,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
         var kind = (item.Kind ?? "").Trim().ToLowerInvariant();
         var target = (item.Target ?? "").Trim();
         var arguments = item.Arguments ?? "";
+        var deviceId = (item.DeviceId ?? "").Trim();
         var aliases = (item.Aliases ?? new List<string>())
             .Select(x => (x ?? "").Trim())
             .Where(x => x.Length > 0)
@@ -200,7 +253,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             .ToList();
         if (name.Length is < 1 or > 80 || phrase.Length is < 1 or > 160 ||
             aliases.Count > 12 || aliases.Any(x => x.Length > 160) ||
-            target.Length > 500 || arguments.Length > 500 ||
+            target.Length > 500 || arguments.Length > 500 || deviceId.Length > 128 ||
             kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты распознавания (максимум 12), тип команды и параметры." });
         var localVoicePhrases = new HashSet<string>(StringComparer.Ordinal);
@@ -243,7 +296,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             var normalizedPhrase = NormalizeVoicePhrase(spokenPhrase);
             if (normalizedPhrase.Length > 0) registeredVoicePhrases.Add(normalizedPhrase);
         }
-        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments, aliases));
+        normalized.Add(new AgentCommand(Guid.NewGuid().ToString("N"), name, phrase, kind, target, arguments, aliases, deviceId));
     }
 
     CommandCatalog.Save(commandsPath, normalized);
@@ -798,9 +851,84 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
 
     }
 
+    if (!string.IsNullOrWhiteSpace(command.DeviceId) &&
+        !string.Equals(command.DeviceId, config.DeviceId, StringComparison.Ordinal))
+    {
+        return Results.Json(new
+        {
+            accepted = false,
+            routeToDeviceId = command.DeviceId,
+            command = command.Name,
+            directCommand = new
+            {
+                id = command.Id,
+                name = command.Name,
+                kind = command.Kind,
+                target = command.Target,
+                arguments = command.Arguments
+            },
+            matchedBy,
+            matchedHeard,
+            alternativesConsidered = hypotheses.Count
+        });
+    }
+
     var launched = LaunchCatalogCommand(command);
     return Results.Json(new { accepted = launched, command = command.Name, kind = command.Kind,
         matchedBy, matchedHeard, alternativesConsidered = hypotheses.Count });
+});
+
+app.MapPost("/v1/command/execute-direct", async (HttpContext context) =>
+{
+    var body = await new StreamReader(context.Request.Body).ReadToEndAsync();
+    var timestamp = context.Request.Headers["X-Revision-Time"].ToString();
+    var nonce = context.Request.Headers["X-Revision-Nonce"].ToString();
+    var signature = context.Request.Headers["X-Revision-Signature"].ToString();
+    var authError = config.ClientSecret is null ? "not_paired" :
+        GetAuthenticationFailureReason(config.ClientSecret, context.Request.Method, context.Request.Path,
+            timestamp, nonce, body, signature);
+    if (authError is not null)
+        return Results.Json(new { error = authError }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var now = DateTimeOffset.UtcNow;
+    foreach (var item in usedNonces.Where(x => now - x.Value > TimeSpan.FromMinutes(3)).ToArray())
+        usedNonces.TryRemove(item.Key, out _);
+    if (nonce.Length < 16 || !usedNonces.TryAdd(nonce, now)) return Results.Unauthorized();
+
+    DirectCommandRequest? request;
+    try { request = JsonSerializer.Deserialize<DirectCommandRequest>(body,
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+    catch { return Results.BadRequest(new { error = "Некорректные параметры команды." }); }
+    var name = (request?.Name ?? "").Trim();
+    var kind = (request?.Kind ?? "").Trim().ToLowerInvariant();
+    var target = (request?.Target ?? "").Trim();
+    var arguments = request?.Arguments ?? "";
+    if (name.Length is < 1 or > 80 || target.Length > 500 || arguments.Length > 500 ||
+        kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
+        return Results.BadRequest(new { error = "Недопустимые параметры удалённой команды." });
+    if ((kind is "app" or "bat" or "close" or "restart") && target.Length == 0)
+        return Results.BadRequest(new { error = "Для этой команды не указан путь или процесс." });
+    if (kind == "hotkey" && !TryNormalizeHotkey(target, out target))
+        return Results.BadRequest(new { error = "Недопустимое сочетание клавиш." });
+    if (kind == "window" &&
+        (arguments is not ("focus" or "minimize" or "maximize" or "restore" or "close" or "next" or "previous") ||
+         (arguments is not ("next" or "previous") && target.Length == 0)))
+        return Results.BadRequest(new { error = "Недопустимые параметры управления окном." });
+    if (kind == "media")
+    {
+        var globalActions = new[] { "GLOBAL_PLAY", "GLOBAL_PAUSE", "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
+        var playerActions = new[] { "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
+        var globalAction = target.Length == 0 && globalActions.Contains(arguments, StringComparer.Ordinal);
+        var playerAction = string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase)
+            && playerActions.Contains(arguments, StringComparer.Ordinal);
+        if (!globalAction && !playerAction)
+            return Results.BadRequest(new { error = "Недопустимое мультимедиа-действие." });
+    }
+
+    var command = new AgentCommand(request?.Id ?? Guid.NewGuid().ToString("N"), name, "", kind,
+        target, arguments, new List<string>());
+    var executed = LaunchCatalogCommand(command);
+    return Results.Json(new { accepted = executed, command = name, kind, executed });
 });
 
 app.MapPost("/v1/unpair", (HttpContext context) =>
@@ -1581,12 +1709,13 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction" onchange="updateKindFields()"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" placeholder="C:\Program Files\...\app.exe">
 <label id="argsLabel">Аргументы запуска (необязательно)</label><input id="args" placeholder="--fullscreen">
+<label>Устройство</label><select id="deviceIdSelect"><option value="">Устройство по умолчанию</option></select><div class="muted" style="font-size:12px;margin-top:6px">Выбери компьютер, на котором выполнить команду. Если оставить значение по умолчанию, команда выполнится на компьютере, который получил голосовой запрос.</div>
 <button id="addCommandButton" onclick="addCommand()">Добавить в список</button><button class="secondary" onclick="clearForm()">Очистить</button>
 <div class="status" id="status"></div>
 <div class="note">Команды запускаются только из этого локального каталога и только в активной пользовательской сессии Windows. Добавляй только проверенные EXE и BAT-файлы.</div>
 </section><section class="panel"><h2>Мои команды</h2><div id="commands" class="muted">Загрузка…</div><button onclick="saveAll()">Сохранить изменения</button><button class="secondary" onclick="loadCommands()">Обновить список</button></section><section class="panel"><h2>Обучить распознавание</h2><div class="muted">Если Ревижн услышал фразу неправильно, выбери правильную команду. После подтверждения ошибочный вариант сохранится как её дополнительный голосовой псевдоним.</div><label>Какую фразу услышал агент</label><input id="correctionPhrase" maxlength="160" placeholder="Например: открой а имп"><label>Какую команду ты имел в виду</label><select id="correctionCommand"><option value="">Сначала загрузи каталог команд</option></select><button type="button" onclick="saveCorrection()">Запомнить исправление</button><div class="status" id="correctionStatus"></div><div class="note">Исправление сохраняется только после твоего подтверждения. Оно не запускает команду и не меняет основную голосовую фразу.</div></section></main>
 <script>
-let commands=[],editingIndex=-1;
+let commands=[],editingIndex=-1,registeredAgents=[];
 function el(id){return document.getElementById(id)}
 function msg(t){el('status').textContent=t}
 async function loadIdentity(){
@@ -1696,27 +1825,30 @@ function updateKindFields(){
  el('argsLabel').style.display=(media||hotkey||win)?'none':'block';
  el('args').style.display=(media||hotkey||win)?'none':'block';
 }
-function clearForm(){editingIndex=-1;['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('addCommandButton').textContent='Добавить в список';updateKindFields()}
+function clearForm(){editingIndex=-1;['name','phrase','aliases','target','args','hotkeyCombo'].forEach(x=>el(x).value='');el('deviceIdSelect').value='';el('kind').value='app';el('mediaAction').value='GLOBAL_PLAYPAUSE';el('windowAction').value='focus';el('addCommandButton').textContent='Добавить в список';updateKindFields()}
 function addCommand(){
  const kind=el('kind').value, action=el('windowAction').value;
  const target=kind==='hotkey'?el('hotkeyCombo').value.trim():(kind==='window'&&['next','previous'].includes(action)?'*':(kind==='media'?'':el('target').value.trim()));
  const aliases=el('aliases').value.split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
- const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases,kind,target,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
+ const c={name:el('name').value.trim(),phrase:el('phrase').value.trim(),aliases,kind,target,deviceId:el('deviceIdSelect').value,arguments:kind==='media'?el('mediaAction').value:(kind==='window'?action:(kind==='hotkey'?'':el('args').value.trim()))};
  if(aliases.length>12){msg('Можно добавить не более 12 вариантов распознавания.');return}
  if(!c.name||!c.phrase||(!c.target&&kind!=='window'&&kind!=='media')){msg('Заполни название, голосовую фразу и параметры команды.');return}
  if(kind==='window'&&!['next','previous'].includes(action)&&!c.target){msg('Укажи имя процесса или часть заголовка окна.');return}
  if(commands.some((x,i)=>i!==editingIndex&&x.phrase.toLowerCase()===c.phrase.toLowerCase())){msg('Такая голосовая фраза уже есть.');return}
  if(editingIndex>=0){commands[editingIndex]=c}else{commands.push(c)}render();clearForm();msg('Изменение внесено. Нажми «Сохранить изменения».')
 }
-function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
+function editCommand(i){const c=commands[i];if(!c)return;editingIndex=i;el('name').value=c.name||'';el('phrase').value=c.phrase||'';el('aliases').value=(c.aliases||[]).join(', ');el('kind').value=c.kind||'app';el('target').value=c.target||'';el('args').value=c.arguments||'';if(c.kind==='hotkey')el('hotkeyCombo').value=c.target||'';if(c.kind==='media')el('mediaAction').value=c.arguments||'GLOBAL_PLAYPAUSE';if(c.kind==='window')el('windowAction').value=c.arguments||'focus';loadRegisteredAgents(c.deviceId||'');updateKindFields();el('addCommandButton').textContent='Сохранить команду в списке';msg('Редактирование команды. Нажми «Сохранить изменения» после сохранения каталога.');window.scrollTo({top:0,behavior:'smooth'})}
 function removeCommand(i){commands.splice(i,1);if(editingIndex===i)clearForm();else if(editingIndex>i)editingIndex--;render();msg('Команда удалена из списка. Сохрани изменения.')}
 function render(){const select=el('correctionCommand');if(select){const chosen=select.value;select.innerHTML='';const empty=document.createElement('option');empty.value='';empty.textContent='Выбери команду';select.append(empty);commands.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name+' — '+c.phrase;select.append(o)});if(commands.some(c=>c.id===chosen))select.value=chosen}const root=el('commands');if(!commands.length){root.textContent='Пока команд нет. Добавь первую слева.';return}
-root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
-async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=await r.json();render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
+root.innerHTML='';commands.forEach((c,i)=>{const d=document.createElement('div');d.className='item';const info=document.createElement('div');const b=document.createElement('b');b.textContent=c.name;const s=document.createElement('small');const kindLabel={media:'Мультимедиа',hotkey:'Горячие клавиши',window:'Управление окнами',bat:'BAT',close:'Закрытие EXE',restart:'Перезапуск EXE',app:'Запуск EXE'}[c.kind]||c.kind;s.textContent=c.phrase+' · '+kindLabel+' · '+(c.kind==='hotkey'?c.target:(c.kind==='window'?(c.target==='*'?'':c.target+' · ')+c.arguments:c.target+(c.kind==='media'?' · '+c.arguments:'')))+' · Устройство: '+deviceLabel(c.deviceId)+((c.aliases&&c.aliases.length)?' · Варианты: '+c.aliases.join(', '):'');info.append(b,s);const actions=document.createElement('div');actions.className='actions';const edit=document.createElement('button');edit.className='secondary';edit.textContent='Изменить';edit.onclick=()=>editCommand(i);const btn=document.createElement('button');btn.className='danger';btn.textContent='Удалить';btn.onclick=()=>removeCommand(i);actions.append(edit,btn);d.append(info,actions);root.append(d)})}
+function deviceLabel(id){if(!id)return 'по умолчанию';const d=registeredAgents.find(x=>x.deviceId===id);return d?d.displayName:id}
+async function loadRegisteredAgents(selected){try{const r=await fetch('/v1/manager/registered-agents',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();registeredAgents=d.devices||[];const s=el('deviceIdSelect'),wanted=selected===undefined?s.value:selected;s.replaceChildren();const def=document.createElement('option');def.value='';def.textContent='Устройство по умолчанию';s.append(def);registeredAgents.forEach(x=>{const o=document.createElement('option');o.value=x.deviceId;o.textContent=x.displayName+' · '+(!x.enabled?'Отключено':x.online?'В сети':'Сохранено / не в сети')+(x.isDefault?' · По умолчанию':'');s.append(o)});if(registeredAgents.some(x=>x.deviceId===wanted))s.value=wanted;else s.value='';}catch(e){el('status').textContent='Не удалось загрузить список устройств: '+e.message}}
+async function loadCommands(){try{const r=await fetch('/v1/manager/commands');if(!r.ok)throw Error();commands=(await r.json()).map(x=>({...x,deviceId:x.deviceId||''}));render();msg('Каталог загружен.')}catch(e){msg('Не удалось загрузить каталог. Открой панель локально на STUDIO PC.')}}
 async function saveAll(){try{const r=await fetch('/v1/manager/commands',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сохранения');msg('Сохранено. Команд в каталоге: '+data.count)}catch(e){msg(e.message)}}
 async function saveCorrection(){const status=el('correctionStatus');try{const heardPhrase=el('correctionPhrase').value.trim(),commandId=el('correctionCommand').value;if(!heardPhrase||!commandId)throw Error('Заполни фразу и выбери правильную команду.');const r=await fetch('/v1/manager/voice-corrections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({heardPhrase,commandId})});const data=await r.json();if(!r.ok)throw Error(data.error||'Не удалось сохранить исправление');el('correctionPhrase').value='';await loadCommands();status.textContent=data.alreadyKnown?'Этот вариант уже известен.':'Запомнил вариант для команды «'+data.command+'». Теперь его можно произнести.'}catch(e){status.textContent=e.message}}
 loadCommands();
 loadIdentity();
+loadRegisteredAgents();
 loadPairing();
 </script></body></html>
 """;
@@ -1797,9 +1929,34 @@ sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
 sealed record AgentCommandInput(string? Name, string? Phrase, string? Kind, string? Target, string? Arguments,
-    List<string>? Aliases = null);
+    List<string>? Aliases = null, string? DeviceId = null);
 sealed record AgentCommand(string Id, string Name, string Phrase, string Kind, string Target, string Arguments,
-    List<string>? Aliases = null);
+    List<string>? Aliases = null, string? DeviceId = null);
+sealed record DirectCommandRequest(string? Id, string? Name, string? Kind, string? Target, string? Arguments);
+sealed record RegisteredAgentSyncRequest(List<RegisteredAgentDeviceInput>? Devices);
+sealed record RegisteredAgentDeviceInput(string? DeviceId, string? DisplayName, bool IsDefault,
+    bool Enabled, bool Online, long LastSeenAt);
+sealed record RegisteredAgentDevice(string DeviceId, string DisplayName, bool IsDefault,
+    bool Enabled, bool Online, long LastSeenAt);
+
+static class RegisteredAgentCatalog
+{
+    public static List<RegisteredAgentDevice> Load(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<RegisteredAgentDevice>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+
+    public static void Save(string path, IEnumerable<RegisteredAgentDevice> devices)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(devices.OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray(),
+            new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temp, path, true);
+    }
+}
 
 sealed class CommandCatalog
 {
