@@ -174,9 +174,10 @@ app.MapPost("/v1/ssh-manager/execute", async (HttpContext context) =>
     return Results.Json(new { accepted = true, command = item.Name, phrase, executed = true });
 });
 
-app.MapGet("/v1/manager/registered-agents", (HttpContext context) =>
+app.MapGet("/v1/manager/registered-agents", async (HttpContext context) =>
 {
     if (!IsLocal(context)) return Results.NotFound();
+    await RefreshDiscoveredAgentDevicesAsync(config.DeviceId, registeredAgentDevices, registeredAgentsPath);
     var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     return Results.Json(new { devices = registeredAgentDevices.Values
         .OrderByDescending(x => x.IsDefault).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -1006,6 +1007,46 @@ _ = Task.Run(async () =>
 });
 
 app.Run($"http://0.0.0.0:{Port}");
+
+
+static async Task RefreshDiscoveredAgentDevicesAsync(string ownDeviceId,
+    ConcurrentDictionary<string, RegisteredAgentDevice> known, string registryPath)
+{
+    try
+    {
+        using var udp = new UdpClient(0);
+        udp.EnableBroadcast = true;
+        var request = Encoding.UTF8.GetBytes("REVISION_DISCOVER_V1");
+        udp.Send(request, request.Length, new IPEndPoint(IPAddress.Broadcast, 47822));
+        var deadline = DateTimeOffset.UtcNow.AddMilliseconds(1100);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var receive = udp.ReceiveAsync();
+            var delay = Task.Delay(150);
+            if (await Task.WhenAny(receive, delay) != receive) continue;
+            var packet = await receive;
+            try
+            {
+                using var doc = JsonDocument.Parse(packet.Buffer);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("protocol", out var protocol) ||
+                    protocol.GetString() != "revision-discovery-v1") continue;
+                var id = root.TryGetProperty("deviceId", out var idValue) ? idValue.GetString()?.Trim() : null;
+                var name = root.TryGetProperty("name", out var nameValue) ? nameValue.GetString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(id) || id == ownDeviceId || id.Length > 128 ||
+                    string.IsNullOrWhiteSpace(name) || name.Length > 80) continue;
+                if (known.TryGetValue(id, out var saved) && saved.Paired) continue;
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                known[id] = new RegisteredAgentDevice(id, name, false, false, false, true, now);
+            }
+            catch (JsonException) { }
+        }
+        RegisteredAgentCatalog.Save(registryPath, known.Values);
+    }
+    catch (SocketException) { }
+    catch (ObjectDisposedException) { }
+    catch (Exception ex) { Console.Error.WriteLine("Windows Agent device refresh: " + ex.Message); }
+}
 
 
 static bool StopCatalogProcess(string target, uint sessionId)
