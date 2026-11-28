@@ -261,6 +261,10 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             target.Length > 500 || arguments.Length > 500 || deviceId.Length > 128 ||
             kind is not ("app" or "bat" or "close" or "restart" or "media" or "hotkey" or "window"))
             return Results.BadRequest(new { error = "Проверь название, голосовую фразу, варианты распознавания (максимум 12), тип команды и параметры." });
+        if (deviceId.Length > 0 &&
+            (!registeredAgentDevices.TryGetValue(deviceId, out var selectedAgent) ||
+             !selectedAgent.Paired || !selectedAgent.Enabled))
+            return Results.BadRequest(new { error = "Выбранный компьютер не найден в реестре сопряжённых Windows Agent или отключён." });
         var localVoicePhrases = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spokenPhrase in new[] { phrase }.Concat(aliases))
         {
