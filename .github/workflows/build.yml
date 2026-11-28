@@ -23,6 +23,7 @@ on:
       - revision-fix-active-ip-agent-status-2026-11-27
       - revision-active-ip-agent-status-apk-2026-11-27
       - revision-test-ssh-named-focus-2026-11-28
+      - revision-test-ssh-named-focus-apk-2026-11-28
     paths:
       - "app/**"
       - "*.gradle"
@@ -95,7 +96,7 @@ jobs:
 
       - name: Run Android startup smoke test
         id: startup_smoke
-        if: github.ref != 'refs/heads/revision-test-ssh-named-focus-2026-11-28'
+        if: !startsWith(github.ref, 'refs/heads/revision-test-ssh-named-focus-')
         continue-on-error: true
         timeout-minutes: 2
         uses: reactivecircus/android-emulator-runner@v2
