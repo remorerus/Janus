@@ -533,7 +533,7 @@ export default {
                   phrase: decodeQueryValue(query && query.commandPhrase || '').trim(),
                   deviceName: requestedName,
                   alternatives: parseCommandAlternatives(query && query.commandAlternatives)
-                })
+                }, 24000)
               : windowsAction === 'ssh_launch'
                 ? await request('/windows/ssh/execute', 'POST', token, { phrase: decodeQueryValue(query && query.commandPhrase || '').trim(), deviceName: requestedName || 'STUDIO' })
                 : await request('/windows/command/' + windowsAction.replace(/_/g, '-'), 'POST', token, { deviceName: requestedName });
