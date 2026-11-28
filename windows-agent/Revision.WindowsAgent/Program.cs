@@ -1662,7 +1662,7 @@ static bool RunPowerShellInSession(uint sessionId, string script)
             // Do not report "accepted" merely because PowerShell was created.
             // Wait for the actual window/focus action and return its exit status.
             const uint WaitObject0 = 0x00000000;
-            const uint waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 15000);
+            var waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 15000);
             if (waitResult != WaitObject0)
             {
                 NativeMethods.TerminateProcess(process.hProcess, 1460);
