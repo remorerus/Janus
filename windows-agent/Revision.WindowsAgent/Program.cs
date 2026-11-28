@@ -1543,7 +1543,14 @@ public static class RevisionWindowApi {
 
   private static bool IsTargetOnCurrentDesktop(IVirtualDesktopManager manager, IntPtr targetWindow) {
     bool onCurrent;
-    return manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent) >= 0 && onCurrent;
+    int hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
+    if (hr >= 0 && onCurrent) return true;
+
+    // Explorer can briefly report GUID_NULL for a newly tracked window on the
+    // active desktop before assigning its permanent desktop ID.
+    Guid desktopId;
+    return manager.GetWindowDesktopId(targetWindow, out desktopId) >= 0
+        && desktopId == Guid.Empty;
   }
 
   public static bool SwitchToWindowDesktop(IntPtr targetWindow) {
