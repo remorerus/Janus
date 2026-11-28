@@ -753,7 +753,18 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
                 .FirstOrDefault(x => x.Action is not null);
             if (aimpMediaMatch is not null)
             {
-                command = new AgentCommand("builtin-aimp-media", "AIMP multimedia", "аимп", "media", "", aimpMediaMatch.Action!);
+                var aimpPath = ResolveAimpExecutable();
+                var aimpAction = aimpMediaMatch.Action switch
+                {
+                    "GLOBAL_PLAY" => "/PLAY",
+                    "GLOBAL_PAUSE" => "/PAUSE",
+                    "GLOBAL_NEXT" => "/NEXT",
+                    "GLOBAL_PREV" => "/PREV",
+                    _ => ""
+                };
+                command = !string.IsNullOrWhiteSpace(aimpPath) && aimpAction.Length > 0
+                    ? new AgentCommand("builtin-aimp-media", "AIMP multimedia", "аимп", "media", aimpPath, aimpAction)
+                    : new AgentCommand("builtin-aimp-media", "AIMP multimedia", "аимп", "media", "", aimpMediaMatch.Action!);
                 matchedBy = "built-in-media";
                 matchedHeard = aimpMediaMatch.Heard;
             }
