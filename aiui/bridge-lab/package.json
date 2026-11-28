@@ -1,0 +1,6 @@
+{
+  "name": "revision-bridge-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated AIUI loopback WebSocket probe for RE:Vision"
+}
