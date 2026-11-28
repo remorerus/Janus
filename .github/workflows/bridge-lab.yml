@@ -1,0 +1,69 @@
+name: RE:Vision Foreground WebSocket Lab
+
+on:
+  push:
+    branches:
+      - revision-foreground-ws-lab-2026-11-28
+    paths:
+      - "bridge-lab/**"
+      - "aiui/bridge-lab/**"
+      - "settings.gradle"
+      - ".github/workflows/bridge-lab.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Run Android loopback integration test and build APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 32
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 300
+          script: |
+            chmod +x ./gradlew
+            ./gradlew --no-daemon :bridge-lab:connectedDebugAndroidTest :bridge-lab:assembleDebug
+      - name: Upload lab APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-Bridge-Lab-APK
+          path: bridge-lab/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  aiui-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install AIUI CLI
+        run: npm install --global @yodaos-pkg/aix-cli
+      - name: Validate AIUI loopback test agent
+        run: aix check ./aiui/bridge-lab
+      - name: Package AIUI test agent
+        run: |
+          mkdir -p dist
+          aix pack ./aiui/bridge-lab -o ./dist/RE-Vision-Bridge-Lab.aix
+      - name: Upload AIUI lab agent
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Vision-Bridge-Lab-AIX
+          path: dist/RE-Vision-Bridge-Lab.aix
+          if-no-files-found: error
+          retention-days: 14
