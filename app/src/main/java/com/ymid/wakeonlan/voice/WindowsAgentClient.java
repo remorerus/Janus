@@ -928,7 +928,7 @@ public final class WindowsAgentClient {
                 .replace('ё', 'е').replaceAll("[^a-zа-я0-9]", "");
         // Treat the spoken Cyrillic alias "студио локал" as the same RE:Vision
         // device name as its Latin display form "Studio Local".
-        return normalized.replace("студиолокал", "studiolocal");
+        return normalized.replace("студиолокал", "studiolocal").replace("студиялокал", "studiolocal");
     }
 
     private static final class SpokenDeviceTarget {
