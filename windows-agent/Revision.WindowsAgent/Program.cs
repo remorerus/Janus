@@ -1546,7 +1546,7 @@ public static class RevisionWindowApi {
         return false;
 
       IntPtr initialForeground = GetForegroundWindow();
-      Guid initialDesktop;
+      Guid initialDesktop = Guid.Empty;
       bool canDetectWrap = initialForeground != IntPtr.Zero &&
           manager.GetWindowDesktopId(initialForeground, out initialDesktop) >= 0;
 
