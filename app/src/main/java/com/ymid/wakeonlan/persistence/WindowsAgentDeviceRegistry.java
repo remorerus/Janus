@@ -8,9 +8,11 @@ import java.util.List;
 /** Persistence facade for independently paired Windows Agent devices. */
 public final class WindowsAgentDeviceRegistry {
     private final WindowsAgentDeviceDao dao;
+    private final Context context;
 
     public WindowsAgentDeviceRegistry(Context context) {
-        dao = DatabaseInstanceManager.getInstance(context.getApplicationContext()).windowsAgentDeviceDao();
+        this.context = context.getApplicationContext();
+        dao = DatabaseInstanceManager.getInstance(this.context).windowsAgentDeviceDao();
     }
 
     public List<WindowsAgentDeviceEntity> getAll() { return dao.getAll(); }
@@ -28,6 +30,7 @@ public final class WindowsAgentDeviceRegistry {
             device.isDefault = true;
         }
         dao.insert(device);
+        com.ymid.wakeonlan.voice.WindowsAgentClient.syncDeviceRegistryToAgents(context);
     }
 
     public synchronized void update(WindowsAgentDeviceEntity device) {
@@ -41,7 +44,11 @@ public final class WindowsAgentDeviceRegistry {
             throw new IllegalArgumentException("Устройство не найдено.");
         dao.clearDefault();
         dao.setDefault(deviceId);
+        com.ymid.wakeonlan.voice.WindowsAgentClient.syncDeviceRegistryToAgents(context);
     }
 
-    public void remove(String deviceId) { dao.deleteByDeviceId(deviceId); }
+    public void remove(String deviceId) {
+        dao.deleteByDeviceId(deviceId);
+        com.ymid.wakeonlan.voice.WindowsAgentClient.syncDeviceRegistryToAgents(context);
+    }
 }
