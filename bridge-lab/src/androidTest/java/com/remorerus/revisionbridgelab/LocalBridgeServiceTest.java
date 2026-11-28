@@ -1,5 +1,6 @@
 package com.remorerus.revisionbridgelab;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -19,9 +20,10 @@ public final class LocalBridgeServiceTest {
     @Test public void foregroundServiceAcceptsLoopbackWebSocketAndEchoesMessage() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         Intent launch = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+        Activity activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
         Intent service = new Intent(context, LocalBridgeService.class).setAction(LocalBridgeService.ACTION_START);
         context.startForegroundService(service);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);
 
         CountDownLatch responseLatch = new CountDownLatch(1);
         AtomicReference<String> response = new AtomicReference<>();
