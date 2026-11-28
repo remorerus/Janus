@@ -777,6 +777,12 @@ public final class WindowsAgentClient {
 
     public static JSONObject executePhrase(Context context, String deviceId, String phrase,
             java.util.List<String> alternatives) throws Exception {
+        return executePhrase(context, deviceId, phrase, alternatives, null);
+    }
+
+    /** Resolves the command on the default Agent while preserving an explicitly spoken destination. */
+    public static JSONObject executePhrase(Context context, String deviceId, String phrase,
+            java.util.List<String> alternatives, String requestedTargetDeviceId) throws Exception {
         if (deviceId == null || deviceId.trim().isEmpty())
             throw new IllegalArgumentException("Не указан ID компьютера.");
         if (phrase == null || phrase.trim().isEmpty() || phrase.trim().length() > 160)
@@ -796,6 +802,8 @@ public final class WindowsAgentClient {
         }
         for (String item : unique) arr.put(item);
         body.put("alternatives", arr);
+        if (requestedTargetDeviceId != null && !requestedTargetDeviceId.trim().isEmpty())
+            body.put("targetDeviceId", requestedTargetDeviceId.trim());
         return executeRoutedPhrase(context, device, body.toString());
     }
 
@@ -1097,8 +1105,14 @@ public final class WindowsAgentClient {
                 if (!explicitlySelected.deviceId.equals(spokenTarget.device.deviceId))
                     throw new IllegalStateException("В команде указано другое устройство. Уточни, на каком компьютере выполнить действие.");
             }
-            return executePhrase(context, spokenTarget.device.deviceId, effectivePhrase,
-                    stripRoutingWordsFromAlternatives(context, alternatives, spokenTarget.device.deviceId));
+            java.util.List<String> spokenAlternatives =
+                    stripRoutingWordsFromAlternatives(context, alternatives, spokenTarget.device.deviceId);
+            com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
+                    new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+            if (defaultDevice != null)
+                return executePhrase(context, defaultDevice.deviceId, effectivePhrase,
+                        spokenAlternatives, spokenTarget.device.deviceId);
+            return executePhrase(context, spokenTarget.device.deviceId, effectivePhrase, spokenAlternatives);
         }
 
         String selectedDeviceId = null;
@@ -1122,6 +1136,11 @@ public final class WindowsAgentClient {
                 return executeLegacyPhrase(context, effectivePhrase, cleanedAlternatives);
             throw notFound;
         }
+        com.ymid.wakeonlan.persistence.entities.WindowsAgentDeviceEntity defaultDevice =
+                new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).getDefault();
+        if (defaultDevice != null)
+            return executePhrase(context, defaultDevice.deviceId, effectivePhrase,
+                    cleanedAlternatives, device.deviceId);
         return executePhrase(context, device.deviceId, effectivePhrase, cleanedAlternatives);
     }
 
