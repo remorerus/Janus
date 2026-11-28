@@ -855,13 +855,15 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
 
     }
 
-    if (!string.IsNullOrWhiteSpace(command.DeviceId) &&
-        !string.Equals(command.DeviceId, config.DeviceId, StringComparison.Ordinal))
+    var requestedTargetId = (request?.TargetDeviceId ?? "").Trim();
+    var destinationDeviceId = requestedTargetId.Length > 0 ? requestedTargetId : (command.DeviceId ?? "");
+    if (!string.IsNullOrWhiteSpace(destinationDeviceId) &&
+        !string.Equals(destinationDeviceId, config.DeviceId, StringComparison.Ordinal))
     {
         return Results.Json(new
         {
             accepted = false,
-            routeToDeviceId = command.DeviceId,
+            routeToDeviceId = destinationDeviceId,
             command = command.Name,
             directCommand = new
             {
@@ -1928,7 +1930,7 @@ sealed class SshCommandCatalog
     }
 }
 
-sealed record ExecuteRequest(string? Phrase, List<string>? Alternatives = null);
+sealed record ExecuteRequest(string? Phrase, List<string>? Alternatives = null, string? TargetDeviceId = null);
 sealed record PairRequest(string Code);
 sealed record PairResponse(string ClientSecret, string Authentication, int Port);
 sealed record CommandCatalogRequest(List<AgentCommandInput>? Commands);
