@@ -1034,8 +1034,12 @@ static async Task RefreshDiscoveredAgentDevicesAsync(string ownDeviceId,
                 var name = root.TryGetProperty("name", out var nameValue) ? nameValue.GetString()?.Trim() : null;
                 if (string.IsNullOrWhiteSpace(id) || id == ownDeviceId || id.Length > 128 ||
                     string.IsNullOrWhiteSpace(name) || name.Length > 80) continue;
-                if (known.TryGetValue(id, out var saved) && saved.Paired) continue;
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (known.TryGetValue(id, out var saved) && saved.Paired)
+                {
+                    known[id] = saved with { Online = true, LastSeenAt = now };
+                    continue;
+                }
                 known[id] = new RegisteredAgentDevice(id, name, false, false, false, true, now);
             }
             catch (SocketException error) when (error.SocketErrorCode == SocketError.TimedOut) { }
