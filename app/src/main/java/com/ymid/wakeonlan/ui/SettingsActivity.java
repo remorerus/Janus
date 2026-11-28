@@ -365,10 +365,13 @@ public class SettingsActivity extends AppCompatActivity {
                                                                         new Thread(() -> {
                                                                             try {
                                                                                 new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(appContext).update(selectedDevice);
+                                                                                // Push the changed friendly name and endpoint list to the paired
+                                                                                // Windows Agents so each local web panel can identify itself.
+                                                                                com.ymid.wakeonlan.voice.WindowsAgentClient.syncDeviceRegistryToAgents(appContext);
                                                                                 handler.post(() -> {
                                                                                     if (isAdded()) {
                                                                                         windowsAgentPreference.setSummary("Компьютер: " + newName);
-                                                                                        Toast.makeText(appContext, "Имя и голосовые псевдонимы сохранены.", Toast.LENGTH_SHORT).show();
+                                                                                        Toast.makeText(appContext, "Имя, голосовые псевдонимы и адреса сохранены и синхронизируются с Windows Agent.", Toast.LENGTH_SHORT).show();
                                                                                     }
                                                                                 });
                                                                             } catch (Exception error) {
