@@ -94,7 +94,7 @@ app.MapPut("/v1/ssh-manager/commands", async (HttpContext context) =>
             return Results.BadRequest(new { error = "Укажи имя процесса или окна." });
         if (kind == "media")
         {
-            var globalActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
+            var globalActions = new[] { "GLOBAL_PLAY", "GLOBAL_PAUSE", "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
             var playerActions = new[] { "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
             var globalAction = target.Length == 0 && globalActions.Contains(arguments, StringComparer.Ordinal);
             var playerAction = string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase)
@@ -216,7 +216,7 @@ app.MapPut("/v1/manager/commands", async (HttpContext context) =>
             return Results.BadRequest(new { error = "Для этой команды укажи полный путь к файлу." });
         if (kind == "media")
         {
-            var globalMediaActions = new[] { "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
+            var globalMediaActions = new[] { "GLOBAL_PLAY", "GLOBAL_PAUSE", "GLOBAL_PLAYPAUSE", "GLOBAL_NEXT", "GLOBAL_PREV", "GLOBAL_STOP", "GLOBAL_MUTE", "GLOBAL_VOLUP", "GLOBAL_VOLDWN" };
             var legacyMediaActions = new[] { "/PLAY", "/PAUSE", "/PLAYPAUSE", "/NEXT", "/PREV", "/STOP", "/MUTE", "/VOLUP", "/VOLDWN" };
             var isGlobal = target.Length == 0 && globalMediaActions.Contains(arguments, StringComparer.Ordinal);
             var isLegacyAppCommand = string.Equals(Path.GetExtension(target), ".exe", StringComparison.OrdinalIgnoreCase) && legacyMediaActions.Contains(arguments, StringComparer.Ordinal);
@@ -748,7 +748,17 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
         {
             // AIMP is a built-in safe launch fallback: older/empty command catalogs
             // must not make the standard "open AIMP" voice command unusable.
-            if (IsAimpLaunchPhrase(phrase))
+            var aimpMediaMatch = hypotheses
+                .Select(heard => new { Heard = heard, Action = ResolveAimpMediaAction(heard) })
+                .FirstOrDefault(x => x.Action is not null);
+            if (aimpMediaMatch is not null)
+            {
+                command = new AgentCommand("builtin-aimp-media", "AIMP multimedia", "аимп", "media", "", aimpMediaMatch.Action!);
+                matchedBy = "built-in-media";
+                matchedHeard = aimpMediaMatch.Heard;
+            }
+
+            if (command is null && IsAimpLaunchPhrase(phrase))
             {
                 var aimpPath = ResolveAimpExecutable();
                 if (aimpPath is not null)
@@ -886,6 +896,54 @@ static bool IsAimpLaunchPhrase(string phrase)
         "стартуй", "старт", "запуск", "программу", "приложение"
     };
     return tokens.All(allowed.Contains);
+}
+
+static string? ResolveAimpMediaAction(string phrase)
+{
+    var tokens = NormalizeVoicePhrase(phrase).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    if (!tokens.Contains("аимп", StringComparer.Ordinal)) return null;
+
+    var play = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "воспроизведи", "воспроизвести", "воспроизведение", "начни", "начать",
+        "играй", "проиграй", "проигрывай", "play", "стартуй", "старт"
+    };
+    var pause = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "пауза", "поставь", "приостанови", "приостановить", "pause"
+    };
+    var next = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "следующий", "следующую", "следующая", "next"
+    };
+    var previous = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "предыдущий", "предыдущую", "предыдущая", "previous", "prev"
+    };
+    var allowed = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "аимп", "воспроизведи", "воспроизвести", "воспроизведение", "начни", "начать",
+        "играй", "проиграй", "проигрывай", "play", "стартуй", "старт",
+        "пауза", "поставь", "приостанови", "приостановить", "pause",
+        "следующий", "следующую", "следующая", "next",
+        "предыдущий", "предыдущую", "предыдущая", "previous", "prev",
+        "трек", "песню", "песня", "композицию", "музыку",
+        "студия", "локал", "studio", "local", "на", "компьютере", "компьютер", "пк"
+    };
+    if (!tokens.All(allowed.Contains)) return null;
+
+    var hasPlay = tokens.Any(play.Contains);
+    var hasPause = tokens.Any(pause.Contains);
+    var hasNext = tokens.Any(next.Contains);
+    var hasPrevious = tokens.Any(previous.Contains);
+    var actionCount = (hasPlay ? 1 : 0) + (hasPause ? 1 : 0) + (hasNext ? 1 : 0) + (hasPrevious ? 1 : 0);
+    if (actionCount != 1) return null;
+
+    if (hasPlay) return "GLOBAL_PLAY";
+    if (hasPause) return "GLOBAL_PAUSE";
+    if (hasNext) return "GLOBAL_NEXT";
+    if (hasPrevious) return "GLOBAL_PREV";
+    return null;
 }
 
 static string? ResolveAimpExecutable()
@@ -1106,6 +1164,8 @@ static string BuildMediaKeyScript(string action)
 {
     var key = action switch
     {
+        "GLOBAL_PLAY" => 0xFA,
+        "GLOBAL_PAUSE" => 0xF8,
         "GLOBAL_PLAYPAUSE" => 0xB3,
         "GLOBAL_NEXT" => 0xB0,
         "GLOBAL_PREV" => 0xB1,
@@ -1417,7 +1477,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Тип действия</label><select id="kind" onchange="updateFields()">
 <option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option><option value="script">Сценарий PowerShell / CMD (совместимость)</option>
 </select>
-<div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Используются системные мультимедиа-клавиши Windows.</div></div>
+<div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAY">Воспроизвести</option><option value="GLOBAL_PAUSE">Пауза</option><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза (переключатель)</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Используются системные мультимедиа-клавиши Windows.</div></div>
 <div id="hotkeyOptions" style="display:none"><label>Сочетание клавиш</label><input id="hotkeyCombo" maxlength="80" placeholder="CTRL+SHIFT+ESC"></div>
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" maxlength="500" placeholder="C:\Program Files\AIMP\AIMP.exe">
@@ -1505,7 +1565,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#2563eb;color:whi
 <label>Голосовая фраза</label><input id="phrase" placeholder="Запусти Mixxx">
 <label>Варианты распознавания через запятую</label><input id="aliases" placeholder="Например: запусти аимб, открой а имп, запусти AIMP">
 <label>Тип</label><select id="kind" onchange="updateKindFields()"><option value="app">Запустить приложение (.exe)</option><option value="close">Закрыть приложение (.exe)</option><option value="restart">Перезапустить приложение (.exe)</option><option value="bat">Запустить BAT-файл</option><option value="media">Управление мультимедиа</option><option value="hotkey">Горячие клавиши</option><option value="window">Управление окнами и фокусом</option></select>
-<div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Команды отправляются через системные мультимедиа-клавиши Windows. Работают с плеерами и браузерами, которые поддерживают системное управление мультимедиа.</div></div>
+<div id="mediaOptions" style="display:none"><label>Системное мультимедиа-действие Windows</label><select id="mediaAction"><option value="GLOBAL_PLAY">Воспроизвести</option><option value="GLOBAL_PAUSE">Пауза</option><option value="GLOBAL_PLAYPAUSE">Воспроизведение / Пауза (переключатель)</option><option value="GLOBAL_NEXT">Следующий трек</option><option value="GLOBAL_PREV">Предыдущий трек</option><option value="GLOBAL_STOP">Остановить</option><option value="GLOBAL_MUTE">Включить / выключить системный звук</option><option value="GLOBAL_VOLUP">Увеличить системную громкость</option><option value="GLOBAL_VOLDWN">Уменьшить системную громкость</option></select><div class="note">Команды отправляются через системные мультимедиа-клавиши Windows. Работают с плеерами и браузерами, которые поддерживают системное управление мультимедиа.</div></div>
 <div id="hotkeyOptions" style="display:none"><label>Сочетание клавиш</label><input id="hotkeyCombo" placeholder="CTRL+ALT+T"></div>
 <div id="windowOptions" style="display:none"><label>Действие с окном</label><select id="windowAction" onchange="updateKindFields()"><option value="focus">Переключиться на окно</option><option value="minimize">Свернуть</option><option value="maximize">Развернуть на весь экран</option><option value="restore">Восстановить окно</option><option value="close">Закрыть окно</option><option value="next">Следующее окно (Alt+Tab)</option><option value="previous">Предыдущее окно (Alt+Shift+Tab)</option></select></div>
 <label id="targetLabel">Полный путь к файлу / имя процесса или окна</label><input id="target" placeholder="C:\Program Files\...\app.exe">
