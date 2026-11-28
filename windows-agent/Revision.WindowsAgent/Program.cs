@@ -1016,18 +1016,17 @@ static async Task RefreshDiscoveredAgentDevicesAsync(string ownDeviceId,
     {
         using var udp = new UdpClient(0);
         udp.EnableBroadcast = true;
+        udp.Client.ReceiveTimeout = 200;
         var request = Encoding.UTF8.GetBytes("REVISION_DISCOVER_V1");
         udp.Send(request, request.Length, new IPEndPoint(IPAddress.Broadcast, 47822));
         var deadline = DateTimeOffset.UtcNow.AddMilliseconds(1100);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var receive = udp.ReceiveAsync();
-            var delay = Task.Delay(150);
-            if (await Task.WhenAny(receive, delay) != receive) continue;
-            var packet = await receive;
             try
             {
-                using var doc = JsonDocument.Parse(packet.Buffer);
+                var remote = new IPEndPoint(IPAddress.Any, 0);
+                var packet = udp.Receive(ref remote);
+                using var doc = JsonDocument.Parse(packet);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("protocol", out var protocol) ||
                     protocol.GetString() != "revision-discovery-v1") continue;
@@ -1039,6 +1038,7 @@ static async Task RefreshDiscoveredAgentDevicesAsync(string ownDeviceId,
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 known[id] = new RegisteredAgentDevice(id, name, false, false, false, true, now);
             }
+            catch (SocketException error) when (error.SocketErrorCode == SocketError.TimedOut) { }
             catch (JsonException) { }
         }
         RegisteredAgentCatalog.Save(registryPath, known.Values);
