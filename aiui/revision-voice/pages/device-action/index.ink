@@ -548,8 +548,27 @@ export default {
           this.setData({ statusText: message, detailText: (windowsAction === 'ssh_launch' || windowsAction === 'shutdown') ? (requestedName || 'Компьютер') + ' · SSH RE:Vision' : (requestedName || 'Компьютер по умолчанию') + ' · Windows Agent', resultText: message, busy: false });
           speakAndReturn(this, message);
         } catch (error) {
-          const message = windowsAction === 'ssh_launch' ? 'Не удалось выполнить команду через Win SSH Agent.' : windowsAction === 'shutdown' ? 'Не удалось выключить компьютер через SSH RE:Vision.' : 'Не удалось связаться с Windows Agent компьютера ' + (requestedName || 'по умолчанию') + '.';
-          this.setData({ statusText: message, detailText: String(error && error.message || error), busy: false });
+          const detail = String(error && (error.detail || error.message) || error || 'Неизвестная ошибка');
+          const lowerDetail = detail.toLowerCase();
+          let message;
+          if (windowsAction === 'ssh_launch') {
+            message = 'Не удалось выполнить команду через Win SSH Agent.';
+          } else if (windowsAction === 'shutdown') {
+            message = 'Не удалось выключить компьютер через SSH RE:Vision.';
+          } else if (windowsAction === 'launch' && /no matching command in the local catalog/i.test(detail)) {
+            message = 'Windows Agent доступен, но не нашёл эту фразу в каталоге команд. Для переключения окон скажи «следующее окно» или «предыдущее окно».';
+          } else if (windowsAction === 'launch' && /(several commands sound similar|несколько команд совпали)/i.test(detail)) {
+            message = 'Windows Agent доступен, но фраза совпала с несколькими командами. Уточни или измени варианты произнесения в каталоге.';
+          } else if (/(http 401|unauthorized|not_paired)/i.test(detail)) {
+            message = 'Windows Agent найден, но отклонил ключ сопряжения. Проверь привязку RE:Vision в настройках.';
+          } else if (windowsAction === 'launch' && /(active_user_session_unavailable|no active console session)/i.test(detail)) {
+            message = 'Windows Agent доступен, но не видит активную пользовательскую сессию Windows. Войди в учётную запись компьютера.';
+          } else if (/http 4\d\d|http 5\d\d/i.test(detail)) {
+            message = 'Windows Agent ответил с ошибкой при выполнении команды. Подробность показана ниже.';
+          } else {
+            message = 'Не удалось связаться с Windows Agent компьютера ' + (requestedName || 'по умолчанию') + '.';
+          }
+          this.setData({ statusText: message, detailText: detail, busy: false });
           speakAndReturn(this, message);
         }
         return;
