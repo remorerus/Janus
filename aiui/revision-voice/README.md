@@ -16,10 +16,10 @@ The GitHub Actions workflow packages this directory and publishes the resulting 
 ## Import to AIUI Studio
 Import the GitHub subdirectory:
 - Repository: `remorerus/Janus`
-- Branch: `revision-voicebridge-tap-ssh-manager-2026-11-25`
+- Branch: `revision-aiui-widget-routing-2026-11-28`
 - Directory: `aiui/revision-voice`
 
 Bind the imported project to a new AIUI Agent named RE:Vision, then package/upload it in AIUI Studio. Update the glasses resource package through the Rokid app.
 
 ## Current milestone
-The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands; device actions require the matching four-digit PIN configured in both apps.
+The agent uses the authenticated local Android Voice Bridge. Verify localhost routing on the actual Rokid glasses before relying on commands. The four-digit PIN is currently entered manually in AIUI settings; automatic pairing is not yet implemented.
