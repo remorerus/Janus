@@ -58,7 +58,7 @@ export default {
             return;
           }
           const now = new Date();
-          const mainRunning = body.mainServerRunning === true || port === 38761;
+          const mainRunning = body.mainServerRunning === true;
           this.setData({
             status: mainRunning ? 'Основной канал работает' : 'Доступен канал восстановления',
             detail: mainRunning
