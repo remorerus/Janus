@@ -1,0 +1,10 @@
+{
+  "agentName": "Ревижн — тест связи",
+  "agentDesc": "Изолированный тест локального WebSocket между AIUI и Android Foreground Service на очках. Не предназначен для обычной эксплуатации.",
+  "pages": ["pages/index/index"],
+  "permissions": ["INTERNET"],
+  "window": {
+    "navigationBarTitleText": "Тест связи Ревижн",
+    "viewport": { "width": "device-width" }
+  }
+}
