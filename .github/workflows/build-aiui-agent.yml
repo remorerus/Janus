@@ -15,6 +15,7 @@ on:
       - revision-voice-windows-controls-2026-11-25
       - revision-fix-active-ip-agent-status-2026-11-27
       - revision-ssh-preserved-named-focus-2026-11-28
+      - revision-aiui-widget-routing-2026-11-28
     paths:
       - "aiui/revision-voice/**"
       - ".github/workflows/build-aiui-agent.yml"
