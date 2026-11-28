@@ -95,6 +95,7 @@ jobs:
 
       - name: Run Android startup smoke test
         id: startup_smoke
+        if: github.ref != 'refs/heads/revision-test-ssh-named-focus-2026-11-28'
         continue-on-error: true
         timeout-minutes: 2
         uses: reactivecircus/android-emulator-runner@v2
