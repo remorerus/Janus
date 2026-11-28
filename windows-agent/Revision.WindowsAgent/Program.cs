@@ -1493,6 +1493,14 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using System.Runtime.InteropServices;
+[ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"),
+ InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IVirtualDesktopManager {
+  [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow,
+      [MarshalAs(UnmanagedType.Bool)] out bool onCurrentDesktop);
+  [PreserveSig] int GetWindowDesktopId(IntPtr topLevelWindow, out Guid desktopId);
+  [PreserveSig] int MoveWindowToDesktop(IntPtr topLevelWindow, ref Guid desktopId);
+}
 public static class RevisionWindowApi {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr extra);
@@ -1502,7 +1510,86 @@ public static class RevisionWindowApi {
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int command);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+
+  private static IVirtualDesktopManager CreateDesktopManager() {
+    var clsid = new Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A");
+    var type = Type.GetTypeFromCLSID(clsid);
+    if (type == null) throw new InvalidOperationException("VirtualDesktopManager COM class is unavailable");
+    return (IVirtualDesktopManager)Activator.CreateInstance(type);
+  }
+
+  private static void SwitchToNextVirtualDesktop() {
+    // Windows shortcut: Win+Ctrl+Right. The user explicitly requested this
+    // window switch, so move to the desktop that owns the target application.
+    keybd_event(0x5B, 0, 0, UIntPtr.Zero); // left Windows key
+    keybd_event(0x11, 0, 0, UIntPtr.Zero); // Ctrl
+    keybd_event(0x27, 0, 0, UIntPtr.Zero); // Right
+    Thread.Sleep(70);
+    keybd_event(0x27, 0, 2, UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, UIntPtr.Zero);
+    keybd_event(0x5B, 0, 2, UIntPtr.Zero);
+  }
+
+  public static bool SwitchToWindowDesktop(IntPtr targetWindow) {
+    IVirtualDesktopManager manager = null;
+    try {
+      manager = CreateDesktopManager();
+      bool onCurrent;
+      int hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
+      if (hr >= 0 && onCurrent) return true;
+
+      Guid targetDesktop;
+      if (manager.GetWindowDesktopId(targetWindow, out targetDesktop) < 0)
+        return false;
+
+      IntPtr initialForeground = GetForegroundWindow();
+      Guid initialDesktop;
+      bool canDetectWrap = initialForeground != IntPtr.Zero &&
+          manager.GetWindowDesktopId(initialForeground, out initialDesktop) >= 0;
+
+      // The public Windows API identifies a window's desktop but does not expose
+      // an activate-desktop method. Walk the documented Win+Ctrl+Right cycle and
+      // check the target after each step. Stop when the desktop cycle wraps.
+      for (int attempt = 0; attempt < 16; attempt++) {
+        hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
+        if (hr >= 0 && onCurrent) return true;
+        SwitchToNextVirtualDesktop();
+        Thread.Sleep(300);
+        hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
+        if (hr >= 0 && onCurrent) return true;
+
+        if (canDetectWrap) {
+          IntPtr foreground = GetForegroundWindow();
+          Guid activeDesktop;
+          if (foreground != IntPtr.Zero &&
+              manager.GetWindowDesktopId(foreground, out activeDesktop) >= 0 &&
+              activeDesktop == initialDesktop) break;
+        }
+      }
+      return false;
+    } finally {
+      if (manager != null && Marshal.IsComObject(manager)) Marshal.ReleaseComObject(manager);
+    }
+  }
+
+  public static bool Focus(IntPtr hWnd, int showCommand) {
+    if (!SwitchToWindowDesktop(hWnd)) return false;
+    ShowWindowAsync(hWnd, showCommand);
+    BringWindowToTop(hWnd);
+    if (!SetForegroundWindow(hWnd)) return false;
+    Thread.Sleep(180);
+    IntPtr foreground = GetForegroundWindow();
+    if (foreground == hWnd) return true;
+    uint targetPid, foregroundPid;
+    GetWindowThreadProcessId(hWnd, out targetPid);
+    if (foreground != IntPtr.Zero) GetWindowThreadProcessId(foreground, out foregroundPid);
+    else foregroundPid = 0;
+    return targetPid != 0 && targetPid == foregroundPid;
+  }
+
   public static IntPtr Find(string query) {
     IntPtr found = IntPtr.Zero;
     EnumWindows((hWnd, lParam) => {
@@ -1531,14 +1618,20 @@ $hWnd = [RevisionWindowApi]::Find($target)
 if ($hWnd -eq [IntPtr]::Zero) { exit 3 }
 switch ($action) {
   'focus' {
-    [RevisionWindowApi]::ShowWindowAsync($hWnd, 9) | Out-Null
-    [RevisionWindowApi]::BringWindowToTop($hWnd) | Out-Null
-    [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null
+    if (-not [RevisionWindowApi]::Focus($hWnd, 9)) { exit 5 }
   }
-  'restore' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 9) | Out-Null; [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null }
-  'minimize' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 6) | Out-Null }
-  'maximize' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 3) | Out-Null; [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null }
-  'close' { [RevisionWindowApi]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+  'restore' {
+    if (-not [RevisionWindowApi]::Focus($hWnd, 9)) { exit 5 }
+  }
+  'minimize' {
+    if (-not [RevisionWindowApi]::ShowWindowAsync($hWnd, 6)) { exit 6 }
+  }
+  'maximize' {
+    if (-not [RevisionWindowApi]::Focus($hWnd, 3)) { exit 5 }
+  }
+  'close' {
+    if (-not [RevisionWindowApi]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 7 }
+  }
 }
 """.Replace("__TARGET__", safeTarget).Replace("__ACTION__", safeAction);
 }
@@ -1565,8 +1658,19 @@ static bool RunPowerShellInSession(uint sessionId, string script)
             if (!NativeMethods.CreateProcessAsUser(primaryToken, powershell, commandLine, IntPtr.Zero, IntPtr.Zero,
                     false, 0x08000400, environment, Environment.SystemDirectory, ref startup, out var process)) return false;
             NativeMethods.CloseHandle(process.hThread);
+            // Do not report "accepted" merely because PowerShell was created.
+            // Wait for the actual window/focus action and return its exit status.
+            const uint WaitObject0 = 0x00000000;
+            const uint waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 15000);
+            if (waitResult != WaitObject0)
+            {
+                NativeMethods.TerminateProcess(process.hProcess, 1460);
+                NativeMethods.CloseHandle(process.hProcess);
+                return false;
+            }
+            var completed = NativeMethods.GetExitCodeProcess(process.hProcess, out var exitCode);
             NativeMethods.CloseHandle(process.hProcess);
-            return true;
+            return completed && exitCode == 0;
         }
         finally
         {
@@ -2030,6 +2134,15 @@ static class NativeMethods
 
     [DllImport("userenv.dll", SetLastError = true)]
     public static extern bool DestroyEnvironmentBlock(IntPtr environment);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(IntPtr process, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr handle);
