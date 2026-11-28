@@ -22,15 +22,9 @@ public final class MainActivity extends Activity {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         status = new TextView(this);
         status.setTextSize(18);
-        status.setText("RE:Vision — лаборатория связи\nСлужба пока не запущена.");
+        status.setText("RE:Vision — лаборатория связи\nПроверяю службу…");
         root.addView(status);
-        addButton(root, "Запустить Foreground Service", () -> {
-            Intent i = new Intent(this, LocalBridgeService.class);
-            i.setAction(LocalBridgeService.ACTION_START);
-            startForegroundService(i);
-            status.setText("Запрос запуска отправлен. Проверяю локальный WebSocket…");
-            status.postDelayed(this::testSocket, 700);
-        });
+        addButton(root, "Запустить / восстановить Foreground Service", this::startServiceAndCheck);
         addButton(root, "Проверить WebSocket", this::testSocket);
         addButton(root, "Остановить службу", () -> {
             stopService(new Intent(this, LocalBridgeService.class));
@@ -40,6 +34,22 @@ public final class MainActivity extends Activity {
         note.setText("\nАдрес: ws://127.0.0.1:38763/bridge\nДоступ только с этого устройства.\nAccessibility permission не используется.");
         root.addView(note);
         setContentView(root);
+
+        // Re-open recovery: if Android/YodaOS stopped the service while the UI was away,
+        // launching the lab app starts it again before checking the local socket.
+        startServiceAndCheck();
+    }
+
+    private void startServiceAndCheck() {
+        try {
+            Intent i = new Intent(this, LocalBridgeService.class);
+            i.setAction(LocalBridgeService.ACTION_START);
+            startForegroundService(i);
+            status.setText("Запускаю / проверяю Foreground Service…");
+            status.postDelayed(this::testSocket, 1200);
+        } catch (Exception e) {
+            status.setText("Не удалось запустить службу: " + e.getMessage());
+        }
     }
 
     private void addButton(LinearLayout root, String label, Runnable action) {
@@ -69,8 +79,8 @@ public final class MainActivity extends Activity {
                         runOnUiThread(() -> status.setText("Ошибка WebSocket: " + ex.getMessage()));
                     }
                 };
-                client.connectBlocking(4, java.util.concurrent.TimeUnit.SECONDS);
-                if (!client.isOpen()) runOnUiThread(() -> status.setText("Нет соединения. Служба не отвечает."));
+                client.connectBlocking(6, java.util.concurrent.TimeUnit.SECONDS);
+                if (!client.isOpen()) runOnUiThread(() -> status.setText("Нет соединения. Служба или WebSocket не поднялись."));
             } catch (Exception e) {
                 String message = e.getMessage();
                 runOnUiThread(() -> status.setText("Ошибка: " + message));
