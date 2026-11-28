@@ -604,7 +604,22 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
 
     // Try every ASR hypothesis against every saved phrase and its explicit aliases.
     // A primary exact match wins; ASR alternatives are considered in ranked order.
-    for (var hypothesisIndex = 0; hypothesisIndex < hypotheses.Count; hypothesisIndex++)
+    // Explicitly named applications are resolved before tolerant catalog matching.
+    if (command is null)
+    {
+        var namedWindowMatch = hypotheses
+            .Select(heard => new { Heard = heard, Target = ResolveNamedWindowTarget(heard) })
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.Target));
+        if (namedWindowMatch is not null)
+        {
+            command = new AgentCommand("builtin-window-target", "Переключение на " + namedWindowMatch.Target,
+                namedWindowMatch.Heard, "window", namedWindowMatch.Target!, "focus");
+            matchedBy = "built-in-window-target";
+            matchedHeard = namedWindowMatch.Heard;
+        }
+    }
+
+    for (var hypothesisIndex = 0; command is null && hypothesisIndex < hypotheses.Count; hypothesisIndex++)
     {
         var heard = hypotheses[hypothesisIndex];
         var exactMatches = catalog.Where(x => GetCommandPhrases(x).Any(saved =>
@@ -659,6 +674,21 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
                     command = new AgentCommand("builtin-aimp", "AIMP", "аимп", "app", aimpPath, "");
                     matchedBy = "built-in";
                     matchedHeard = phrase;
+                }
+            }
+
+            if (command is null)
+            {
+                var windowMatch = hypotheses
+                    .Select(heard => new { Heard = heard, Action = ResolveWindowNavigationAction(heard) })
+                    .FirstOrDefault(x => x.Action is not null);
+                if (windowMatch is not null)
+                {
+                    command = new AgentCommand("builtin-window-navigation",
+                        windowMatch.Action == "next" ? "Следующее окно" : "Предыдущее окно",
+                        windowMatch.Heard, "window", "*", windowMatch.Action!);
+                    matchedBy = "built-in-window-navigation";
+                    matchedHeard = windowMatch.Heard;
                 }
             }
 
@@ -865,7 +895,73 @@ static string NormalizeVoicePhrase(string value)
     return string.Join(" ", tokens);
 }
 
+static string? ResolveWindowNavigationAction(string phrase)
+{
+    var normalized = NormalizeVoicePhrase(phrase);
+    if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+    var nextPhrases = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "следующее окно", "следующее приложение",
+        "переключи окно", "переключить окно",
+        "переключи окна", "переключить окна",
+        "переключись на следующее окно", "перейди к следующему окну",
+        "переключение окон", "переключение между окнами",
+        "переключаться между окнами", "другое окно",
+        "alt tab", "альт таб", "альттаб"
+    };
+    var previousPhrases = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "предыдущее окно", "предыдущая программа",
+        "переключись назад", "переключи назад",
+        "переключись на предыдущее окно", "перейди к предыдущему окну",
+        "предыдущие окна", "предыдущее приложение",
+        "alt shift tab", "альт шифт таб", "альтшифттаб"
+    };
+
+    if (nextPhrases.Contains(normalized)) return "next";
+    if (previousPhrases.Contains(normalized)) return "previous";
+
+    // Also tolerate natural inflections, but only when the direction is explicit.
+    var hasWindow = normalized.Contains("окн", StringComparison.Ordinal)
+        || normalized.Contains("программ", StringComparison.Ordinal)
+        || normalized.Contains("приложен", StringComparison.Ordinal);
+    if (hasWindow && normalized.Contains("следующ", StringComparison.Ordinal)) return "next";
+    if (hasWindow && normalized.Contains("предыдущ", StringComparison.Ordinal)) return "previous";
+    return null;
+}
+
+static string? ResolveNamedWindowTarget(string phrase)
+{
+    var normalized = NormalizeVoicePhrase(phrase);
+    if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+    // Only explicit focus/switch wording activates a named window. Generic
+    // next/previous commands remain handled exclusively by Alt+Tab below.
+    var prefixes = new[]
+    {
+        "переключись на ", "переключиться на ", "переключи на ", "переключить на ",
+        "перейди на ", "перейти на ", "перейди в ", "перейти в ",
+        "активируй ", "активировать ", "сфокусируй ", "сфокусировать ",
+        "перемести фокус на ", "выведи на передний план "
+    };
+
+    foreach (var prefix in prefixes)
+    {
+        if (!normalized.StartsWith(prefix, StringComparison.Ordinal)) continue;
+        var target = normalized.Substring(prefix.Length).Trim();
+        target = Regex.Replace(target, @"^(?:программу|приложение|окно|браузер)\s+", "");
+        target = Regex.Replace(target, @"\s+(?:пожалуйста|на экран|программу|приложение|браузер)$", "").Trim();
+        if (target.Length < 2) return null;
+        if (target is "следующее окно" or "предыдущее окно" or "следующее приложение" or "предыдущее приложение")
+            return null;
+        return target;
+    }
+    return null;
+}
+
 static IEnumerable<string> GetCommandPhrases(AgentCommand command)
+
 {
     yield return command.Phrase;
     if (command.Aliases is not null)
@@ -1042,6 +1138,15 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.Threading;
+[ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"),
+ InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IVirtualDesktopManager {
+  [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow,
+      [MarshalAs(UnmanagedType.Bool)] out bool onCurrentDesktop);
+  [PreserveSig] int GetWindowDesktopId(IntPtr topLevelWindow, out Guid desktopId);
+  [PreserveSig] int MoveWindowToDesktop(IntPtr topLevelWindow, ref Guid desktopId);
+}
 public static class RevisionWindowApi {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr extra);
@@ -1051,22 +1156,139 @@ public static class RevisionWindowApi {
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int command);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+
+  private static IVirtualDesktopManager CreateDesktopManager() {
+    var clsid = new Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A");
+    var type = Type.GetTypeFromCLSID(clsid);
+    if (type == null) throw new InvalidOperationException("VirtualDesktopManager COM class is unavailable");
+    return (IVirtualDesktopManager)Activator.CreateInstance(type);
+  }
+
+  private static void SwitchVirtualDesktop(bool right) {
+    // Windows shortcuts: Win+Ctrl+Right / Win+Ctrl+Left.
+    keybd_event(0x5B, 0, 0, UIntPtr.Zero); // left Windows key
+    keybd_event(0x11, 0, 0, UIntPtr.Zero); // Ctrl
+    keybd_event(right ? (byte)0x27 : (byte)0x25, 0, 0, UIntPtr.Zero);
+    Thread.Sleep(60);
+    keybd_event(right ? (byte)0x27 : (byte)0x25, 0, 2, UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, UIntPtr.Zero);
+    keybd_event(0x5B, 0, 2, UIntPtr.Zero);
+  }
+
+  private static bool TryGetCurrentDesktopId(IVirtualDesktopManager manager, out Guid desktopId) {
+    IntPtr foreground = GetForegroundWindow();
+    if (foreground != IntPtr.Zero &&
+        manager.GetWindowDesktopId(foreground, out desktopId) >= 0) return true;
+    desktopId = Guid.Empty;
+    return false;
+  }
+
+  private static bool IsTargetOnCurrentDesktop(IVirtualDesktopManager manager, IntPtr targetWindow) {
+    bool onCurrent;
+    int hr = manager.IsWindowOnCurrentVirtualDesktop(targetWindow, out onCurrent);
+    if (hr >= 0 && onCurrent) return true;
+
+    // Explorer can briefly report GUID_NULL for a newly tracked window on the
+    // active desktop before assigning its permanent desktop ID.
+    Guid desktopId;
+    return manager.GetWindowDesktopId(targetWindow, out desktopId) >= 0
+        && desktopId == Guid.Empty;
+  }
+
+  public static bool SwitchToWindowDesktop(IntPtr targetWindow) {
+    IVirtualDesktopManager manager = null;
+    try {
+      manager = CreateDesktopManager();
+      if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+      Guid targetDesktop;
+      if (manager.GetWindowDesktopId(targetWindow, out targetDesktop) < 0) return false;
+      if (!TryGetCurrentDesktopId(manager, out _)) return false;
+
+      // First scan right until Windows reaches the edge of the desktop strip.
+      // Then return to the starting desktop and scan left. This avoids relying
+      // on undocumented VirtualDesktopManagerInternal COM interfaces.
+      int rightSteps = 0;
+      for (int attempt = 0; attempt < 16; attempt++) {
+        Guid before;
+        if (!TryGetCurrentDesktopId(manager, out before)) break;
+        SwitchVirtualDesktop(true);
+        Thread.Sleep(250);
+        if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+        Guid after;
+        if (!TryGetCurrentDesktopId(manager, out after) || after == before) break;
+        rightSteps++;
+        if (after == targetDesktop) return true;
+      }
+
+      // Restore the original desktop before scanning in the other direction.
+      for (int i = 0; i < rightSteps; i++) {
+        SwitchVirtualDesktop(false);
+        Thread.Sleep(250);
+      }
+      if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+      int leftSteps = 0;
+      for (int attempt = 0; attempt < 16; attempt++) {
+        Guid before;
+        if (!TryGetCurrentDesktopId(manager, out before)) break;
+        SwitchVirtualDesktop(false);
+        Thread.Sleep(250);
+        if (IsTargetOnCurrentDesktop(manager, targetWindow)) return true;
+
+        Guid after;
+        if (!TryGetCurrentDesktopId(manager, out after) || after == before) break;
+        leftSteps++;
+        if (after == targetDesktop) return true;
+      }
+
+      // If the target could not be activated, leave the user's workspace as it
+      // was before the command rather than strand them at the end of the scan.
+      for (int i = 0; i < leftSteps; i++) {
+        SwitchVirtualDesktop(true);
+        Thread.Sleep(250);
+      }
+      return false;
+    } finally {
+      if (manager != null && Marshal.IsComObject(manager)) Marshal.ReleaseComObject(manager);
+    }
+  }
+
+  public static bool Focus(IntPtr hWnd, int showCommand) {
+    if (!SwitchToWindowDesktop(hWnd)) return false;
+    ShowWindowAsync(hWnd, showCommand);
+    BringWindowToTop(hWnd);
+    if (!SetForegroundWindow(hWnd)) return false;
+    Thread.Sleep(180);
+    IntPtr foreground = GetForegroundWindow();
+    if (foreground == hWnd) return true;
+    uint targetPid, foregroundPid;
+    GetWindowThreadProcessId(hWnd, out targetPid);
+    if (foreground != IntPtr.Zero) GetWindowThreadProcessId(foreground, out foregroundPid);
+    else foregroundPid = 0;
+    return targetPid != 0 && targetPid == foregroundPid;
+  }
+
   public static IntPtr Find(string query) {
     IntPtr found = IntPtr.Zero;
+    int bestScore = 0;
     EnumWindows((hWnd, lParam) => {
       if (!IsWindowVisible(hWnd)) return true;
       var title = new StringBuilder(512);
       GetWindowText(hWnd, title, title.Capacity);
+      string windowTitle = title.ToString();
       uint pid;
       GetWindowThreadProcessId(hWnd, out pid);
       string processName = "";
       try { processName = Process.GetProcessById((int)pid).ProcessName; } catch {}
-      if (processName.Equals(query, StringComparison.OrdinalIgnoreCase) ||
-          title.ToString().IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) {
-        found = hWnd;
-        return false;
-      }
+      int score = processName.Equals(query, StringComparison.OrdinalIgnoreCase) ? 3
+          : windowTitle.Equals(query, StringComparison.OrdinalIgnoreCase) ? 2
+          : windowTitle.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0;
+      if (score > bestScore) { bestScore = score; found = hWnd; }
       return true;
     }, IntPtr.Zero);
     return found;
@@ -1080,14 +1302,20 @@ $hWnd = [RevisionWindowApi]::Find($target)
 if ($hWnd -eq [IntPtr]::Zero) { exit 3 }
 switch ($action) {
   'focus' {
-    [RevisionWindowApi]::ShowWindowAsync($hWnd, 9) | Out-Null
-    [RevisionWindowApi]::BringWindowToTop($hWnd) | Out-Null
-    [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null
+    if (-not [RevisionWindowApi]::Focus($hWnd, 9)) { exit 5 }
   }
-  'restore' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 9) | Out-Null; [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null }
-  'minimize' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 6) | Out-Null }
-  'maximize' { [RevisionWindowApi]::ShowWindowAsync($hWnd, 3) | Out-Null; [RevisionWindowApi]::SetForegroundWindow($hWnd) | Out-Null }
-  'close' { [RevisionWindowApi]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+  'restore' {
+    if (-not [RevisionWindowApi]::Focus($hWnd, 9)) { exit 5 }
+  }
+  'minimize' {
+    if (-not [RevisionWindowApi]::ShowWindowAsync($hWnd, 6)) { exit 6 }
+  }
+  'maximize' {
+    if (-not [RevisionWindowApi]::Focus($hWnd, 3)) { exit 5 }
+  }
+  'close' {
+    if (-not [RevisionWindowApi]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 7 }
+  }
 }
 """.Replace("__TARGET__", safeTarget).Replace("__ACTION__", safeAction);
 }
@@ -1129,6 +1357,55 @@ static bool RunPowerShellInSession(uint sessionId, string script)
     }
 }
 
+
+static bool RunWindowPowerShellInSession(uint sessionId, string script)
+{
+    if (!NativeMethods.WTSQueryUserToken(sessionId, out var userToken)) return false;
+    IntPtr primaryToken = IntPtr.Zero;
+    try
+    {
+        if (!NativeMethods.DuplicateTokenEx(userToken, 0x000F01FF, IntPtr.Zero, 2, 1, out primaryToken)) return false;
+        IntPtr environment = IntPtr.Zero;
+        try
+        {
+            NativeMethods.CreateEnvironmentBlock(out environment, primaryToken, false);
+            var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            var commandLine = new StringBuilder($"powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand {encoded}");
+            var startup = new NativeMethods.STARTUPINFO
+            {
+                cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>(),
+                lpDesktop = @"winsta0\default"
+            };
+            if (!NativeMethods.CreateProcessAsUser(primaryToken, powershell, commandLine, IntPtr.Zero, IntPtr.Zero,
+                    false, 0x08000400, environment, Environment.SystemDirectory, ref startup, out var process)) return false;
+            NativeMethods.CloseHandle(process.hThread);
+            // Do not report "accepted" merely because PowerShell was created.
+            // Wait for the actual window/focus action and return its exit status.
+            const uint WaitObject0 = 0x00000000;
+            var waitResult = NativeMethods.WaitForSingleObject(process.hProcess, 20000);
+            if (waitResult != WaitObject0)
+            {
+                NativeMethods.TerminateProcess(process.hProcess, 1460);
+                NativeMethods.CloseHandle(process.hProcess);
+                return false;
+            }
+            var completed = NativeMethods.GetExitCodeProcess(process.hProcess, out var exitCode);
+            NativeMethods.CloseHandle(process.hProcess);
+            return completed && exitCode == 0;
+        }
+        finally
+        {
+            if (environment != IntPtr.Zero) NativeMethods.DestroyEnvironmentBlock(environment);
+        }
+    }
+    finally
+    {
+        if (primaryToken != IntPtr.Zero) NativeMethods.CloseHandle(primaryToken);
+        NativeMethods.CloseHandle(userToken);
+    }
+}
+
 static bool LaunchCatalogCommand(AgentCommand command)
 {
     try
@@ -1141,7 +1418,7 @@ static bool LaunchCatalogCommand(AgentCommand command)
         if (string.Equals(command.Kind, "media", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(command.Target))
             return RunPowerShellInSession(sessionId, BuildMediaKeyScript(command.Arguments));
         if (string.Equals(command.Kind, "window", StringComparison.OrdinalIgnoreCase))
-            return RunPowerShellInSession(sessionId, BuildWindowScript(command.Target, command.Arguments));
+            return RunWindowPowerShellInSession(sessionId, BuildWindowScript(command.Target, command.Arguments));
         var target = Path.GetFullPath(command.Target);
         if (!File.Exists(target)) return false;
         if (string.Equals(command.Kind, "close", StringComparison.OrdinalIgnoreCase))
@@ -1516,6 +1793,15 @@ static class NativeMethods
 
     [DllImport("userenv.dll", SetLastError = true)]
     public static extern bool DestroyEnvironmentBlock(IntPtr environment);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(IntPtr process, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr handle);
