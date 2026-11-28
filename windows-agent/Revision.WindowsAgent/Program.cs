@@ -865,6 +865,23 @@ app.MapPost("/v1/command/execute", async (HttpContext context) =>
             }
 
             if (command is null)
+            {
+                // Window navigation is a safe built-in action, like the AIMP media
+                // fallback above. It must not depend on a manually-created catalog row.
+                var windowMatch = hypotheses
+                    .Select(heard => new { Heard = heard, Action = ResolveWindowNavigationAction(heard) })
+                    .FirstOrDefault(x => x.Action is not null);
+                if (windowMatch is not null)
+                {
+                    command = new AgentCommand("builtin-window-navigation",
+                        windowMatch.Action == "next" ? "Следующее окно" : "Предыдущее окно",
+                        windowMatch.Heard, "window", "*", windowMatch.Action!);
+                    matchedBy = "built-in-window-navigation";
+                    matchedHeard = windowMatch.Heard;
+                }
+            }
+
+            if (command is null)
                 return Results.NotFound(new { error = "No matching command in the local catalog", heard = phrase,
                     alternatives = hypotheses.Skip(1).ToArray() });
         }
@@ -1259,6 +1276,42 @@ static string NormalizeVoicePhrase(string value)
     }
 
     return string.Join(" ", tokens);
+}
+
+static string? ResolveWindowNavigationAction(string phrase)
+{
+    var normalized = NormalizeVoicePhrase(phrase);
+    if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+    var nextPhrases = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "следующее окно", "следующее приложение",
+        "переключи окно", "переключить окно",
+        "переключи окна", "переключить окна",
+        "переключись на следующее окно", "перейди к следующему окну",
+        "переключение окон", "переключение между окнами",
+        "переключаться между окнами", "другое окно",
+        "alt tab", "альт таб", "альттаб"
+    };
+    var previousPhrases = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "предыдущее окно", "предыдущая программа",
+        "переключись назад", "переключи назад",
+        "переключись на предыдущее окно", "перейди к предыдущему окну",
+        "предыдущие окна", "предыдущее приложение",
+        "alt shift tab", "альт шифт таб", "альтшифттаб"
+    };
+
+    if (nextPhrases.Contains(normalized)) return "next";
+    if (previousPhrases.Contains(normalized)) return "previous";
+
+    // Also tolerate natural inflections, but only when the direction is explicit.
+    var hasWindow = normalized.Contains("окн", StringComparison.Ordinal)
+        || normalized.Contains("программ", StringComparison.Ordinal)
+        || normalized.Contains("приложен", StringComparison.Ordinal);
+    if (hasWindow && normalized.Contains("следующ", StringComparison.Ordinal)) return "next";
+    if (hasWindow && normalized.Contains("предыдущ", StringComparison.Ordinal)) return "previous";
+    return null;
 }
 
 static IEnumerable<string> GetCommandPhrases(AgentCommand command)
