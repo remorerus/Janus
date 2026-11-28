@@ -1493,6 +1493,7 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.Threading;
 [ComImport, Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B"),
  InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IVirtualDesktopManager {
