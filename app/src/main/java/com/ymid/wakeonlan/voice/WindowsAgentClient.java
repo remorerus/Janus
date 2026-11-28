@@ -1247,7 +1247,7 @@ public final class WindowsAgentClient {
         }
         for (String item : unique) arr.put(item);
         body.put("alternatives", arr);
-        return authenticatedRequest(base, secret, "/v1/command/execute", body.toString());
+        return authenticatedRequest(base, secret, "/v1/command/execute", body.toString(), 22000);
     }
 
     /**
@@ -1277,9 +1277,14 @@ public final class WindowsAgentClient {
             routes = ordered;
         }
         Exception last = null;
+        // Window activation can traverse several virtual desktops. Keep ordinary
+        // status/pairing calls short, but allow authenticated command execution to
+        // finish its verified desktop-switch operation.
+        int requestTimeout = ("/v1/command/execute".equals(path)
+                || "/v1/command/execute-direct".equals(path)) ? 22000 : TIMEOUT_MS;
         for (String route : routes) {
             try {
-                JSONObject result = authenticatedRequest(route, device.clientSecret, path, body);
+                JSONObject result = authenticatedRequest(route, device.clientSecret, path, body, requestTimeout);
                 device.baseUrl = route;
                 device.lastSeenAt = System.currentTimeMillis();
                 new com.ymid.wakeonlan.persistence.WindowsAgentDeviceRegistry(context).update(device);
@@ -1294,7 +1299,7 @@ public final class WindowsAgentClient {
             String discovered = currentAgent.optString("baseUrl", "");
             if (!discovered.isEmpty() && !routes.contains(discovered)) {
                 try {
-                    JSONObject result = authenticatedRequest(discovered, device.clientSecret, path, body);
+                    JSONObject result = authenticatedRequest(discovered, device.clientSecret, path, body, requestTimeout);
                     java.util.LinkedHashSet<String> updatedRoutes = new java.util.LinkedHashSet<>();
                     updatedRoutes.add(discovered);
                     updatedRoutes.addAll(routes);
@@ -1339,6 +1344,11 @@ public final class WindowsAgentClient {
 
     private static JSONObject authenticatedRequest(String base, String secret, String path, String body)
             throws Exception {
+        return authenticatedRequest(base, secret, path, body, TIMEOUT_MS);
+    }
+
+    private static JSONObject authenticatedRequest(String base, String secret, String path, String body,
+            int timeoutMs) throws Exception {
         long timestamp = System.currentTimeMillis() / 1000L;
         byte[] nonceBytes = new byte[16];
         new SecureRandom().nextBytes(nonceBytes);
@@ -1348,7 +1358,7 @@ public final class WindowsAgentClient {
         mac.init(new SecretKeySpec(Base64.decode(secret, Base64.DEFAULT), "HmacSHA256"));
         String signature = Base64.encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
         return request(base, "POST", path, body,
-                new String[]{Long.toString(timestamp), nonce, signature});
+                new String[]{Long.toString(timestamp), nonce, signature}, timeoutMs);
     }
 
     public static JSONObject executePhrase(Context context, String phrase) throws Exception {
@@ -1422,11 +1432,16 @@ public final class WindowsAgentClient {
     }
 
     private static JSONObject request(String base, String method, String path, String body, String[] auth) throws Exception {
+        return request(base, method, path, body, auth, TIMEOUT_MS);
+    }
+
+    private static JSONObject request(String base, String method, String path, String body,
+            String[] auth, int timeoutMs) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(base + path).openConnection();
         try {
             connection.setRequestMethod(method);
-            connection.setConnectTimeout(TIMEOUT_MS);
-            connection.setReadTimeout(TIMEOUT_MS);
+            connection.setConnectTimeout(Math.min(TIMEOUT_MS, timeoutMs));
+            connection.setReadTimeout(timeoutMs);
             connection.setRequestProperty("Accept", "application/json");
             if (auth != null) {
                 connection.setRequestProperty("X-Revision-Time", auth[0]);
