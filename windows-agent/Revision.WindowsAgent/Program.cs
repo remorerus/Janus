@@ -1601,8 +1601,7 @@ public static class RevisionWindowApi {
         SwitchVirtualDesktop(true);
         Thread.Sleep(250);
       }
-      return IsTargetOnCurrentDesktop(manager, targetWindow) ? true :
-          (TryGetCurrentDesktopId(manager, out Guid finalDesktop) && finalDesktop == originDesktop && false);
+      return false;
     } finally {
       if (manager != null && Marshal.IsComObject(manager)) Marshal.ReleaseComObject(manager);
     }
